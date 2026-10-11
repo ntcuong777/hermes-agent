@@ -420,31 +420,48 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
   // server-side and per-profile (each HERMES_HOME owns its stash.json, the
   // same file `/stash pop` reads). JSON.stringify preserves exact text
   // (newlines, leading/trailing whitespace) through the command string.
-  // With an empty composer the same keybind pops instead: `/stash pop`
+  // With an empty composer the same keybind restores instead: `/stash peek`
   // answers with the /undo prefill directive ({"type":"prefill"}), applied
-  // here exactly like createSlashHandler's handleDispatch does — no new
-  // restore mechanism.
+  // here exactly like createSlashHandler's handleDispatch does. A successful
+  // push answers with {"type":"stash-saved"} — the ONLY signal this code may
+  // clear the composer on (see apps/shared/src/slash.ts).
   const stashDraft = () => {
-    const draft = cState.input
+    // Read the live ref, not the render snapshot: an RPC round-trip can outlive a
+    // re-render, and `cState` is the state as of the last one.
+    const draft = cRefs.inputRef.current
+    const sid = getUiState().sid
 
     if (draft.trim()) {
-      // Clear only once the stash is confirmed saved. Clearing first lost the
-      // draft whenever the RPC failed (plugin disabled, gateway down, full
-      // stash) — the text was gone from the composer and absent from the store.
+      // Clear only on the explicit save directive. `push-draft` answering with a
+      // plain string is an ordinary RESOLVED rpc response — "stash full", a plugin
+      // that is not loaded, an unknown subcommand — so a `.catch` cannot see it and
+      // treating any response as success cleared the composer without storing the
+      // draft.
       return void gateway
         .rpc<SlashExecResponse>('slash.exec', {
           command: `stash push-draft ${JSON.stringify(draft)}`,
-          session_id: getUiState().sid
+          session_id: sid
         })
         .then(r => {
-          if (r?.output) {
-            actions.sys(r.output)
+          const d = parseCommandDispatch(r)
+
+          if (d?.type === 'stash-saved') {
+            if (d.notice?.trim()) {
+              actions.sys(d.notice)
+            }
+
+            // Drop the composer only if it still holds what we stashed, and only
+            // from the session we stashed it in; text typed while the RPC was in
+            // flight must survive.
+            if (cRefs.inputRef.current === draft && getUiState().sid === sid) {
+              cActions.clearIn()
+            }
+
+            return
           }
 
-          // Drop the composer only if it still holds what we stashed; text typed
-          // while the RPC was in flight must survive.
-          if (cState.input === draft) {
-            cActions.clearIn()
+          if (r?.output) {
+            actions.sys(r.output)
           }
         })
         .catch(() => {
@@ -453,7 +470,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     }
 
     return void gateway
-      .rpc<SlashExecResponse>('slash.exec', { command: 'stash peek', session_id: getUiState().sid })
+      .rpc<SlashExecResponse>('slash.exec', { command: 'stash peek', session_id: sid })
       .then(r => {
         const d = parseCommandDispatch(r)
 
@@ -467,8 +484,15 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
             // store, so text typed while this RPC was in flight is never
             // overwritten — and the stashed draft is not consumed by a pop the
             // user did not see land. The entry is removed when the restored
-            // text is submitted, or by an explicit `/stash pop`.
-            if (cState.input.trim()) {
+            // text is submitted, or by an explicit `/stash pop`. The live ref is
+            // what decides whether the composer is still empty, and the session
+            // is re-checked so a restored draft cannot land in another session's
+            // composer.
+            if (getUiState().sid !== sid) {
+              return
+            }
+
+            if (cRefs.inputRef.current.trim()) {
               actions.sys('stash: kept in store (composer not empty) — /stash pop to replace')
               return
             }

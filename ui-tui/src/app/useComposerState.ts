@@ -466,12 +466,13 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
     () => ({
       historyDraftRef,
       historyRef,
+      inputRef,
       queueEditRef,
       queueRef,
       submitRef,
       tokensRef
     }),
-    [historyDraftRef, historyRef, queueEditRef, queueRef, submitRef]
+    [historyDraftRef, historyRef, inputRef, queueEditRef, queueRef, submitRef]
   )
 
   const state = useMemo(

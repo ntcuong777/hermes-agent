@@ -57,6 +57,14 @@ describe('parseCommandDispatch', () => {
       message: 'edit me',
       notice: '↶ rewound'
     })
+    // The Alt+S save confirmation: the only response the keybind may clear the
+    // composer on, so "stash full" (a plain string) keeps the draft.
+    expect(parseCommandDispatch({ type: 'stash-saved', count: 2, max: 9, notice: '📋 Stashed' })).toEqual({
+      type: 'stash-saved',
+      count: 2,
+      max: 9,
+      notice: '📋 Stashed'
+    })
   })
 
   it('rejects malformed payloads', () => {
@@ -68,5 +76,12 @@ describe('parseCommandDispatch', () => {
     expect(parseCommandDispatch({ type: 'send', message: 42 })).toBeNull()
     expect(parseCommandDispatch({ type: 'prefill', notice: 'x' })).toBeNull()
     expect(parseCommandDispatch({ type: 'nope' })).toBeNull()
+    // A bare stash-saved is still a valid directive: the counts are informative.
+    expect(parseCommandDispatch({ type: 'stash-saved' })).toEqual({
+      type: 'stash-saved',
+      count: undefined,
+      max: undefined,
+      notice: undefined
+    })
   })
 })

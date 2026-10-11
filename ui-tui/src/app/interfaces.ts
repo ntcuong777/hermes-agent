@@ -416,6 +416,10 @@ export interface ComposerActions {
 export interface ComposerRefs {
   historyDraftRef: MutableRefObject<string>
   historyRef: MutableRefObject<string[]>
+  /** Live composer text. The rendered `state.input` is a snapshot from the last
+   *  render, so a callback that resolves later (an RPC round-trip) must compare
+   *  against this to know what the user has typed since. */
+  inputRef: MutableRefObject<string>
   queueEditRef: MutableRefObject<null | number>
   queueRef: MutableRefObject<QueueItem[]>
   submitRef: MutableRefObject<(value: string) => void>
