@@ -36,6 +36,16 @@ export const shouldAllowIdleHotkeyExit = (dashboardTuiMode = DASHBOARD_TUI_MODE)
 export const composerHasDraft = (cState: { input: string; inputBuf: string[]; tokens?: unknown[] }): boolean =>
   Boolean(cState.input || cState.inputBuf.length || cState.tokens?.length)
 
+/**
+ * The whole composer text: the lines already accepted with a trailing `\`, then the line
+ * being typed. `submit` joins them exactly this way (useSubmission's
+ * `dispatchSubmission([...inputBuf, value].join('\n'))`), so anything that captures "the
+ * draft" — the Alt+S stash — has to as well, or it captures one line of a multi-line
+ * draft and the clear that follows discards the rest (review S-S).
+ */
+export const composerDraftText = (inputBuf: string[], input: string): string =>
+  [...inputBuf, input].join('\n')
+
 export function handleInputSelectionClipboard(
   selection: ReturnType<typeof getInputSelection>,
   action: 'copy' | 'cut'
@@ -425,13 +435,41 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
   // here exactly like createSlashHandler's handleDispatch does. A successful
   // push answers with {"type":"stash-saved"} — the ONLY signal this code may
   // clear the composer on (see apps/shared/src/slash.ts).
+  //
+  // The (session, draft) pair of the save currently in flight, or null. Two Alt+S
+  // presses before the first answer pushed the same draft twice (review S-V).
+  const stashInFlightRef = useRef<null | string>(null)
+
   const stashDraft = () => {
-    // Read the live ref, not the render snapshot: an RPC round-trip can outlive a
-    // re-render, and `cState` is the state as of the last one.
-    const draft = cRefs.inputRef.current
+    // The composer is more than the line being typed: `inputBuf` holds the lines already
+    // accepted with a trailing `\`, and `tokensRef` holds attached images. Capturing only
+    // `inputRef` and then clearing the rest lost every line but the last and dropped the
+    // images with no copy anywhere (review S-S). The live refs still win over `cState`,
+    // because an RPC round-trip can outlive a re-render and `cState` is the state as of
+    // the last one.
+    const lastLine = cRefs.inputRef.current
+    const draft = composerDraftText(cState.inputBuf, lastLine)
     const sid = getUiState().sid
 
+    // `clearIn()` empties the tokens too, and the stash holds text only: saving here
+    // would discard the attachments. Refuse and say why rather than lose them silently.
+    if (cRefs.tokensRef.current.length) {
+      actions.sys('stash: images are attached — delete the [[ Image N ]] token(s) to stash the text')
+
+      return
+    }
+
     if (draft.trim()) {
+      // One save at a time per (session, draft): two Alt+S presses before the first
+      // answer used to push the same draft twice (review S-V).
+      const inFlightKey = `${sid}\u0000${draft}`
+
+      if (stashInFlightRef.current === inFlightKey) {
+        return
+      }
+
+      stashInFlightRef.current = inFlightKey
+
       // Clear only on the explicit save directive. `push-draft` answering with a
       // plain string is an ordinary RESOLVED rpc response — "stash full", a plugin
       // that is not loaded, an unknown subcommand — so a `.catch` cannot see it and
@@ -452,8 +490,13 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
             // Drop the composer only if it still holds what we stashed, and only
             // from the session we stashed it in; text typed while the RPC was in
-            // flight must survive.
-            if (cRefs.inputRef.current === draft && getUiState().sid === sid) {
+            // flight must survive. Both checks read a live ref for that reason.
+            // The one edit they cannot see is a continuation line appended during the
+            // round trip (a trailing `\` moves `input` into `inputBuf` and empties it,
+            // and `inputBuf` has no live ref); with `lastLine` then empty the pair can
+            // still match. Accepted rather than plumbed: it needs an Alt+S on an empty
+            // last line plus a keystroke inside the RPC window.
+            if (cRefs.inputRef.current === lastLine && !cRefs.tokensRef.current.length && getUiState().sid === sid) {
               cActions.clearIn()
             }
 
@@ -466,6 +509,11 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
         })
         .catch(() => {
           actions.sys('stash: save failed — draft kept')
+        })
+        .finally(() => {
+          if (stashInFlightRef.current === inFlightKey) {
+            stashInFlightRef.current = null
+          }
         })
     }
 
@@ -480,20 +528,21 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
           }
 
           if (d.message) {
-            // Non-destructive restore: `stash peek` leaves the entry in the
-            // store, so text typed while this RPC was in flight is never
-            // overwritten — and the stashed draft is not consumed by a pop the
-            // user did not see land. The entry is removed when the restored
-            // text is submitted, or by an explicit `/stash pop`. The live ref is
-            // what decides whether the composer is still empty, and the session
-            // is re-checked so a restored draft cannot land in another session's
-            // composer.
+            // Non-destructive restore: `stash peek` leaves the entry in the store, so
+            // text typed while this RPC was in flight is never overwritten and the
+            // stashed draft is not consumed by a pop the user did not see land. Nothing
+            // consumes it later either — a restored entry stays until `/stash pop` or
+            // `/stash clear` removes it, which is the trade the non-destructive restore
+            // makes. The live refs decide whether the composer is still empty (the whole
+            // composer, not just its last line), and the session is re-checked so a
+            // restored draft cannot land in another session's composer.
             if (getUiState().sid !== sid) {
               return
             }
 
-            if (cRefs.inputRef.current.trim()) {
+            if (composerDraftText(cState.inputBuf, cRefs.inputRef.current).trim()) {
               actions.sys('stash: kept in store (composer not empty) — /stash pop to replace')
+
               return
             }
 

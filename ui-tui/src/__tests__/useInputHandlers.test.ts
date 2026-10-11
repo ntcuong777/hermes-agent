@@ -4,6 +4,7 @@ import { getOverlayState, patchOverlayState, resetOverlayState } from '../app/ov
 import { rememberServerRequest, resetServerRequestsForTests } from '../app/serverRequestStore.js'
 import {
   applyVoiceRecordResponse,
+  composerDraftText,
   composerHasDraft,
   dismissSensitivePrompt,
   handleIdleHotkeyExit,
@@ -59,6 +60,22 @@ describe('composerHasDraft — Ctrl+D exits only from an empty composer (#116443
     expect(composerHasDraft({ input: 'hi', inputBuf: [], tokens: [] })).toBe(true)
     expect(composerHasDraft({ input: '', inputBuf: ['line 1'], tokens: [] })).toBe(true)
     expect(composerHasDraft({ input: '', inputBuf: [], tokens: [{ kind: 'image' }] })).toBe(true)
+  })
+})
+
+describe('composerDraftText — the stash captures the whole composer (review S-S)', () => {
+  it('joins the accepted lines and the line being typed the way submit does', () => {
+    expect(composerDraftText(['first', 'second'], 'third')).toBe('first\nsecond\nthird')
+  })
+
+  it('is the bare input when nothing was accepted with a backslash', () => {
+    expect(composerDraftText([], 'only line')).toBe('only line')
+  })
+
+  it('keeps a trailing empty line, so a continuation draft loses no line break', () => {
+    // Alt+S right after `first\` + Enter: the composer is `inputBuf: ['first']`, input
+    // 'a'. Joining with `inputBuf.join('\n')` instead would stash only 'first'.
+    expect(composerDraftText(['first'], '')).toBe('first\n')
   })
 })
 
