@@ -428,8 +428,9 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     const draft = cState.input
 
     if (draft.trim()) {
-      cActions.clearIn()
-
+      // Clear only once the stash is confirmed saved. Clearing first lost the
+      // draft whenever the RPC failed (plugin disabled, gateway down, full
+      // stash) — the text was gone from the composer and absent from the store.
       return void gateway
         .rpc<SlashExecResponse>('slash.exec', {
           command: `stash push-draft ${JSON.stringify(draft)}`,
@@ -439,11 +440,20 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
           if (r?.output) {
             actions.sys(r.output)
           }
+
+          // Drop the composer only if it still holds what we stashed; text typed
+          // while the RPC was in flight must survive.
+          if (cState.input === draft) {
+            cActions.clearIn()
+          }
+        })
+        .catch(() => {
+          actions.sys('stash: save failed — draft kept')
         })
     }
 
     return void gateway
-      .rpc<SlashExecResponse>('slash.exec', { command: 'stash pop', session_id: getUiState().sid })
+      .rpc<SlashExecResponse>('slash.exec', { command: 'stash peek', session_id: getUiState().sid })
       .then(r => {
         const d = parseCommandDispatch(r)
 
@@ -453,6 +463,16 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
           }
 
           if (d.message) {
+            // Non-destructive restore: `stash peek` leaves the entry in the
+            // store, so text typed while this RPC was in flight is never
+            // overwritten — and the stashed draft is not consumed by a pop the
+            // user did not see land. The entry is removed when the restored
+            // text is submitted, or by an explicit `/stash pop`.
+            if (cState.input.trim()) {
+              actions.sys('stash: kept in store (composer not empty) — /stash pop to replace')
+              return
+            }
+
             cActions.setInput(d.message)
           }
 
