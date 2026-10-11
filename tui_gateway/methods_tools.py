@@ -592,17 +592,22 @@ def _plugin_command_handler(name: str):
         return None
 
 
-def _run_plugin_command(handler, arg: str, session=None) -> str:
+def _run_plugin_command(handler, arg: str, session=None) -> dict | str:
     """Run a plugin slash-command handler under the session's ``HERMES_SESSION_*`` binding.
 
     Plugin handlers read ``get_session_env()`` for the chat/session they serve; these RPCs run on
     the socket/worker thread where nothing upstream binds it (only the turn path does), so a handler
     saw ``""`` or the launch process's inherited values. Same class as the messaging gateway's
-    #108698; ``_set_session_context`` is the turn path's own seam."""
+    #108698; ``_set_session_context`` is the turn path's own seam.
+
+    A dict result is a TUI directive (``{"type": "prefill", ...}`` — the /undo contract at
+    _cmd_undo, used by /stash pop) and is returned unwrapped so the caller can pass it through
+    instead of stringifying it into ``output``; every other result stays a string."""
     plugins = _tools_mod("hermes_cli.plugins")
     tokens = _set_session_context(session.get("session_key", "") or "", cwd=str(session.get("cwd") or "")) if session else []
     try:
-        return str(plugins.resolve_plugin_command_result(handler(arg)) or "")
+        result = plugins.resolve_plugin_command_result(handler(arg)) or ""
+        return result if isinstance(result, dict) else str(result)
     finally:
         _clear_session_context(tokens)
 
@@ -680,7 +685,12 @@ def _is_registry_command(base: str) -> bool:
 def _dispatch_plugin(rid, params, session, name, arg):
     if handler := _plugin_command_handler(name):
         with contextlib.suppress(Exception):
-            return _ok(rid, {"type": "plugin", "output": _run_plugin_command(handler, arg, session)})
+            out = _run_plugin_command(handler, arg, session)
+            # Directive dict (e.g. /stash pop prefill) → pass through as-is; the TUI's
+            # parseCommandDispatch reads it exactly like /undo's slash.exec response.
+            if isinstance(out, dict) and isinstance(out.get("type"), str):
+                return _ok(rid, out)
+            return _ok(rid, {"type": "plugin", "output": out})
     return None
 
 
@@ -1149,7 +1159,12 @@ def _(rid, params: dict) -> dict:
             return dispatched
     if plugin_handler := _plugin_command_handler(base) if base else None:
         try:
-            return _ok(rid, {"output": _run_plugin_command(plugin_handler, arg, session) or "(no output)"})
+            out = _run_plugin_command(plugin_handler, arg, session)
+            # Directive dict (e.g. /stash pop prefill) → return as the response body so the
+            # client's parseCommandDispatch handles it like /undo's {"type": "prefill", ...}.
+            if isinstance(out, dict) and isinstance(out.get("type"), str):
+                return _ok(rid, out)
+            return _ok(rid, {"output": out or "(no output)"})
         except Exception as e:
             return _ok(rid, {"output": f"Plugin command error: {e}"})
     worker = session.get("slash_worker")

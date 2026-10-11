@@ -1,11 +1,12 @@
 import { forceRedraw, useInput } from '@hermes/ink'
+import { parseCommandDispatch } from '@hermes/shared/slash'
 import { useStore } from '@nanostores/react'
 import { useEffect, useRef } from 'react'
 
 import { DASHBOARD_TUI_MODE } from '../config/env.js'
 import { DOUBLE_ESC_MS, TYPING_IDLE_MS } from '../config/timing.js'
 import { applyCompletion } from '../domain/slash.js'
-import type { ConfigSetResponse, VoiceRecordResponse } from '../gatewayTypes.js'
+import type { ConfigSetResponse, SlashExecResponse, VoiceRecordResponse } from '../gatewayTypes.js'
 import { t } from '../i18n/runtime.js'
 import { isAction, isCopyShortcut, isMac, isMacActionFallback, isVoiceToggleKey } from '../lib/platform.js'
 import { computePrecisionWheelStep, initPrecisionWheel } from '../lib/precisionWheel.js'
@@ -411,6 +412,60 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       })
   }
 
+  // Alt+S — stash the composer draft (Pi parity). Slash commands cannot read
+  // the draft (a handler only ever receives its own typed argument text), so
+  // this keybind is the capture point. Seam choice: the draft travels over
+  // the slash-RPC channel as a hidden `/stash push-draft <json>` invocation
+  // rather than the TUI writing the store file directly, so the store stays
+  // server-side and per-profile (each HERMES_HOME owns its stash.json, the
+  // same file `/stash pop` reads). JSON.stringify preserves exact text
+  // (newlines, leading/trailing whitespace) through the command string.
+  // With an empty composer the same keybind pops instead: `/stash pop`
+  // answers with the /undo prefill directive ({"type":"prefill"}), applied
+  // here exactly like createSlashHandler's handleDispatch does — no new
+  // restore mechanism.
+  const stashDraft = () => {
+    const draft = cState.input
+
+    if (draft.trim()) {
+      cActions.clearIn()
+
+      return void gateway
+        .rpc<SlashExecResponse>('slash.exec', {
+          command: `stash push-draft ${JSON.stringify(draft)}`,
+          session_id: getUiState().sid
+        })
+        .then(r => {
+          if (r?.output) {
+            actions.sys(r.output)
+          }
+        })
+    }
+
+    return void gateway
+      .rpc<SlashExecResponse>('slash.exec', { command: 'stash pop', session_id: getUiState().sid })
+      .then(r => {
+        const d = parseCommandDispatch(r)
+
+        if (d?.type === 'prefill') {
+          if (d.notice?.trim()) {
+            actions.sys(d.notice)
+          }
+
+          if (d.message) {
+            cActions.setInput(d.message)
+          }
+
+          return
+        }
+
+        // Plain string result ("stash empty", usage errors) — surface it.
+        if (r?.output) {
+          actions.sys(r.output)
+        }
+      })
+  }
+
   // Double-Esc discards the draft, matching Claude Code / Gemini CLI. It
   // sits above the isBlocked early-return so a prompt overlay cannot swallow
   // it. Ctrl+C now clears a non-empty composer even mid-stream; Esc Esc is
@@ -786,6 +841,13 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
     if (isVoiceToggleKey(key, ch, voice.recordKey)) {
       return voiceRecordToggle()
+    }
+
+    // Alt+S stashes the draft / pops the last stash (see stashDraft above).
+    // meta+letter follows the Alt+G precedent below: Option (meta) on macOS,
+    // Alt (meta) elsewhere; !key.ctrl keeps Ctrl+Alt combos free.
+    if (key.meta && !key.ctrl && ch.toLowerCase() === 's') {
+      return stashDraft()
     }
 
     // Cmd/Ctrl+G, plus Alt+G fallback for VSCode/Cursor (they bind the
