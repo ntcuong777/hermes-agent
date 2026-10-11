@@ -25,9 +25,6 @@ REQUEST = [
     {"role": "user", "content": "hello"},
 ]
 
-#: Callback registry the composition test drives through the mocked chain entry point.
-_CALLBACKS: list = []
-
 
 def _agent() -> Any:
     agent = MagicMock()
@@ -81,7 +78,6 @@ def test_hook_receives_clones_persisted_history_safe():
     def _hook(hook_name, chain_key, **kwargs):
         kwargs["messages"][0]["content"] = "TAMPERED"
         kwargs["messages"].append({"role": "user", "content": "INJECTED"})
-        return None
 
     with patch("hermes_cli.lifecycle.has_hook", return_value=True), \
             patch("hermes_cli.plugins.invoke_hook_chained", side_effect=_hook):
@@ -137,25 +133,22 @@ def test_replacement_still_carrying_persistence_fields_is_stripped():
     assert all(field not in m for m in out)
 
 
-def test_the_chain_composes_two_rewriters():
-    """The regression: a plugin that rewrites can never see an earlier plugin's rewrite
-    when results are collected independently, so the second rewrite was discarded."""
-    agent = _agent()
-    calls = []
+def test_the_chain_composes_two_rewriters(monkeypatch):
+    """The regression (review T1), driven through the REAL chain (review S-T).
 
-    def _hook(hook_name, chain_key, **kwargs):
-        """Drive the real chain, not a mock of it: the callbacks the manager holds."""
-        current = kwargs[chain_key]
-        for callback in _CALLBACKS:
-            ret = callback(**{**kwargs, chain_key: current})
-            if _is_request_message_list(ret):
-                calls.append([m["content"] for m in ret])
-                current = ret
-        return current
+    The two callbacks are registered on a real ``PluginManager`` and composed by the
+    production ``invoke_hook_chained``, with only ``get_plugin_manager`` pointed at that
+    manager. The earlier version of this test patched ``invoke_hook_chained`` itself and
+    re-implemented the chaining loop in the test, so reverting the production
+    implementation left it green and the regression was unguarded.
+    """
+    from hermes_cli import plugins as plugins_mod
 
-    from agent.conversation_loop import _is_request_message_list
+    manager = plugins_mod.PluginManager(scope_key="transform-request-messages-test")
+    manager._discovered = True  # never discover the machine's real plugins for this test
+    monkeypatch.setattr(plugins_mod, "get_plugin_manager", lambda: manager)
 
-    seen_by_second = {}
+    seen_by_second: dict = {}
 
     def persona(messages=None, **_):
         return [*messages, {"role": "system", "content": "PERSONA"}]
@@ -164,13 +157,10 @@ def test_the_chain_composes_two_rewriters():
         seen_by_second["input"] = [m["content"] for m in messages]
         return [{**m, "content": m["content"].replace("hello", "«secret»")} for m in messages]
 
-    _CALLBACKS[:] = [persona, redactor]
-    try:
-        with patch("hermes_cli.lifecycle.has_hook", return_value=True), \
-                patch("hermes_cli.plugins.invoke_hook_chained", side_effect=_hook):
-            out = _apply_transform_request_messages_plugins(agent, REQUEST, logger=MagicMock())
-    finally:
-        _CALLBACKS.clear()
+    manager._hooks.setdefault("transform_request_messages", []).extend([persona, redactor])
+
+    out = _apply_transform_request_messages_plugins(_agent(), REQUEST, logger=MagicMock())
+
     assert [m["content"] for m in out] == ["sys", "«secret»", "PERSONA"]
     assert seen_by_second["input"] == ["sys", "hello", "PERSONA"], \
         "the redactor must see the persona insertion"
