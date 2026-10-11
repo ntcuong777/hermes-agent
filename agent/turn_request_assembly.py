@@ -146,6 +146,15 @@ def assemble_api_request(
         agent, api_messages, messages, _sel_incoming, logger=request_logger
     )
 
+    # Plugin egress backstop (transform_request_messages): applied at the same seam as the
+    # context-engine selection so rewrites reach the provider payload while the persisted
+    # transcript stays untouched. Gated on has_hook — byte-identical when no plugin registers.
+    from agent.conversation_loop import _apply_transform_request_messages_plugins
+
+    api_messages = _apply_transform_request_messages_plugins(
+        agent, api_messages, logger=request_logger
+    )
+
     # Context selection may replace the request with a fresh clone of canonical history.
     # Re-apply durable rejection suppression after that final replacement hook.
     from agent.anthropic_thinking_replay import apply_rejected_thinking_suppression

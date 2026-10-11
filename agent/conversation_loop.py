@@ -1324,6 +1324,51 @@ def _apply_context_engine_selection(
     return api_messages
 
 
+def _apply_transform_request_messages_plugins(
+    agent: Any, api_messages: list[dict[str, Any]], *, logger: Any,
+) -> list[dict[str, Any]]:
+    """Run the ``transform_request_messages`` plugin hook on the outgoing request copy,
+    fail-open: any exception or invalid return yields ``api_messages`` unchanged.
+
+    Egress backstop for redaction-style plugins (task 06 / spec step 2.2): the hook sees
+    ONLY the request list (structural clones), so a rewrite reaches the provider payload
+    while the persisted transcript keeps its original bytes — the opposite seam from
+    ``transform_llm_output`` (stored reply). First valid list of dicts wins, mirroring
+    ``transform_llm_output``'s first-non-None-string rule. Gate on ``has_hook`` so the
+    no-plugin path stays byte-identical and pays one cheap registry check."""
+    try:
+        from hermes_cli.lifecycle import has_hook as _has_hook
+        if not _has_hook("transform_request_messages"):
+            return api_messages
+    except Exception:
+        logger.debug("transform_request_messages has_hook probe failed; skipping", exc_info=True)
+        return api_messages
+    session_label = getattr(agent, "session_id", None) or "-"
+    try:
+        from hermes_cli.lifecycle import invoke_hook as _invoke_hook
+        results = _invoke_hook(
+            "transform_request_messages",
+            messages=[_clone_message_for_send(m) for m in api_messages],
+            session_id=session_label,
+            model=getattr(agent, "model", None) or "",
+            platform=getattr(agent, "platform", None) or "",
+        )
+    except Exception:
+        logger.warning(
+            "transform_request_messages plugin hook failed; using unmodified request messages (session=%s)",
+            session_label, exc_info=True,
+        )
+        return api_messages
+    for result in results or ():
+        # Require a NON-EMPTY list of dicts (``all([])`` is True; same guard as select_context).
+        if isinstance(result, list) and result and all(isinstance(m, dict) for m in result):
+            # A plugin may echo clones that still carry persistence-only fields; the
+            # pre-hook request copy was already stripped, so strip the replacement too.
+            stripped = [without_persistence_fields(m) for m in result]
+            return result if all(a is b for a, b in zip(stripped, result)) else stripped
+    return api_messages
+
+
 def _notify_context_engine_turn_complete(
     agent: Any, messages: list[dict[str, Any]], *, usage: Optional[dict[str, Any]] = None, logger: Any, **meta: Any
 ) -> None:
