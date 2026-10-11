@@ -1883,6 +1883,23 @@ def invoke_hook(hook_name: str, **kwargs: Any) -> list[Any]:
     return _delivery_manager().invoke_hook(hook_name, **kwargs)
 
 
+def invoke_hook_chained(
+    hook_name: str, chain_key: str, *, accept: Optional[Callable[[Any], bool]] = None,
+    **kwargs: Any,
+) -> Any:
+    """Rewrite-hook variant of :func:`invoke_hook`: each callback's output feeds the next.
+
+    For hooks whose return value REPLACES the input (``transform_request_messages``),
+    collecting independent results cannot compose plugins: every callback is handed the
+    original value, so a plugin that rewrites can never see an earlier plugin's rewrite,
+    and the caller can honour only one of them. ``chain_key`` names the kwarg carrying
+    the value under rewrite; ``accept`` decides which returns may replace it. The final
+    value is returned, or ``None`` when the hook has no callbacks.
+    """
+    return _delivery_manager().invoke_hook_chained(
+        hook_name, chain_key, accept=accept, **kwargs)
+
+
 async def ainvoke_hook(hook_name: str, **kwargs: Any) -> list[Any]:
     """:func:`invoke_hook` for callers on an event loop: ``async def`` callbacks are awaited
     there instead of bridged through a helper thread (see ``PluginManager.ainvoke_hook``)."""

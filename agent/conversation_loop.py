@@ -1324,6 +1324,12 @@ def _apply_context_engine_selection(
     return api_messages
 
 
+def _is_request_message_list(value: Any) -> bool:
+    """Whether *value* may replace the outgoing request list: a NON-EMPTY list of dicts
+    (``all([])`` is True; same guard as ``select_context``)."""
+    return isinstance(value, list) and bool(value) and all(isinstance(m, dict) for m in value)
+
+
 def _apply_transform_request_messages_plugins(
     agent: Any, api_messages: list[dict[str, Any]], *, logger: Any,
 ) -> list[dict[str, Any]]:
@@ -1333,9 +1339,17 @@ def _apply_transform_request_messages_plugins(
     Egress backstop for redaction-style plugins (task 06 / spec step 2.2): the hook sees
     ONLY the request list (structural clones), so a rewrite reaches the provider payload
     while the persisted transcript keeps its original bytes — the opposite seam from
-    ``transform_llm_output`` (stored reply). First valid list of dicts wins, mirroring
-    ``transform_llm_output``'s first-non-None-string rule. Gate on ``has_hook`` so the
-    no-plugin path stays byte-identical and pays one cheap registry check."""
+    ``transform_llm_output`` (stored reply).
+
+    **Chained, not winner-takes-all** (review T1): the callbacks run in registration
+    order with each accepted output feeding the next, so a persona insertion and the
+    redactor's backstop both land. Collecting independent results and returning the first
+    valid one let any earlier rewriter — the persona section, which resolves on ordinary
+    requests — discard the redactor's rewrite, because every callback was handed the same
+    original list. A plugin that returns ``None`` or an invalid value leaves the chain
+    where it was, so the no-plugin and single-plugin paths are unchanged. Gate on
+    ``has_hook`` so the no-plugin path stays byte-identical and pays one cheap registry
+    check."""
     try:
         from hermes_cli.lifecycle import has_hook as _has_hook
         if not _has_hook("transform_request_messages"):
@@ -1344,11 +1358,15 @@ def _apply_transform_request_messages_plugins(
         logger.debug("transform_request_messages has_hook probe failed; skipping", exc_info=True)
         return api_messages
     session_label = getattr(agent, "session_id", None) or "-"
+    # The list handed to the chain doubles as the "nothing replaced it" sentinel.
+    base = [_clone_message_for_send(m) for m in api_messages]
     try:
-        from hermes_cli.lifecycle import invoke_hook as _invoke_hook
-        results = _invoke_hook(
+        from hermes_cli.plugins import invoke_hook_chained as _invoke_hook_chained
+        result = _invoke_hook_chained(
             "transform_request_messages",
-            messages=[_clone_message_for_send(m) for m in api_messages],
+            "messages",
+            accept=_is_request_message_list,
+            messages=base,
             session_id=session_label,
             model=getattr(agent, "model", None) or "",
             platform=getattr(agent, "platform", None) or "",
@@ -1359,14 +1377,12 @@ def _apply_transform_request_messages_plugins(
             session_label, exc_info=True,
         )
         return api_messages
-    for result in results or ():
-        # Require a NON-EMPTY list of dicts (``all([])`` is True; same guard as select_context).
-        if isinstance(result, list) and result and all(isinstance(m, dict) for m in result):
-            # A plugin may echo clones that still carry persistence-only fields; the
-            # pre-hook request copy was already stripped, so strip the replacement too.
-            stripped = [without_persistence_fields(m) for m in result]
-            return result if all(a is b for a, b in zip(stripped, result)) else stripped
-    return api_messages
+    if result is base or not _is_request_message_list(result):
+        return api_messages
+    # A plugin may echo clones that still carry persistence-only fields; the
+    # pre-hook request copy was already stripped, so strip the replacement too.
+    stripped = [without_persistence_fields(m) for m in result]
+    return result if all(a is b for a, b in zip(stripped, result)) else stripped
 
 
 def _notify_context_engine_turn_complete(
