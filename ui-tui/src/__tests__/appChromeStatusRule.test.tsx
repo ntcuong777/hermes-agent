@@ -480,3 +480,49 @@ describe('StatusRule perf read-outs (cache hit / latency / tps)', () => {
     expect(textContent(element)).not.toContain('weekly-digest')
   })
 })
+
+describe('StatusRule cost and quota read-outs', () => {
+  const spendUsage = {
+    ...baseProps.usage,
+    cost_status: 'estimated' as const,
+    cost_usd: 0.4231,
+    quota: [
+      { label: 'Session', used_percent: 12 },
+      { label: 'Weekly', used_percent: 60 }
+    ]
+  }
+
+  const listed = new Set(['model', 'context_pct', 'cost', 'quota'])
+
+  it('renders cost and the active account\'s quota when the fields list them', () => {
+    const rendered = textContent(StatusRule({ ...baseProps, cols: 120, statusBarFields: listed, usage: spendUsage }))
+
+    expect(rendered).toContain('~$0.42')
+    expect(rendered).toContain('5h 12% wk 60%')
+  })
+
+  it('is opt-in: the default bar and a list without them show neither', () => {
+    expect(textContent(StatusRule({ ...baseProps, cols: 120, usage: spendUsage }))).not.toContain('$0.42')
+
+    const rendered = textContent(
+      StatusRule({ ...baseProps, cols: 120, statusBarFields: new Set(['model']), usage: spendUsage })
+    )
+
+    expect(rendered).not.toContain('$0.42')
+    expect(rendered).not.toContain('5h 12%')
+  })
+
+  it('self-hides when the server sends no data', () => {
+    const rendered = textContent(StatusRule({ ...baseProps, cols: 120, statusBarFields: listed }))
+
+    expect(rendered).not.toContain('$')
+    expect(rendered).not.toContain('5h')
+  })
+
+  it('keeps cost on a narrow terminal and drops quota first', () => {
+    const rendered = textContent(StatusRule({ ...baseProps, cols: 64, statusBarFields: listed, usage: spendUsage }))
+
+    expect(rendered).toContain('~$0.42')
+    expect(rendered).not.toContain('5h 12%')
+  })
+})

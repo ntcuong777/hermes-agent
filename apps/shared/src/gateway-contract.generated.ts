@@ -579,6 +579,13 @@ export interface Usage {
   dev_credits_spent_micros?: number | null
   cost_usd?: number | null
   cost_status?: string | null
+  quota?: QuotaWindow[] | null
+  [key: string]: unknown
+}
+/** ``tui_gateway/usage_status.py::quota_fields``: one subscription window of the active account. */
+export interface QuotaWindow {
+  label?: string
+  used_percent?: number
   [key: string]: unknown
 }
 export interface McpServerStatus {
@@ -3424,6 +3431,7 @@ export interface SessionUsageResult {
   dev_credits_spent_micros?: number | null
   cost_usd?: number | null
   cost_status?: string | null
+  quota?: QuotaWindow[] | null
   credits_lines?: string[] | null
   [key: string]: unknown
 }

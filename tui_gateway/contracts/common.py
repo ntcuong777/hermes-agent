@@ -16,6 +16,13 @@ class OpenModel(Result):
     model_config = Result.model_config | {"extra": "allow"}
 
 
+class QuotaWindow(OpenModel):
+    """``tui_gateway/usage_status.py::quota_fields``: one subscription window of the active account."""
+
+    label: str = ""
+    used_percent: float = 0.0
+
+
 class Usage(OpenModel):
     """``tui_gateway/server.py::_get_usage`` + ``agent/context_breakdown.py::context_usage_fields``."""
 
@@ -42,6 +49,7 @@ class Usage(OpenModel):
     dev_credits_spent_micros: int | None = None
     cost_usd: float | None = None
     cost_status: str | None = None
+    quota: list[QuotaWindow] | None = None
 
 
 class ProjectRef(Result):

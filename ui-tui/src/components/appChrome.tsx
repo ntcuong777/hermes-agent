@@ -15,6 +15,7 @@ import { VERBS } from '../content/verbs.js'
 import { fmtDuration } from '../domain/messages.js'
 import { stickyPromptFromViewport } from '../domain/viewport.js'
 import { messages, t as tr } from '../i18n/runtime.js'
+import { costLabel, quotaLabel, quotaSeverity } from '../lib/statusUsage.js'
 import { buildSubagentTree, treeTotals, widthByDepth } from '../lib/subagentTree.js'
 import { useScrollbarSnapshot, useViewportSnapshot } from '../lib/viewportStore.js'
 import type { Theme } from '../theme.js'
@@ -655,6 +656,17 @@ export function StatusRule({
       : ''
 
   const showBar = !!bar && fits(SEP + stringWidth(`[${bar}] ${pct != null ? `${contextMark}${pct}%` : ''}`))
+
+  // Session cost and the active account's quota: opt-in (display.status_bar.fields must list them), and
+  // ranked right under the context bar, above the clock and perf read-outs, because they are meant to be
+  // seen at all times, not only when there is room left over.
+  const optIn = (name: string) => statusBarFields !== null && statusBarFields.has(name)
+  const costText = optIn('cost') ? costLabel(usage) : ''
+  const quotaText = optIn('quota') ? quotaLabel(usage.quota) : ''
+  const showCost = cols >= 60 && !!costText && fits(SEP + stringWidth(costText))
+  const showQuota = cols >= 76 && !!quotaText && fits(SEP + stringWidth(`◔ ${quotaText}`))
+  const quotaSev = quotaSeverity(usage.quota)
+  const quotaColor = quotaSev === 'bad' ? t.color.statusBad : quotaSev === 'warn' ? t.color.statusWarn : t.color.muted
   const showDuration = segs.duration && ok('duration') && !!sessionStartedAt && fits(SEP + MAX_DURATION_WIDTH)
 
   // Idle clock — time since the last final agent response. Hidden while busy
@@ -786,6 +798,18 @@ export function StatusRule({
             {' │ '}
             <Text color={barColor}>[{bar}]</Text>{' '}
             <Text color={barColor}>{pct != null ? `${contextMark}${pct}%` : ''}</Text>
+          </Text>
+        ) : null}
+        {showCost ? (
+          <Text color={t.color.muted} wrap="truncate-end">
+            {' │ '}
+            {costText}
+          </Text>
+        ) : null}
+        {showQuota ? (
+          <Text color={t.color.muted} wrap="truncate-end">
+            {' │ '}
+            <Text color={quotaColor}>◔ {quotaText}</Text>
           </Text>
         ) : null}
         {showDuration ? (

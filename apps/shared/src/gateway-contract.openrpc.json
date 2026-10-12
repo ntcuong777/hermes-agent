@@ -27006,6 +27006,24 @@
         "title": "QueuedPrompt",
         "type": "object"
       },
+      "QuotaWindow": {
+        "additionalProperties": true,
+        "description": "``tui_gateway/usage_status.py::quota_fields``: one subscription window of the active account.",
+        "properties": {
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "used_percent": {
+            "default": 0.0,
+            "title": "Used Percent",
+            "type": "number"
+          }
+        },
+        "title": "QuotaWindow",
+        "type": "object"
+      },
       "ReactionAuthor": {
         "enum": [
           "user",
@@ -32712,6 +32730,21 @@
             "default": null,
             "title": "Cost Status"
           },
+          "quota": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/QuotaWindow"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Quota"
+          },
           "credits_lines": {
             "anyOf": [
               {
@@ -37906,6 +37939,21 @@
             ],
             "default": null,
             "title": "Cost Status"
+          },
+          "quota": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/QuotaWindow"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Quota"
           }
         },
         "title": "Usage",
