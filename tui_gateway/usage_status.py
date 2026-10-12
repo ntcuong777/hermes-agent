@@ -40,24 +40,56 @@ def _cost_of(row: dict) -> float:
 # *this* parent, because a compression continuation inherits ``model_config`` verbatim and so
 # carries its branch's marker, which names another row.
 _FORK_MARKERS = ("_branched_from", "_delegate_from", "_reset_from")
+# What a branch's parent had cost when the branch was made (written by ``_persist_branch``).
+FORK_COST_KEY = "_cost_at_fork_usd"
+_FORK_DEPTH_CAP = (
+    20  # branch-of-a-branch nesting; only a backstop against a parent loop
+)
+
+
+def _config(row: dict) -> dict:
+    config = row.get("model_config")
+    if isinstance(config, str):
+        with contextlib.suppress(ValueError):
+            config = json.loads(config)
+    return config if isinstance(config, dict) else {}
 
 
 def _is_continuation(child: dict, parent: dict, parent_id: str) -> bool:
     """Whether *child* continues *parent* after a compression (same conversation, so same bill).
-    Branches, delegate children and resets share ``parent_session_id`` but are other conversations."""
-    config = child.get("model_config")
-    if isinstance(config, str):
-        with contextlib.suppress(ValueError):
-            config = json.loads(config)
-    if isinstance(config, dict) and any(
-        str(config.get(marker) or "") == parent_id for marker in _FORK_MARKERS
-    ):
+    Branches, delegate children and resets share ``parent_session_id`` but start a new row; a
+    branch's bill is handled by ``_fork_cost``, the others are other conversations."""
+    config = _config(child)
+    if any(str(config.get(marker) or "") == parent_id for marker in _FORK_MARKERS):
         return False
     return parent.get("end_reason") == "compression" and child.get("source") != "tool"
 
 
-def _lineage_cost(db: Any, session_id: str) -> tuple[float, str]:
-    """Stored cost of the session and its compression ancestors, and the tip row's cost status.
+def _fork_cost(db: Any, root: dict, depth: int) -> float:
+    """What a branch copied from its parent: the cost recorded at the fork, else (rows from the
+    classic CLI or older builds) the parent's cost now. 0 for anything that is not a branch."""
+    parent_id = root.get("parent_session_id")
+    config = _config(root)
+    if not parent_id or str(config.get("_branched_from") or "") != parent_id:
+        return 0.0
+    recorded = config.get(FORK_COST_KEY)
+    if (
+        isinstance(recorded, (int, float))
+        and not isinstance(recorded, bool)
+        and recorded >= 0
+    ):
+        return float(recorded)
+    if depth >= _FORK_DEPTH_CAP:
+        return 0.0
+    return lineage_cost(db, parent_id, _depth=depth + 1)[0]
+
+
+def lineage_cost(db: Any, session_id: str, *, _depth: int = 0) -> tuple[float, str]:
+    """Cost of the session, and the tip row's cost status.
+
+    That is the stored cost of its row and of its compression ancestors (one conversation that
+    rotated rows), plus, when the chain began as a branch, what the branch copied from its parent.
+    Delegate children, resets and tool sessions are other conversations and add nothing.
 
     ``get_session`` drains queued token deltas first, so the total already holds what this
     process has spent so far."""
@@ -76,7 +108,7 @@ def _lineage_cost(db: Any, session_id: str) -> tuple[float, str]:
         seen.add(parent_id)
         total += _cost_of(parent)
         row = parent
-    return total, status
+    return total + _fork_cost(db, row, _depth), status
 
 
 def _carried(agent: Any, counter: float) -> tuple[float, str]:
@@ -95,7 +127,7 @@ def _carried(agent: Any, counter: float) -> tuple[float, str]:
     result: tuple[float, str] = (0.0, "")
     if db is not None and session_id:
         try:
-            stored, status = _lineage_cost(db, session_id)
+            stored, status = lineage_cost(db, session_id)
         except Exception:
             return result
         result = (max(0.0, stored - counter), status)

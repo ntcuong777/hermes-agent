@@ -283,14 +283,82 @@ def test_the_whole_compression_lineage_counts():
     assert usage_status.cost_fields(_agent(db))["cost_usd"] == 1.0
 
 
-def test_a_branch_does_not_inherit_its_parents_cost():
+def test_a_branch_starts_from_the_cost_recorded_at_the_fork():
+    # The parent went on spending after the fork (now 9.0); the branch copied 5.0 and continues.
     db = _Db(
         {
-            "s2": _row(5.0, end_reason="compression"),
+            "s2": _row(9.0),
+            "s3": _row(
+                0.2,
+                parent="s2",
+                model_config={"_branched_from": "s2", "_cost_at_fork_usd": 5.0},
+            ),
+        }
+    )
+    assert usage_status.cost_fields(_agent(db))["cost_usd"] == 5.2
+
+
+def test_a_branch_without_a_snapshot_copies_the_parents_cost_now():
+    # Rows written by the classic CLI or older builds carry no snapshot: the parent's lineage total.
+    db = _Db(
+        {
+            "s1": _row(1.0, end_reason="compression"),
+            "s2": _row(4.0, parent="s1"),
             "s3": _row(0.2, parent="s2", model_config={"_branched_from": "s2"}),
         }
     )
+    assert usage_status.cost_fields(_agent(db))["cost_usd"] == 5.2
+
+
+def test_a_branch_of_a_branch_counts_each_fork_once():
+    db = _Db(
+        {
+            "s1": _row(1.0),
+            "s2": _row(
+                2.0,
+                parent="s1",
+                model_config={"_branched_from": "s1", "_cost_at_fork_usd": 1.0},
+            ),
+            "s3": _row(
+                0.5,
+                parent="s2",
+                model_config={"_branched_from": "s2", "_cost_at_fork_usd": 3.0},
+            ),
+        }
+    )
+    assert usage_status.cost_fields(_agent(db))["cost_usd"] == 3.5
+
+
+def test_a_compressed_branch_counts_its_fork_once():
+    # s3 is the branch, s4 its compression continuation (inheriting s3's model_config verbatim).
+    config = {"_branched_from": "s2", "_cost_at_fork_usd": 5.0}
+    db = _Db(
+        {
+            "s2": _row(9.0),
+            "s3": _row(0.3, parent="s2", end_reason="compression", model_config=config),
+            "s4": _row(0.2, parent="s3", model_config=config),
+        }
+    )
+    assert usage_status.cost_fields(_agent(db, session_id="s4"))["cost_usd"] == 5.5
+
+
+def test_a_branch_whose_parent_is_gone_keeps_its_own_cost():
+    db = _Db({"s3": _row(0.2, parent="s2", model_config={"_branched_from": "s2"})})
     assert usage_status.cost_fields(_agent(db))["cost_usd"] == 0.2
+
+
+def test_a_garbage_snapshot_falls_back_to_the_parents_cost_now():
+    db = _Db(
+        {
+            "s2": _row(4.0),
+            "s3": _row(
+                0.2,
+                parent="s2",
+                model_config={"_branched_from": "s2", "_cost_at_fork_usd": "lots"},
+            ),
+        }
+    )
+    assert usage_status.cost_fields(_agent(db))["cost_usd"] == 4.2
 
 
 def test_a_parent_that_did_not_end_by_compression_is_not_part_of_the_session():

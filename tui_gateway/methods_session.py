@@ -259,7 +259,14 @@ def _persist_branch(db, new_key: str, parent_key: str, title: str, history: list
         parent_prompt = (db.get_session(parent_key) or {}).get("system_prompt")
     except Exception:
         logger.debug("branch: parent system prompt read failed for %s", parent_key, exc_info=True)
-    db.create_session(new_key, source=source, model=model, model_config={"_branched_from": parent_key},
+    # A branch continues its parent's bill from the fork: record what the parent had cost now. It goes in
+    # model_config, not estimated_cost_usd, which analytics sum and would then count twice.
+    branch_config: dict = {"_branched_from": parent_key}
+    with contextlib.suppress(Exception):
+        from tui_gateway.usage_status import FORK_COST_KEY, lineage_cost
+        if fork_cost := lineage_cost(db, parent_key)[0]:
+            branch_config[FORK_COST_KEY] = round(fork_cost, 6)
+    db.create_session(new_key, source=source, model=model, model_config=branch_config,
                       parent_session_id=parent_key, cwd=cwd, profile_name=profile_name, user_id=user_id,
                       system_prompt=parent_prompt or None)
     try:
