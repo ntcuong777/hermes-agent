@@ -4,7 +4,7 @@ import { delimiter, join } from 'node:path'
 
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { resolveEditor } from './editor.js'
+import { draftFromEditorText, resolveEditor } from './editor.js'
 
 const exe = (dir: string, name: string): string => {
   const path = join(dir, name)
@@ -70,5 +70,31 @@ describe('resolveEditor', () => {
 
   it('uses notepad.exe on Windows when no env override', () => {
     expect(resolveEditor({ PATH: dir }, 'win32')).toEqual(['notepad.exe'])
+  })
+})
+
+describe('draftFromEditorText', () => {
+  it('puts the last line in the input and the rest above it, as the composer holds a draft', () => {
+    expect(draftFromEditorText('one\ntwo\nthree\n')).toEqual({ buf: ['one', 'two'], line: 'three' })
+  })
+
+  it('keeps a one-line prompt as the input alone', () => {
+    expect(draftFromEditorText('hello\n')).toEqual({ buf: [], line: 'hello' })
+  })
+
+  it('drops only trailing whitespace, keeping blank lines inside', () => {
+    expect(draftFromEditorText('a\n\nb\n\n')).toEqual({ buf: ['a', ''], line: 'b' })
+  })
+
+  it('gives an empty draft for an empty save', () => {
+    expect(draftFromEditorText('')).toEqual({ buf: [], line: '' })
+    expect(draftFromEditorText('\n\n')).toEqual({ buf: [], line: '' })
+  })
+
+  it('round-trips with how the composer flattens a draft', () => {
+    const text = 'x\ny\nz'
+    const { buf, line } = draftFromEditorText(text)
+
+    expect([...buf, line].join('\n')).toBe(text)
   })
 })

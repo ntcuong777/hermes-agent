@@ -14,7 +14,7 @@ import { useCompletion } from '../hooks/useCompletion.js'
 import { useInputHistory } from '../hooks/useInputHistory.js'
 import { useQueue } from '../hooks/useQueue.js'
 import { isUsableClipboardText, readClipboardText } from '../lib/clipboard.js'
-import { resolveEditor } from '../lib/editor.js'
+import { draftFromEditorText, resolveEditor } from '../lib/editor.js'
 import { readOsc52Clipboard } from '../lib/osc52.js'
 import { isRemoteShellSession } from '../lib/terminalSetup.js'
 import { pasteTokenLabel, stripTrailingPasteNewlines } from '../lib/text.js'
@@ -406,19 +406,16 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
         return
       }
 
-      const text = readFileSync(file, 'utf8').trimEnd()
+      // Leave what the editor saved as an unsent draft: the person reads it again and presses
+      // Enter themselves. (Submitting here made a save in the editor send the prompt.)
+      const draft = draftFromEditorText(readFileSync(file, 'utf8'))
 
-      if (!text) {
-        return
-      }
-
-      setInput('')
-      setInputBuf([])
-      submitRef.current(text)
+      setInputBuf(draft.buf)
+      setInput(draft.line)
     } finally {
       rmSync(dir, { force: true, recursive: true })
     }
-  }, [input, inputBuf, setInput, submitRef])
+  }, [input, inputBuf, setInput])
 
   const actions = useMemo(
     () => ({

@@ -50,6 +50,17 @@ export const resolveEditor = (
   return [found ?? 'vi']
 }
 
+/**
+ * Split the text an editor saved back into the composer's shape: earlier lines in `buf`, the
+ * line being typed in `line` (the same shape `[...buf, line].join('\n')` flattens). The
+ * trailing newline editors add is dropped. An empty save gives an empty draft.
+ */
+export const draftFromEditorText = (text: string): { buf: string[]; line: string } => {
+  const lines = text.trimEnd().split('\n')
+
+  return { buf: lines.slice(0, -1), line: lines.at(-1) ?? '' }
+}
+
 /** Suspend Ink, open ``initial`` in $EDITOR, return the edited text (null if aborted). */
 export async function openInEditor(initial: string, suffix = '.txt'): Promise<null | string> {
   const dir = mkdtempSync(join(tmpdir(), 'hermes-edit-'))
