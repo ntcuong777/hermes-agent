@@ -799,6 +799,11 @@ _WIZARD_NO_SERVICE_LINES = {
 def _wizard_service_status_block() -> None:
     """Pre-platform service status: warnings, then offer to start an installed-but-stopped service."""
     print()
+    from hermes_cli.gateway_declared_supervisor import declared_external_supervisor
+    declared = declared_external_supervisor()
+    if declared:
+        _gw().print_success(f"Gateway service is managed by {declared}.")
+        return
     service_installed = _gw()._is_service_installed()
     service_running = _gw()._is_service_running()
 
@@ -883,6 +888,11 @@ def _wizard_post_setup() -> None:
     """Offer to install/start/restart the gateway once at least one platform has progress."""
     print()
     print(_gw().color("─" * 58, _gw().Colors.DIM))
+    from hermes_cli.gateway_declared_supervisor import declared_external_supervisor, offer_restart_through_supervisor
+    declared = declared_external_supervisor()
+    if declared:
+        offer_restart_through_supervisor(declared)
+        return
     if _gw()._served_profile_needs_no_service():
         return
     service_installed = _gw()._is_service_installed()

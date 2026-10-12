@@ -607,6 +607,11 @@ def refresh_launchd_plist_if_needed() -> bool:
 
 
 def launchd_install(force: bool = False, *, start_now: bool = True, force_unit_path: bool = False):
+    from hermes_cli.gateway_declared_supervisor import declared_external_supervisor, note_externally_supervised
+    declared = declared_external_supervisor()
+    if declared:
+        note_externally_supervised(declared)
+        return
     plist_path = _gw().get_launchd_plist_path()
     label = _gw().get_launchd_label()
     # A plist pinning another home is another install's gateway, --force included; --force-unit-path repoints.

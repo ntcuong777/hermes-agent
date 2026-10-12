@@ -3616,6 +3616,11 @@ def systemd_install(
     non_interactive: bool = False,
     force_unit_path: bool = False,
 ):
+    from hermes_cli.gateway_declared_supervisor import declared_external_supervisor, note_externally_supervised
+    declared = declared_external_supervisor()
+    if declared:
+        note_externally_supervised(declared)
+        return
     if system:
         _require_root_for_system_service("install")
 
@@ -4224,6 +4229,13 @@ def _served_profile_needs_no_service() -> bool:
     would register can only sit dead (the start guard refuses it) or double-bind its platforms.
     Shared by ``hermes setup gateway`` / ``hermes setup`` / ``hermes import`` (``ensure_gateway_service``)
     and the ``hermes gateway setup`` wizard. See #111958."""
+    # A service Hermes did not install owns the gateway (``gateway.external_supervisor``): installing
+    # a second one would race it for the gateway, so every setup flow stops here, not just the wizard.
+    from hermes_cli.gateway_declared_supervisor import declared_external_supervisor, note_externally_supervised
+    declared = declared_external_supervisor()
+    if declared:
+        note_externally_supervised(declared)
+        return True
     if not named_profile_served_by_running_multiplexer():
         # Not served (yet): a named profile still gets no service of its own — same rule and text
         # as `gateway install`, so `hermes -p X setup` cannot grow a fleet member the verb refuses.
