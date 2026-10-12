@@ -25,11 +25,14 @@ export const isActionMod = (key: { ctrl: boolean; meta: boolean; super?: boolean
  *     no terminal rewrites Cmd into them.
  *   - Ctrl+D is the terminal EOF convention (exit on an empty line); Cmd+D is
  *     taken by the terminal itself in Ghostty (split pane), so it is no substitute.
+ *   - Ctrl+G opens the draft in $EDITOR. Cmd+G never reaches a terminal app (it is the
+ *     terminal's own Find Next) and Alt+G types © unless Option is set to send Meta, so
+ *     raw Ctrl+G is the one chord that works on a stock macOS terminal.
  */
 export const isMacActionFallback = (
   key: { ctrl: boolean; meta: boolean; super?: boolean },
   ch: string,
-  target: 'a' | 'd' | 'e' | 'u' | 'k' | 'w'
+  target: 'a' | 'd' | 'e' | 'g' | 'u' | 'k' | 'w'
 ): boolean => isMac && key.ctrl && !key.meta && key.super !== true && ch.toLowerCase() === target
 
 /** Match action-modifier + a single character (case-insensitive). */

@@ -296,3 +296,21 @@ describeHost('isMacActionFallback', () => {
     expect(isMacActionFallback({ ctrl: true, meta: false, super: false }, 'w', 'w')).toBe(false)
   })
 })
+
+// The macOS arm runs on a macOS host only (no faking the host OS, see tests/AGENTS.md).
+const describeMac = describe.runIf(isMac)
+
+describeMac('isMacActionFallback Ctrl+G (open $EDITOR)', () => {
+  it('accepts raw Ctrl+G, the only chord a stock macOS terminal can send', () => {
+    expect(isMacActionFallback({ ctrl: true, meta: false, super: false }, 'g', 'g')).toBe(true)
+  })
+
+  it('does not take Ctrl+Alt+G or Cmd+G, which stay with their own paths', () => {
+    expect(isMacActionFallback({ ctrl: true, meta: true, super: false }, 'g', 'g')).toBe(false)
+    expect(isMacActionFallback({ ctrl: true, meta: false, super: true }, 'g', 'g')).toBe(false)
+  })
+
+  it('does not take a plain g', () => {
+    expect(isMacActionFallback({ ctrl: false, meta: false, super: false }, 'g', 'g')).toBe(false)
+  })
+})

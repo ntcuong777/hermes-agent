@@ -945,8 +945,9 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
     // Cmd/Ctrl+G, plus Alt+G fallback for VSCode/Cursor (they bind the
     // primary keystroke to "Find Next" before the TUI sees it; Alt+G
-    // arrives as meta+g across platforms).
-    if (ch.toLowerCase() === 'g' && (isAction(key, ch, 'g') || key.meta)) {
+    // arrives as meta+g across platforms). On macOS the action modifier is Cmd,
+    // which no terminal sends, so raw Ctrl+G is accepted there as well.
+    if (ch.toLowerCase() === 'g' && (isAction(key, ch, 'g') || isMacActionFallback(key, ch, 'g') || key.meta)) {
       return void cActions.openEditor().catch((err: unknown) => {
         actions.sys(
           err instanceof Error
