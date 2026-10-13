@@ -486,7 +486,9 @@ const effortLabel = (effort?: string, wire?: string) => {
     .trim()
     .toLowerCase()
 
-  if (!value || value === 'medium' || value === 'normal' || value === 'default') {
+  // `medium` is shown too: hiding it made a session on the middle level look like one with no effort
+  // set. Only "unset" and the route's own unnamed default stay hidden.
+  if (!value || value === 'normal' || value === 'default') {
     return ''
   }
 
