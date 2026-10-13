@@ -372,8 +372,15 @@ def _terminal_backend_on_host() -> bool:
     backend = _effective_terminal_backend()
     if backend == "local":
         return True
-    from agent.terminal_env_registry import provider_flag
+    from agent.terminal_env_registry import get_provider, provider_flag
 
+    if get_provider(backend) is None:
+        # A plugin backend registers when plugins are discovered, which the gateway does on the first agent build,
+        # not at launch. Until then `is_remote` read as its default (remote) and `@` completion showed nothing.
+        with contextlib.suppress(Exception):
+            from hermes_cli.plugins import discover_plugins
+
+            discover_plugins()
     return provider_flag(backend, "is_remote", True) is False
 
 
