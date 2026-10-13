@@ -44,7 +44,8 @@ describe('StatusRule model label shows the session effort at every level', () =>
   })
 
   it('still shows the other levels', () => {
-    for (const level of ['minimal', 'low', 'high', 'xhigh']) {
+    // every level Hermes accepts (VALID_REASONING_EFFORTS) plus `none`, which is how a disabled effort arrives
+    for (const level of ['none', 'minimal', 'low', 'high', 'xhigh', 'max', 'ultra']) {
       expect(textContent(StatusRule({ ...baseProps, modelReasoningEffort: level }))).toContain(`opus 4.8 ${level}`)
     }
   })
