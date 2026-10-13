@@ -1,0 +1,147 @@
+# Keep the personal fork current with NousResearch/hermes-agent without
+# ever changing `personal` unattended.
+#
+#   merge   upstream/main -> throwaway branch sync/upstream
+#   check   fork-check.yml on that branch (only when the merge was clean)
+#   report  clean + green -> PR into personal (waits for the person)
+#           conflict or red -> issue labelled upstream-sync-alert
+#
+# The alert issue is what the person's Hermes (a no_agent cron script on the
+# Mac/NixOS box) relays to Telegram. The run also ends red, so GitHub's own
+# failure mail is a second channel.
+#
+# Needs the repo secret SYNC_PAT: a fine-grained token on this repo with
+# contents, pull requests, issues (read/write) and workflows (write). The
+# built-in GITHUB_TOKEN cannot push upstream's .github/workflows edits, and
+# PRs it opens trigger no workflows. This file only runs from the default
+# branch, so `personal` must be the fork's default branch.
+name: upstream-sync
+
+on:
+  schedule:
+    - cron: '17 21 * * *' # 04:17 in Asia/Ho_Chi_Minh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_URL: https://github.com/NousResearch/hermes-agent.git
+  SYNC_BRANCH: sync/upstream
+  ALERT_LABEL: upstream-sync-alert
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    outputs:
+      state: ${{ steps.merge.outputs.state }}
+      files: ${{ steps.merge.outputs.files }}
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
+        with:
+          ref: personal
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_PAT }}
+
+      - id: merge
+        run: |
+          set -euo pipefail
+          git config user.name "upstream-sync"
+          git config user.email "upstream-sync@users.noreply.github.com"
+          git remote add upstream "$UPSTREAM_URL"
+          git fetch --no-tags upstream main
+
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "state=current" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git checkout -B "$SYNC_BRANCH"
+          if git merge --no-edit -m "Merge upstream main into personal" upstream/main; then
+            git push --force origin "$SYNC_BRANCH"
+            echo "state=merged" >> "$GITHUB_OUTPUT"
+          else
+            files=$(git diff --name-only --diff-filter=U | tr '\n' ' ')
+            git merge --abort
+            echo "state=conflict" >> "$GITHUB_OUTPUT"
+            echo "files=${files}" >> "$GITHUB_OUTPUT"
+          fi
+
+  check:
+    needs: merge
+    if: needs.merge.outputs.state == 'merged'
+    uses: ./.github/workflows/fork-check.yml
+    with:
+      ref: sync/upstream
+
+  report:
+    needs: [merge, check]
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.SYNC_PAT }}
+      GH_REPO: ${{ github.repository }}
+      STATE: ${{ needs.merge.outputs.state }}
+      CHECK: ${{ needs.check.result }}
+      FILES: ${{ needs.merge.outputs.files }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Report
+        run: |
+          set -euo pipefail
+          gh label create "$ALERT_LABEL" --color B60205 --force \
+            --description "Upstream sync needs the person" >/dev/null
+
+          open_alert=$(gh issue list --label "$ALERT_LABEL" --state open \
+            --json number --jq '.[0].number // empty')
+
+          raise_alert() { # $1 title, $2 body
+            if [ -n "$open_alert" ]; then
+              gh issue edit "$open_alert" --title "$1" --body "$2" >/dev/null
+              gh issue comment "$open_alert" --body "Still failing: $RUN_URL" >/dev/null
+            else
+              gh issue create --label "$ALERT_LABEL" --title "$1" --body "$2" >/dev/null
+            fi
+          }
+
+          ensure_pr() { # $1 title, $2 extra gh flags
+            existing=$(gh pr list --head "$SYNC_BRANCH" --base personal --state open \
+              --json number --jq '.[0].number // empty')
+            if [ -z "$existing" ]; then
+              # shellcheck disable=SC2086
+              gh pr create --head "$SYNC_BRANCH" --base personal --title "$1" \
+                --body "Automated merge of upstream main. Run: $RUN_URL" $2 >/dev/null
+            fi
+          }
+
+          close_alert() {
+            if [ -n "$open_alert" ]; then
+              gh issue close "$open_alert" --comment "Clean again: $RUN_URL" >/dev/null
+            fi
+          }
+
+          case "$STATE:$CHECK" in
+            current:*)
+              close_alert ;;
+            merged:success)
+              ensure_pr "Merge upstream main" ""
+              close_alert ;;
+            merged:*)
+              ensure_pr "Merge upstream main (tests red)" "--draft"
+              raise_alert "upstream sync: tests red after a clean merge" \
+                "Upstream merged without conflicts into \`$SYNC_BRANCH\`, but fork-check failed. Draft PR is open. Run: $RUN_URL"
+              exit 1 ;;
+            conflict:*)
+              raise_alert "upstream sync: merge conflict" \
+                "Merging upstream main into personal conflicts in: ${FILES:-unknown}. Nothing was pushed. Run: $RUN_URL"
+              exit 1 ;;
+            *)
+              # The merge job itself failed (secret missing, fetch error): still tell the person.
+              raise_alert "upstream sync: the workflow itself failed" \
+                "The merge job ended in an unexpected state (state='${STATE}', check='${CHECK}'). Run: $RUN_URL"
+              exit 1 ;;
+          esac

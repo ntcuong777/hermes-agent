@@ -1,0 +1,70 @@
+# The checks the personal fork's own patches must keep passing (U1, U2 and
+# the code they sit next to). Upstream's full CI is disabled on this fork:
+# it needs 32-core runners and secrets the fork does not have.
+#
+# Called by upstream-sync.yml on the merged branch, and runs on PRs into
+# `personal`, so a merge of upstream is tested before it can land.
+#
+# Add a test here whenever a fork-only patch lands.
+name: fork-check
+
+on:
+  pull_request:
+    branches: [personal]
+  workflow_call:
+    inputs:
+      ref:
+        description: Branch or SHA to test.
+        type: string
+        required: true
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-check-${{ inputs.ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORK_PYTEST_FILES: >-
+    tests/gateway/test_complete_path_host_plugin_backend.py
+    tests/gateway/test_complete_path_at_filter.py
+    tests/tui_gateway
+  FORK_VITEST_FILTER: src/__tests__/textInput
+
+jobs:
+  check:
+    name: Fork patches
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Set up the locked Python and Node toolchain
+        uses: ./.github/actions/setup-pm
+        with:
+          toolchain: all
+          extras: '["all"]'
+          test-environment: 'true'
+
+      - name: Python — the fork's gateway patches
+        run: |
+          # shellcheck disable=SC2086 # the list is meant to word-split
+          "$HERMES_PYTHON" -m pytest $FORK_PYTEST_FILES -q -p no:cacheprovider
+        env:
+          OPENROUTER_API_KEY: ''
+          OPENAI_API_KEY: ''
+          NOUS_API_KEY: ''
+
+      - name: Install JS workspace
+        run: npm ci --ignore-scripts
+
+      - name: TUI — build ink, typecheck, composer tests
+        working-directory: ui-tui
+        run: |
+          npm run build:ink
+          npx tsc --noEmit -p tsconfig.json
+          npx vitest run "$FORK_VITEST_FILTER"
