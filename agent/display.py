@@ -660,6 +660,15 @@ def _resolve_skill_manage_paths(args: dict) -> list[Path]:
     return [skill_dir / "SKILL.md"] if action in {"edit", "patch"} else []
 
 
+def _edits_land_on_this_host(backend: str) -> bool:
+    """``local``, or a plugin backend that declares ``is_remote = False`` (nono: a sandbox around host bash)."""
+    if backend == "local":
+        return True
+    from agent.terminal_env_registry import provider_flag
+
+    return provider_flag(backend, "is_remote", True) is False
+
+
 def _resolve_local_edit_paths(tool_name: str, function_args: dict | None, task_id: str | None = None) -> list[Path]:
     """Resolve local filesystem targets for write-capable tools."""
     if not isinstance(function_args, dict):
@@ -672,7 +681,7 @@ def _resolve_local_edit_paths(tool_name: str, function_args: dict | None, task_i
 
         # A remote target may happen to exist on this host too. Never persist a
         # preview of that unrelated file; patch can still supply its own diff.
-        if _terminal_env_type_for_task(task_id) != "local":
+        if not _edits_land_on_this_host(_terminal_env_type_for_task(task_id)):
             return []
         return [Path(_resolve_path_for_task(path, task_id))]
     return [_resolved_path(path)] if path else []
@@ -725,7 +734,10 @@ def extract_edit_diff(
         diff = data.get("diff") if isinstance(data, dict) else None
         if isinstance(diff, str) and diff.strip():
             return diff
-    if tool_name not in {"write_file", "patch", "skill_manage"} or not _result_succeeded(result):
+    # A `patch` replacement may answer in plain text (its edit echo) and raises on failure, which the
+    # registry turns into {"error": ...}; the snapshot says whether anything changed.
+    text_patch = tool_name == "patch" and bool(result) and not isinstance(safe_json_loads(result), dict)
+    if tool_name not in {"write_file", "patch", "skill_manage"} or not (text_patch or _result_succeeded(result)):
         return None
     return _diff_from_snapshot(snapshot)
 
