@@ -358,7 +358,9 @@ def _extract_file_mutation_targets(tool_name: str, args: dict[str, Any]) -> list
         return []
     body = args.get("patch") or ""
     if not isinstance(body, str) or not body:
-        return []
+        # No V4A body: a `patch` replacement (hashline) takes `path` + `edits`, and a model that remembers the stock tool may still send mode "patch".
+        path = args.get("path")
+        return [path] if isinstance(path, str) and path.strip() else []
     paths = [m.group(1).strip() for m in _V4A_FILE_HEADER.finditer(body)]
     for m in _V4A_MOVE_HEADER.finditer(body):
         paths.extend((m.group(1).strip(), m.group(2).strip()))
