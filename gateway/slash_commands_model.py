@@ -61,11 +61,21 @@ def _model_switch_skew_guard() -> Optional[str]:
     )
 
 
-async def _persist_model_switch_to_config(result, config_path) -> None:
+async def _persist_model_switch_to_config(
+    result, config_path, *, surface: str = "cli", reasoning_effort: str = "",
+) -> None:
     """Write-through a resolved /model switch to the profile config at ``config_path``, off the
-    event loop (the route comparison can do cold-start disk I/O)."""
+    event loop. ``surface='gateway'`` writes ``gateway.model``; ``surface='cli'`` writes ``model.*``."""
     from hermes_cli.model_switch import persist_model_selection
-    await asyncio.to_thread(persist_model_selection, result, config_path)
+    await asyncio.to_thread(
+        persist_model_selection, result, config_path, surface=surface, reasoning_effort=reasoning_effort,
+    )
+
+
+def _persist_surface(source: Any) -> str:
+    """The local CLI writes ``model.*``. Every messaging platform writes ``gateway.model``."""
+    from gateway.config import Platform
+    return "cli" if getattr(source, "platform", None) == Platform.LOCAL else "gateway"
 
 
 @dataclasses.dataclass
@@ -265,7 +275,10 @@ class GatewayModelCommandsMixin:
         global_error: Optional[str] = None
         if ctx.persist_global:
             try:
-                await _persist_model_switch_to_config(result, ctx.config_path)
+                await _persist_model_switch_to_config(
+                    result, ctx.config_path,
+                    surface=_persist_surface(source), reasoning_effort=ctx.reasoning_effort,
+                )
             except Exception as e:
                 logger.warning("Failed to persist model switch: %s", e)
                 global_error = t("gateway.model.err_config_not_updated", error=str(e) or type(e).__name__)

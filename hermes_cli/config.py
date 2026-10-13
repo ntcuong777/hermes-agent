@@ -2078,6 +2078,17 @@ def load_config_readonly() -> dict[str, Any]:
     return _load_config_impl(want_deepcopy=False)
 
 
+def load_runtime_config() -> dict[str, Any]:
+    """``load_config()`` plus ``<hermes home>/host.yaml``.
+
+    Do not pass this to ``save_config``. The save path writes the raw shared file, and host
+    values must stay out of it.
+    """
+    from hermes_constants import get_hermes_home
+    from hermes_cli.host_overlay import apply_host_overlay, read_host_file
+    return apply_host_overlay(load_config(), read_host_file(get_hermes_home()))
+
+
 def _ensure_dict(parent: dict[str, Any], key: str) -> dict[str, Any]:
     """Return ``parent[key]`` as a dict, replacing a missing or non-dict value with ``{}``."""
     child = parent.get(key)

@@ -1944,14 +1944,31 @@ def _log_fallback_activated(agent, reason, old_model, old_provider, fb_model, fb
     )
 
 
+def _fallback_exhausted_notice(old_model, old_provider, fb_model, fb_provider) -> str:
+    """One chat line when the fallback list is used up. Kept off the noisy-status filter."""
+    return (
+        f"Both models failed: {old_model} via {old_provider}, then {fb_model} via {fb_provider}. "
+        "This turn stopped."
+    )
+
+
 def _fallback_chain_exhausted(agent, reason: FailoverReason | None) -> bool:
     """Chain exhausted (always False). A non-empty chain walked on a non-rate-limit failure arms a
     short cooldown so next turn's restore_primary_runtime stays gated instead of replaying the whole
-    context across every provider again."""
+    context across every provider again. A non-empty chain also tells the chat both models failed."""
     from agent.fallback_cooldown import _RATE_LIMIT_FAILOVER_REASONS
     if agent._fallback_chain and reason not in _RATE_LIMIT_FAILOVER_REASONS:
         agent._rate_limited_until = max(
             getattr(agent, "_rate_limited_until", 0) or 0, time.monotonic() + _FALLBACK_EXHAUSTED_COOLDOWN_S)
+    if agent._fallback_chain:
+        primary = getattr(agent, "_primary_runtime", None) or {}
+        last = agent._fallback_chain[-1]
+        agent._buffer_diagnostic_status(_fallback_exhausted_notice(
+            primary.get("model") or getattr(agent, "model", ""),
+            primary.get("provider") or getattr(agent, "provider", ""),
+            last.get("model") or "",
+            last.get("provider") or "",
+        ))
     return False
 
 

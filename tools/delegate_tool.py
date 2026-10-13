@@ -216,6 +216,7 @@ def _build_child_agent(
     routing_cfg: Optional[dict[str, Any]] = None,
     # Legacy; accepted for wire compat but ignored (capability is depth-derived).
     role: str = "leaf",
+    reasoning_config: Optional[dict[str, Any]] = None,
 ):
     """Build (don't run) a child AIAgent on the main thread. override_* (from delegation config) replace parent
     inheritance so children can run on a different provider:model pair."""
@@ -284,6 +285,7 @@ def _build_child_agent(
                 session_db=child_session_db, parent_session_id=parent_sid, request_overrides=request_overrides,
                 tool_progress_callback=child_progress_cb,
                 iteration_budget=None,  # fresh budget per subagent
+                **({"reasoning_config": reasoning_config} if reasoning_config is not None else {}),
             )
         except BaseException:
             # No child close() will ever run: release the dedicated handle here.

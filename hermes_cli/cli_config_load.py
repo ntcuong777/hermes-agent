@@ -291,6 +291,9 @@ def load_cli_config() -> dict[str, Any]:
     from hermes_cli import managed_scope
 
     defaults = managed_scope.apply_managed_overlay(defaults)
+    from hermes_constants import get_hermes_home
+    from hermes_cli.host_overlay import apply_host_overlay, read_host_file
+    defaults = apply_host_overlay(defaults, read_host_file(get_hermes_home()))
 
     _mirror_config_to_env(defaults, _file_has_terminal_config)
 

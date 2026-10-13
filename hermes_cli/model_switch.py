@@ -1820,21 +1820,64 @@ def apply_model_selection(model_cfg: Any, result: ModelSwitchResult) -> dict:
     return model_cfg
 
 
-def persist_model_selection(result: ModelSwitchResult, config_path: Any = None) -> None:
+def gateway_model_config_updates(result: ModelSwitchResult, reasoning_effort: str = "") -> dict[str, Any]:
+    """Keys a messaging ``/model --global`` writes under ``gateway.model``. The CLI default stays put.
+    ``reasoning_effort`` is written only when the switch carried one."""
+    updates: dict[str, Any] = {"default": result.new_model, "provider": result.target_provider}
+    if reasoning_effort:
+        updates["reasoning_effort"] = reasoning_effort
+    return updates
+
+
+def _host_file_target(config_path):
+    """Resolved host file beside ``config_path``, if one exists. A symlink is followed so the
+    write lands on the linked file rather than replacing the link."""
+    host = config_path.parent / "host.yaml"
+    if not host.exists():
+        return None
+    return host.resolve() if host.is_symlink() else host
+
+
+def persist_model_selection(
+    result: ModelSwitchResult, config_path: Any = None, *, surface: str = "cli", reasoning_effort: str = "",
+) -> None:
     """Write a successful :func:`switch_model` result to ``config_path`` (default:
     ``HERMES_HOME/config.yaml`` — the context override or ``HERMES_HOME`` at call time).
 
     Targeted key writes, not a whole-``model:`` rewrite: a block rewrite destroys sibling keys the
     user set there (``model_slots``, ``model_fallback``, ...). ``should_clear_context_pin`` can do
-    cold-start disk I/O — async callers run this on a worker thread."""
+    cold-start disk I/O — async callers run this on a worker thread.
+
+    ``surface='gateway'`` writes ``gateway.model`` and leaves ``model.*`` alone. ``surface='cli'``
+    writes ``model.*``, or the host file beside the config when that file exists.
+    """
     from pathlib import Path
     from hermes_cli.config import get_config_path, read_user_config_raw
     from utils import atomic_roundtrip_yaml_update
     path = Path(config_path) if config_path else get_config_path()
-    for key, value in model_selection_config_updates(result, read_user_config_raw(path).get("model")).items():
-        atomic_roundtrip_yaml_update(path, f"model.{key}", value)
+    host_target = _host_file_target(path) if surface != "gateway" else None
+    if surface == "gateway":
+        updates = [
+            (f"gateway.model.{key}", value)
+            for key, value in gateway_model_config_updates(result, reasoning_effort).items()
+        ]
+        target = path
+    elif host_target is not None:
+        updates = [("model.default", result.new_model), ("model.provider", result.target_provider)]
+        if reasoning_effort:
+            updates.append(("agent.reasoning_effort", reasoning_effort))
+        target = host_target
+    else:
+        updates = [
+            (f"model.{key}", value)
+            for key, value in model_selection_config_updates(
+                result, read_user_config_raw(path).get("model")).items()
+        ]
+        target = path
+    for dotted, value in updates:
+        atomic_roundtrip_yaml_update(target, dotted, value)
     try:  # owner-only: config files contain API keys
-        os.chmod(path, 0o600)
+        os.chmod(target, 0o600)
     except (OSError, NotImplementedError):
         pass
 

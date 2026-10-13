@@ -45,6 +45,7 @@ from agent.turn_context import compression_made_progress
 from agent.session_activity import ActivityProvenance
 from hermes_cli.config import _is_ssh_remote_tilde_cwd, cfg_get
 from hermes_cli.fallback_config import pre_agent_fallback_notice
+from gateway.route_config import gateway_model_block, gateway_route_config
 from gateway.turn_executor import _UnboundedThreadExecutor
 
 # Per-session AIAgent cache bounds (agents are heavy); see _enforce_agent_cache_cap/_session_housekeeping_watcher.
@@ -2289,16 +2290,17 @@ def _resolve_runtime_agent_kwargs() -> dict:
     An ``AuthError`` from the primary walks the configured fallback chain through the shared
     ``resolve_runtime_with_fallback`` (the gateway keeps no resolver loop of its own)."""
     from hermes_cli.runtime_provider import (
-        resolve_runtime_with_fallback, format_runtime_provider_error, _get_model_config)
+        resolve_runtime_with_fallback, format_runtime_provider_error)
 
-    # Capture primary provider/model from config before the try block so we
-    # can include it in the fallback notice if the primary fails (#74349).
-    _model_cfg = _get_model_config()
-    _primary_model = (_model_cfg.get("default") or "").strip()
-    _primary_provider = (_model_cfg.get("provider") or "").strip()
+    # Primary comes from the gateway route when that block is complete, else the shared default.
+    loaded = _load_gateway_config()
+    routed = gateway_route_config(loaded)
+    routed_model = routed.get("model") if isinstance(routed.get("model"), dict) else {}
+    _primary_model = (routed_model.get("default") or "").strip()
+    _primary_provider = (routed_model.get("provider") or "").strip()
 
     try:
-        runtime, fallback_entry = resolve_runtime_with_fallback(_load_gateway_config())
+        runtime, fallback_entry = resolve_runtime_with_fallback(routed)
     except Exception as exc:
         raise RuntimeError(format_runtime_provider_error(exc)) from exc
 
@@ -2899,6 +2901,9 @@ def _resolve_gateway_model(config: dict | None = None) -> str:
     """Read model from config.yaml (single source of truth), else temporary AIAgents (e.g. /compress)
     use the hardcoded default, which fails under openai-codex."""
     cfg = config if config is not None else _load_gateway_config()
+    gateway_model = gateway_model_block(cfg)
+    if gateway_model is not None:
+        return gateway_model["default"]
     model_cfg = cfg.get("model", {})
     if isinstance(model_cfg, str):
         return model_cfg

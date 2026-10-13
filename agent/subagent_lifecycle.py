@@ -266,6 +266,16 @@ def _coerce_handle(handle: Any) -> Optional[SubagentHandle]:
     return None
 
 
+def _reasoning_kwargs(metadata: Mapping[str, Any]) -> dict[str, Any]:
+    """Child ``reasoning_config`` from ``metadata['reasoning_effort']``. Empty when absent or unusable."""
+    effort = metadata.get("reasoning_effort")
+    if not isinstance(effort, str) or not effort.strip():
+        return {}
+    from hermes_constants import parse_reasoning_effort
+    config = parse_reasoning_effort(effort)
+    return {} if config is None else {"reasoning_config": config}
+
+
 class SubagentLifecycleService:
     """Stable public service behind :attr:`PluginContext.subagent_lifecycle`. Children run in-process only;
     completed results stay until process exit; ``reconnect`` reports that a serialized handle cannot
@@ -304,6 +314,7 @@ class SubagentLifecycleService:
             toolsets=list(request.allowed_toolsets) if request.allowed_toolsets else None,
             model=request.model or creds["model"], max_iterations=DEFAULT_MAX_ITERATIONS,
             task_count=1, parent_agent=parent, role=request.role, **_credential_overrides(creds, routing_cfg),
+            **_reasoning_kwargs(request.metadata),
         )
         subagent_id = str(getattr(child, "_subagent_id", "") or "")
         if not subagent_id:
