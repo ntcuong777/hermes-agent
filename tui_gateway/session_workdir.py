@@ -339,6 +339,18 @@ def _effective_terminal_backend() -> str:
     return backend or "local"
 
 
+def _terminal_backend_on_host() -> bool:
+    """Whether the active terminal backend shares the gateway host's filesystem: ``local``, or a plugin backend that
+    declares ``is_remote = False`` (nono is a sandbox around host bash). Host paths and listings stay valid there; an
+    unregistered or remote-by-default backend does not."""
+    backend = _effective_terminal_backend()
+    if backend == "local":
+        return True
+    from agent.terminal_env_registry import provider_flag
+
+    return provider_flag(backend, "is_remote", True) is False
+
+
 def _display_session_cwd(session: dict | None) -> str:
     """Session cwd for display/probe surfaces, healed past deleted worktrees (healed value persisted back; local only)."""
     cwd = _session_cwd(session)

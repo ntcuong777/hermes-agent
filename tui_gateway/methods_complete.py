@@ -189,7 +189,7 @@ def _dir_listing_items(root: str, word: str, path_part: str, prefix_tag: str, is
                        session_key: str | None = None) -> list[dict]:
     """Prefix-match entries of the directory ``path_part`` points at (max 30)."""
     import posixpath
-    local = _effective_terminal_backend() == "local"
+    local = _terminal_backend_on_host()
     # A non-local backend expands ``~`` itself (the gateway host's home is the wrong one) and its listing
     # script speaks POSIX: from a Windows gateway host, os.path would hand it ``~\\src`` and list nothing.
     pth = os.path if local else posixpath
@@ -237,7 +237,7 @@ def _(rid, params: dict) -> dict:
     if not word:
         return _ok(rid, {"items": []})
     session = _sessions.get(params.get("session_id", ""))
-    local = _effective_terminal_backend() == "local"
+    local = _terminal_backend_on_host()
     # A non-local backend's cwd lives inside the target; the host cannot validate it, so take the composer's
     # session cwd (Desktop sends it) or the session's terminal cwd as-is.
     root = _completion_cwd(params) if local else (params.get("cwd") or _terminal_task_cwd(session))
