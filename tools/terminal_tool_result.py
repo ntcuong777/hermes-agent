@@ -174,14 +174,17 @@ def _redact_spill_file(path, total_chars, command) -> list[tuple[str, Any]]:
     if not path:
         return []
     try:
-        from agent.redact import redact_terminal_output
-        from tools.ansi_strip import strip_ansi
-        from tools.spill_safety import write_text_exclusive
-        raw_spill = Path(path).read_text(encoding="utf-8-sig", errors="replace")
-        # lstat-checked unlink + exclusive create: the redacted copy can't
-        # be diverted through a symlink planted since the collector's write.
-        write_text_exclusive(Path(path), redact_terminal_output(strip_ansi(raw_spill), command),
-                             private=True, overwrite=True, errors="replace")
+        from tools.tool_output_limits import redact_spill_enabled
+        # tool_output.redact_spill: false leaves the file raw; each page read back is redacted then.
+        if redact_spill_enabled():
+            from agent.redact import redact_terminal_output
+            from tools.ansi_strip import strip_ansi
+            from tools.spill_safety import write_text_exclusive
+            raw_spill = Path(path).read_text(encoding="utf-8-sig", errors="replace")
+            # lstat-checked unlink + exclusive create: the redacted copy can't
+            # be diverted through a symlink planted since the collector's write.
+            write_text_exclusive(Path(path), redact_terminal_output(strip_ansi(raw_spill), command),
+                                 private=True, overwrite=True, errors="replace")
     except Exception:
         logger.debug("spill redaction failed; dropping spill handle", exc_info=True)
         with _quiet("spill unlink"):
