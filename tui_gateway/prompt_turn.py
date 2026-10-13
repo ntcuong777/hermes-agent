@@ -728,6 +728,10 @@ def _prepare_turn_input(sid: str, session: dict, st: _TurnRun, text: Any, images
     from tools.tts_streaming import SPEECH_INTERRUPTED_NOTE, take_speech_interrupted
     if take_speech_interrupted():
         run_message = _prepend_note(run_message, SPEECH_INTERRUPTED_NOTE)
+    # `/skill` tokens typed after prose: a name + description pointer, the model loads the rest (C112).
+    # `text`, not `prompt`: `prompt` may carry attached file bodies whose own `/words` are not the user's.
+    from agent.skill_commands import inline_skill_note
+    run_message = _prepend_note(run_message, inline_skill_note(text))
     run_message = _prepend_note(run_message, _pending_reaction_notes(session))
     run_message = _prepend_note(run_message, _pending_tool_retry_notes(session))
     agent._voice_turn_pending = bool(session.pop("voice_turn", False))  # auxiliary.voice_chat route

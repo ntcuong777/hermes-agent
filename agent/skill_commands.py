@@ -777,6 +777,51 @@ def build_stacked_skill_invocation_message(
     return ("\n\n".join([header, *skill_blocks]), loaded_names, missing)
 
 
+_MAX_INLINE_SKILL_REFS = _MAX_STACKED_SKILLS
+_INLINE_SKILL_DESC_CHARS = 240
+_CODE_SPAN_RE = re.compile(r"```.*?```|`[^`\n]*`", re.S)
+# A bare `/name` after whitespace or at the start of the text. A second `/` or one more word
+# character after it (`/usr/local`) makes it a path, not a reference.
+_INLINE_SKILL_RE = re.compile(r"(?<!\S)/([A-Za-z][\w-]*)(?![\w/])")
+
+
+def inline_skill_note(text: Any) -> str:
+    """Pointer to the skills a message names with a `/slash` outside its leading command, or "".
+
+    A leading `/skill` loads the whole skill into the turn. One typed after prose reaches the model
+    as plain text, so it never learned the skill existed. This lists each one by name and
+    description only (at most five) and tells the model to ``skill_view`` the ones that apply.
+    A turn that is already skill scaffolding is scanned for the user's own words, never the skill
+    body. Paths (`/usr/local`), URLs and code spans are not references."""
+    if not isinstance(text, str):
+        return ""
+    instruction = extract_user_instruction_from_skill_message(text)
+    if not instruction:
+        return ""
+    commands = get_interactive_skill_commands()
+    entries: dict[str, dict[str, Any]] = {}
+    for token in _INLINE_SKILL_RE.findall(_CODE_SPAN_RE.sub(" ", instruction)):
+        key = resolve_slash_key(token, commands)
+        if key is not None and key not in entries:
+            entries[key] = commands[key]
+        if len(entries) == _MAX_INLINE_SKILL_REFS:
+            break
+    if not entries:
+        return ""
+
+    def line(key: str, info: dict[str, Any]) -> str:
+        description = " ".join(str(info.get("description") or "").split())
+        if len(description) > _INLINE_SKILL_DESC_CHARS:
+            description = description[:_INLINE_SKILL_DESC_CHARS].rstrip() + "…"
+        return f"- {key} (name: {info.get('name') or key.lstrip('/')}): {description}"
+
+    return "\n".join([
+        "[The user's message names these skills with a slash. Only each name and description is shown "
+        "here: call skill_view(name) to load one in full when it applies.]",
+        *(line(key, info) for key, info in entries.items()),
+    ])
+
+
 def _disabled_skill_names(platform: str | None = None) -> set:
     """Operator-disabled skill names (empty set when config is unreadable)."""
     try:
