@@ -385,6 +385,18 @@ def _tool_search_scoped_names(agent) -> frozenset:
     return names
 
 
+def sandbox_tool_names(agent) -> Optional[list[str]]:
+    """Tool names execute_code's ``hermes_tools`` may offer: those sent to the model plus those
+    ``tool_call`` can reach. A deferred tool (``tools.tool_search.defer``) is not sent, so handing
+    execute_code the sent names alone left web_extract out of the stub and ``from hermes_tools
+    import web_extract`` raised ImportError. None keeps execute_code's all-sandbox-tools default
+    when nothing was sent."""
+    sent = agent.valid_tool_names
+    if not sent:
+        return None
+    return sorted(set(sent) | _tool_search_scoped_names(agent))
+
+
 def _canonical_tool_name(function_name: str) -> str:
     """Map legacy tool-name aliases BEFORE agent-loop dispatch."""
     from model_tools import _LEGACY_TOOL_ALIASES as _lta
@@ -1701,7 +1713,7 @@ def _resolve_sequential_dispatch(agent, ref: _ToolCallRef, messages: list) -> _S
                 session_id=agent.session_id or "",
                 turn_id=getattr(agent, "_current_turn_id", "") or "",
                 api_request_id=getattr(agent, "_current_api_request_id", "") or "",
-                enabled_tools=list(agent.valid_tool_names) if agent.valid_tool_names else None,
+                enabled_tools=sandbox_tool_names(agent),
                 skip_pre_tool_call_hook=True,
                 skip_tool_request_middleware=True,
                 skip_tool_execution_middleware=True,
