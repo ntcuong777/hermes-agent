@@ -1616,6 +1616,10 @@ export function TextInput({
         } else {
           ;({ cursor: c, value: v } = killToLineEnd(v, c))
         }
+      } else if (k.backspace || k.delete) {
+        // Extended-key terminals (kitty CSI u / modifyOtherKeys) also hand the key's name
+        // to `input`. With nothing left to delete it must not fall through and type it.
+        return
       } else if (event.keypress.isPasted || (inp.length > 0 && !event.isControlChord)) {
         const bracketed = event.keypress.isPasted || inp.includes('[200~')
         const text = inp.replace(BRACKET_PASTE, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
