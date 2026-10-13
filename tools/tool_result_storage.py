@@ -15,7 +15,7 @@ import tempfile
 import threading
 import time
 
-from tools.budget_config import DEFAULT_PREVIEW_SIZE_CHARS, BudgetConfig, DEFAULT_BUDGET
+from tools.budget_config import DEFAULT_PREVIEW_SIZE_CHARS, BudgetConfig, DEFAULT_BUDGET, configured_budget_int
 
 logger = logging.getLogger(__name__)
 PERSISTED_OUTPUT_TAG = "<persisted-output>"
@@ -44,7 +44,10 @@ def get_spillover_dir():
 
 def cleanup_spillover_cache(max_age_hours: int = SPILLOVER_MAX_AGE_HOURS) -> int:
     """Delete spillover files older than *max_age_hours*; returns count removed (same
-    contract as the ``cleanup_*_cache`` helpers the gateway housekeeping loop runs hourly)."""
+    contract as the ``cleanup_*_cache`` helpers the gateway housekeeping loop runs hourly).
+    ``tool_budget.spillover_max_age_hours`` wins over the caller's value: the gateway sweep
+    passes the media cache age, and a setup that keeps spills longer must hold there too."""
+    max_age_hours = configured_budget_int("spillover_max_age_hours", max_age_hours)
     cutoff = time.time() - (max_age_hours * 3600)
     removed = 0
     try:

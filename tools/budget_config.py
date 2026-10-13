@@ -42,6 +42,23 @@ def _configured_mcp_result_size() -> int:
     return DEFAULT_MCP_RESULT_SIZE_CHARS
 
 
+def configured_budget_int(key: str, default: int) -> int:
+    """A positive int from ``tool_budget.<key>`` in config.yaml, else ``default`` (an error, a
+    missing key or a non-positive value all fall back). The caps a setup may lower:
+    ``result_size_chars``, ``preview_size_chars``, ``turn_budget_chars`` and, in
+    tools/tool_result_storage.py, ``spillover_max_age_hours``."""
+    try:
+        from hermes_cli.config import load_config_readonly
+        data = load_config_readonly()
+        block = data.get("tool_budget") if isinstance(data, dict) else None
+        raw = block.get(key) if isinstance(block, dict) else None
+        if raw is not None and int(raw) > 0:
+            return int(raw)
+    except Exception:
+        pass
+    return default
+
+
 @dataclass(frozen=True)
 class BudgetConfig:
     """Immutable budget constants: per-result threshold (``resolve_threshold``),
@@ -101,14 +118,20 @@ def budget_for_context_window(context_length: int | None) -> BudgetConfig:
     oversized request (#23767).
     """
     mcp_result_size = _configured_mcp_result_size()
+    result_cap = configured_budget_int("result_size_chars", DEFAULT_RESULT_SIZE_CHARS)
+    turn_cap = configured_budget_int("turn_budget_chars", DEFAULT_TURN_BUDGET_CHARS)
+    preview_size = configured_budget_int("preview_size_chars", DEFAULT_PREVIEW_SIZE_CHARS)
     if not context_length or context_length <= 0:
-        if mcp_result_size == DEFAULT_MCP_RESULT_SIZE_CHARS:
+        if (mcp_result_size, result_cap, turn_cap, preview_size) == (
+                DEFAULT_MCP_RESULT_SIZE_CHARS, DEFAULT_RESULT_SIZE_CHARS,
+                DEFAULT_TURN_BUDGET_CHARS, DEFAULT_PREVIEW_SIZE_CHARS):
             return DEFAULT_BUDGET
-        return BudgetConfig(mcp_result_size=mcp_result_size)
+        return BudgetConfig(default_result_size=result_cap, turn_budget=turn_cap,
+                            preview_size=preview_size, mcp_result_size=mcp_result_size)
     window_chars = context_length * _CHARS_PER_TOKEN
     return BudgetConfig(
-        default_result_size=max(_MIN_RESULT_SIZE_CHARS, min(int(window_chars * _PER_RESULT_WINDOW_FRACTION), DEFAULT_RESULT_SIZE_CHARS)),
-        turn_budget=max(_MIN_TURN_BUDGET_CHARS, min(int(window_chars * _PER_TURN_WINDOW_FRACTION), DEFAULT_TURN_BUDGET_CHARS)),
-        preview_size=DEFAULT_PREVIEW_SIZE_CHARS,
+        default_result_size=max(_MIN_RESULT_SIZE_CHARS, min(int(window_chars * _PER_RESULT_WINDOW_FRACTION), result_cap)),
+        turn_budget=max(_MIN_TURN_BUDGET_CHARS, min(int(window_chars * _PER_TURN_WINDOW_FRACTION), turn_cap)),
+        preview_size=preview_size,
         mcp_result_size=mcp_result_size,
     )
