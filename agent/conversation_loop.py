@@ -1605,6 +1605,21 @@ def _codex_app_server_turn(agent: Any, s: Any) -> Optional[dict[str, Any]]:
     return None
 
 
+def _native_runtime_turn(agent: Any, s: Any) -> Optional[dict[str, Any]]:
+    """The result of a whole-turn native runtime, or None to run the generic loop. ``cursor_sdk`` hands
+    the turn to the Cursor SDK worker (agent/cursor_runtime.py) with no fallback: a failed turn is
+    reported, never retried on another provider."""
+    if agent.api_mode == "codex_app_server":
+        return _codex_app_server_turn(agent, s)
+    if agent.api_mode == "cursor_sdk":
+        return agent._run_cursor_sdk_turn(
+            user_message=s.user_message, original_user_message=s.original_user_message,
+            messages=s.messages, effective_task_id=s.effective_task_id,
+            should_review_memory=s._should_review_memory,
+        )
+    return None
+
+
 def _run_conversation_turn(
     agent,
     user_message: Any,
@@ -1700,8 +1715,8 @@ def _run_conversation_turn(
     )
     # Opt-in runtime: api_mode == codex_app_server hands the whole turn to the codex
     # app-server subprocess (see agent/transports/codex_app_server_session.py).
-    if agent.api_mode == "codex_app_server" and (codex_result := _codex_app_server_turn(agent, s)) is not None:
-        return codex_result
+    if (native_result := _native_runtime_turn(agent, s)) is not None:
+        return native_result
 
     _prelude_action, _prelude_result = play_prelude(agent, s, prelude)
     if _prelude_action == "return":

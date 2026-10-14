@@ -93,7 +93,7 @@ _HOST_MANDATED_API_MODES = {
 
 # codex_app_server is opt-in: hand the whole turn to a `codex app-server` subprocess (Codex's own
 # tool runtime), gated on `model.openai_runtime == "codex_app_server"` AND provider in {openai, openai-codex}.
-_VALID_API_MODES = {"chat_completions", "codex_responses", "anthropic_messages", "bedrock_converse", "codex_app_server"}
+_VALID_API_MODES = {"chat_completions", "codex_responses", "anthropic_messages", "bedrock_converse", "codex_app_server", "cursor_sdk"}
 
 
 def _detect_api_mode_for_url(base_url: str) -> Optional[str]:
@@ -298,6 +298,18 @@ def _maybe_apply_codex_app_server_runtime(*, provider: str, api_mode: str, model
     if provider in {"openai", "openai-codex"} or requested_provider in {"openai", "openai-codex"} \
             or (provider == "custom" and codex_model_provider_id(requested_provider)):
         return "codex_app_server"
+    return api_mode
+
+
+def _maybe_apply_cursor_sdk_runtime(*, provider: str, api_mode: str, model_cfg: Optional[dict[str, Any]],
+                                    requested_provider: str = "") -> str:
+    """Opt-in rewrite to "cursor_sdk" via ``model.cursor_runtime: sdk``. Eligible: the ``cursor`` provider
+    only. The whole turn then runs on the Cursor SDK worker (agent/cursor_runtime.py), which authenticates
+    with CURSOR_API_KEY, not the resolved credential. No-op when unset or any other value."""
+    if not model_cfg or str(model_cfg.get("cursor_runtime") or "").strip().lower() != "sdk":
+        return api_mode
+    if provider == "cursor" or requested_provider == "cursor":
+        return "cursor_sdk"
     return api_mode
 
 
@@ -1029,7 +1041,9 @@ def resolve_runtime_provider(*, requested: Optional[str] = None, explicit_api_ke
     if api_mode != runtime.get("api_mode"):
         logger.info("model.openai_runtime=codex_app_server overrides the %s runtime (source=%s); its credential/endpoint "
                     "is not used — the app-server authenticates with its own login", runtime.get("provider"), runtime.get("source"))
-    runtime["api_mode"] = api_mode
+    runtime["api_mode"] = _maybe_apply_cursor_sdk_runtime(
+        provider=runtime.get("provider", ""), api_mode=api_mode, model_cfg=_get_model_config(),
+        requested_provider=requested_alias)
     return runtime
 
 

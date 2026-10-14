@@ -222,3 +222,4 @@ class TurnFacadeMixin:
         return self.run_conversation(message, stream_callback=stream_callback)["final_response"]
 
     _run_codex_app_server_turn = _forward("agent.codex_runtime", "run_codex_app_server_turn")
+    _run_cursor_sdk_turn = _forward("agent.cursor_runtime", "run_cursor_sdk_turn")
