@@ -30,6 +30,7 @@ from agent.codex_runtime import (
     _turn_result,
 )
 from agent.codex_runtime_history_seed import _text_of, render_history_seed
+from agent.cursor_usage import record_usage
 from agent.message_metadata import append_message
 from agent.turn_tool_round import stage_tool_call_message
 
@@ -154,13 +155,26 @@ def _start_message(
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    effort = _effort(agent)
     return {
         "type": "start",
         "turnId": uuid.uuid4().hex,
         "model": str(getattr(agent, "model", "") or ""),
         "prompt": _prompt(agent, user_message, messages),
         "tools": tools,
+        **({"effort": effort} if effort else {}),
     }
+
+
+def _effort(agent) -> Optional[str]:
+    """Only an explicit Hermes reasoning setting is sent; the worker checks it against the catalog."""
+    config = getattr(agent, "reasoning_config", None)
+    if not isinstance(config, dict):
+        return None
+    if config.get("enabled") is False:
+        return "none"
+    effort = config.get("effort")
+    return str(effort).strip().lower() if effort else None
 
 
 def _prompt(agent, user_message: Any, messages: list[dict[str, Any]]) -> str:
@@ -254,9 +268,12 @@ class _suppressed:
 class _Outcome:
     """Terminal state of one worker turn. ``error`` is a fixed-vocabulary label, never SDK text."""
 
-    def __init__(self, status: str, error: Optional[str] = None) -> None:
+    def __init__(
+        self, status: str, error: Optional[str] = None, usage: Any = None
+    ) -> None:
         self.status = status
         self.error = error
+        self.usage = usage
 
 
 class _Turn:
@@ -314,9 +331,9 @@ class _Turn:
         if kind == "tool-request":
             return self._on_tool_request(message)
         if kind == "done":
-            return _Outcome(str(message.get("status")))
+            return _Outcome(str(message.get("status")), usage=message.get("usage"))
         if kind == "failed":
-            return _Outcome("error", f"worker failed: {message.get('code')}")
+            return _Outcome("error", _failure_text(message.get("code")))
         return None
 
     def _on_event(self, message: dict[str, Any]) -> None:
@@ -436,6 +453,26 @@ class _Turn:
         return _Outcome("cancelled")
 
 
+# Fixed vocabulary: worker codes map to plain text; unknown codes never echo worker-supplied strings.
+_FAILURE_TEXT = {
+    "unknown-model": "The selected model is not in your Cursor catalog.",
+    "unsupported-effort": "The selected model does not offer that reasoning effort; pick another level or unset it.",
+    "catalog-unavailable": "The Cursor model catalog could not be read, so the model was not verified.",
+    "native-tool": "The Cursor model attempted a native tool, which this runtime forbids; the turn was stopped.",
+    "sdk-error": "The Cursor SDK failed to run the turn.",
+    "bad-environment": "The Cursor worker environment was incomplete.",
+    "oversized-message": "The Cursor worker sent an oversized message.",
+}
+
+
+def _failure_text(code: Any) -> str:
+    return (
+        _FAILURE_TEXT.get(code)
+        if isinstance(code, str) and code in _FAILURE_TEXT
+        else "The Cursor worker failed."
+    )
+
+
 def _tool_result(messages: list[dict[str, Any]], call_id: str) -> tuple[str, bool]:
     row = next(
         (
@@ -523,6 +560,7 @@ def _finish(
             "stop",
         )
         append_message(messages, row)
+    usage_result = record_usage(agent, outcome.usage)
     flushed = agent._flush_messages_to_session_db(messages) is not False
     agent._iters_since_skill = getattr(agent, "_iters_since_skill", 0) + turn.tool_calls
     if completed:
@@ -561,4 +599,5 @@ def _finish(
         final_response=final_text
         or (f"Cursor runtime failed: {error}" if error else ""),
         agent_persisted=True,
+        **usage_result,
     )

@@ -214,7 +214,7 @@ def test_worker_failure_ends_the_turn_without_fallback_or_secret_text(tmp_path):
     )
     result = _run(FakeAgent(), command)
     assert result["completed"] is False and result["partial"] is True
-    assert "native-tool" in result["error"]
+    assert "native tool" in result["error"]
     assert "test-key-not-real" not in json.dumps(result, default=str)
 
 
