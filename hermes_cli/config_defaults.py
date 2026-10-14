@@ -1972,6 +1972,11 @@ DEFAULT_CONFIG = {
         # (sys.executable): max isolation, project deps/relative paths won't work. Env scrubbing
         # (*_API_KEY, *_TOKEN, *_SECRET, ...) and the tool whitelist apply in both modes.
         "mode": "project",
+        # Tools a script may import from hermes_tools; a name the session cannot reach is skipped. A tool
+        # without a hand-written stub gets a generic name(**kwargs) one; execute_code itself is never
+        # offered. An explicit list REPLACES this one; unset or [] = this default.
+        "allowed_tools": ["web_search", "web_extract", "read_file", "write_file", "search_files",
+                          "patch", "terminal"],
         # Session kernels are always on locally (`kernel_mode` is ignored) and remotely
         # (tools/code_kernel_remote.py; a backend that cannot spawn a kernel fails open to
         # per-call). One kernel per (session owner, mode, interpreter, cwd, tool-set) keeps state

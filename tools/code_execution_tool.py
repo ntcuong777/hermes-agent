@@ -39,10 +39,30 @@ logger = logging.getLogger(__name__)
 # Loopback TCP replaces AF_UNIX on Windows, so execute_code runs on every platform Hermes does.
 SANDBOX_AVAILABLE = True
 
-# Tools allowed inside the sandbox; ∩ the session's enabled tools decides which stubs are generated.
+# Built-in default for the tools allowed inside the sandbox; ∩ the session's enabled tools decides which
+# stubs are generated. ``code_execution.allowed_tools`` in config.yaml replaces it (``sandbox_allowed_tools``).
 SANDBOX_ALLOWED_TOOLS = frozenset([
     "web_search", "web_extract", "read_file", "write_file", "search_files", "patch", "terminal",
 ])
+
+# Never offered to a script, whatever the config says: a script that re-enters execute_code stacks kernels.
+_NEVER_IN_SANDBOX = frozenset({"execute_code"})
+
+
+def sandbox_allowed_tools() -> frozenset:
+    """Tools a script may import from ``hermes_tools``: ``code_execution.allowed_tools`` (an explicit list
+    REPLACES the default), else ``SANDBOX_ALLOWED_TOOLS``. Unset, empty or malformed falls back to the
+    default (malformed with a warning). A tool without a hand-written stub gets a generic
+    ``name(**kwargs)`` one; a name the session cannot reach is simply not importable."""
+    raw = _load_config().get("allowed_tools")
+    if raw is None or raw == []:
+        return SANDBOX_ALLOWED_TOOLS
+    if not isinstance(raw, (list, tuple)):
+        logger.warning("Ignoring code_execution.allowed_tools=%r (expected a list of tool names)", raw)
+        return SANDBOX_ALLOWED_TOOLS
+    names = {str(n).strip() for n in raw if str(n).strip()} - _NEVER_IN_SANDBOX
+    return frozenset(names) or SANDBOX_ALLOWED_TOOLS
+
 
 # Resource limit defaults (overridable via config.yaml → code_execution.*)
 DEFAULT_TIMEOUT = 300        # 5 minutes
@@ -151,10 +171,25 @@ def _missing_hermes_tools_import_hint(m, enabled_tools) -> str:
                 "If that import failed, the generated module may be stale or another "
                 "hermes_tools may be first on sys.path. Check hermes_tools.__file__ "
                 "and retry with reset=true.")
-    available = sorted(SANDBOX_ALLOWED_TOOLS & set(enabled_tools or SANDBOX_ALLOWED_TOOLS))
+    allowed = sandbox_allowed_tools()
+    available = sorted(allowed & set(enabled_tools or allowed))
+    if _is_registered_tool(missing):
+        return (f"'{missing}' is a Hermes tool but is not importable inside execute_code. "
+                f"Importable tools here: {', '.join(available)}. Call it as a normal tool call; if it is not "
+                f"in your tool list, go through tool_call: tool_call(calls=[{{\"name\": \"{missing}\", "
+                "\"arguments\": {...}}]). To make it importable, add its name to "
+                "code_execution.allowed_tools in config.yaml.")
     return (f"'{missing}' is not available inside the execute_code sandbox. "
             f"Importable tools here: {', '.join(available)}. For anything "
             "else, use the normal tool call instead of execute_code.")
+
+
+def _is_registered_tool(name: str) -> bool:
+    try:
+        from tools.registry import registry
+        return registry.get_entry(name) is not None
+    except Exception:
+        return False
 
 
 # (regex, formatter(match, enabled_tools)) — first match wins. Production mining (state.db) ranked
@@ -196,10 +231,18 @@ def generate_hermes_tools_module(enabled_tools: list[str],
     """Source of the hermes_tools.py stub module for SANDBOX_ALLOWED_TOOLS ∩ *enabled_tools*.
     ``transport``: ``"uds"`` (local socket client) or ``"file"`` (file RPC, remote backends)."""
     header = _FILE_TRANSPORT_HEADER if transport == "file" else _UDS_TRANSPORT_HEADER
-    return header + "\n".join(
+    wanted, allowed = set(enabled_tools), sandbox_allowed_tools()
+    stubs = [
         f"def {name}({sig}):\n    {doc}\n    return _call({name!r}, {args_expr})\n"
-        for name, (sig, doc, args_expr) in sorted(_TOOL_STUBS.items()) if name in set(enabled_tools)
-    )
+        for name, (sig, doc, args_expr) in sorted(_TOOL_STUBS.items()) if name in wanted and name in allowed
+    ]
+    # A configured tool with no hand-written stub: keyword arguments as in its own schema.
+    stubs += [
+        f"def {name}(**kwargs):\n    \"\"\"Hermes tool: keyword arguments as in its schema. Returns its result, parsed.\"\"\"\n"
+        f"    return _call({name!r}, kwargs)\n"
+        for name in sorted((wanted & allowed) - set(_TOOL_STUBS)) if name.isidentifier()
+    ]
+    return header + "\n".join(stubs)
 
 
 # ---- Shared helpers section (embedded in both transport headers) ----------
@@ -588,8 +631,9 @@ def _finish_remote_kernel_result(kernel_result: dict[str, Any], *,
 
 
 def _sandbox_tools_for(enabled_tools: Optional[list[str]]) -> frozenset:
-    """Enabled ∩ SANDBOX_ALLOWED_TOOLS, or every sandbox tool when the intersection is empty."""
-    return frozenset(SANDBOX_ALLOWED_TOOLS & set(enabled_tools or ())) or SANDBOX_ALLOWED_TOOLS
+    """Enabled ∩ the allowed tools, or every allowed tool when the intersection is empty."""
+    allowed = sandbox_allowed_tools()
+    return frozenset(allowed & set(enabled_tools or ())) or allowed
 
 
 def _run_remote_per_call(env, env_type: str, code: str, effective_task_id: str,
@@ -880,10 +924,13 @@ def build_execute_code_schema(enabled_sandbox_tools: set | None = None,
     """execute_code schema listing only *enabled_sandbox_tools* — a disabled tool (e.g. web off)
     must not appear or the model keeps trying it. ``mode`` (None → config) picks the cwd sentence."""
     if enabled_sandbox_tools is None:
-        enabled_sandbox_tools = SANDBOX_ALLOWED_TOOLS
+        enabled_sandbox_tools = sandbox_allowed_tools()
     if mode is None:
         mode = _get_execution_mode()
-    tool_lines = "\n".join(doc for name, doc in _TOOL_DOC_LINES if name in enabled_sandbox_tools)
+    documented = {name for name, _ in _TOOL_DOC_LINES}
+    generic = [f"  {n}(**kwargs) -> dict\n    Keyword arguments as in the tool's own schema (tool_describe)."
+               for n in sorted(enabled_sandbox_tools - documented) if n.isidentifier()]
+    tool_lines = "\n".join([doc for name, doc in _TOOL_DOC_LINES if name in enabled_sandbox_tools] + generic)
     import_examples = [n for n in ("web_search", "terminal") if n in enabled_sandbox_tools]
     import_examples = import_examples or sorted(enabled_sandbox_tools)[:2]
     import_str = ", ".join(import_examples) + ", ..." if import_examples else "..."
