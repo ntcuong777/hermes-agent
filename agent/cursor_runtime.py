@@ -402,7 +402,7 @@ class _Turn:
             ],
         )
         self.text_parts, self.thinking_parts = [], []
-        assistant_row, _ = stage_tool_call_message(
+        assistant_row, duplicate_interim = stage_tool_call_message(
             self.agent,
             assistant_message=assistant_message,
             finish_reason="tool_calls",
@@ -413,6 +413,12 @@ class _Turn:
         if self.agent._flush_messages_to_session_db(self.messages) is False:
             self._cancel()
             return _Outcome("error", "transcript write failed before tool execution")
+        # Commentary before a tool reaches non-streaming surfaces (Telegram) only through this hook; it dedups
+        # against text already streamed, and only after the row is durable, like the standard loop.
+        emit_interim = getattr(self.agent, "_emit_interim_assistant_message", None)
+        if emit_interim and not duplicate_interim:
+            with _suppressed(Exception):
+                emit_interim(assistant_row)
         stream_end = getattr(self.agent, "stream_delta_callback", None)
         if stream_end:
             with _suppressed(Exception):

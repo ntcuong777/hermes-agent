@@ -126,6 +126,8 @@ class FakeAgent:
 
 @pytest.fixture(autouse=True)
 def _env(monkeypatch):
+    # _run() assigns cr._worker_command directly; registering it here restores the original afterwards.
+    monkeypatch.setattr(cr, "_worker_command", cr._worker_command)
     monkeypatch.setenv("CURSOR_API_KEY", "test-key-not-real")
     monkeypatch.setattr(
         cr,
