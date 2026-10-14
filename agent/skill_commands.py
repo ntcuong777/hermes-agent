@@ -785,12 +785,31 @@ _CODE_SPAN_RE = re.compile(r"```.*?```|`[^`\n]*`", re.S)
 _INLINE_SKILL_RE = re.compile(r"(?<!\S)/([A-Za-z][\w-]*)(?![\w/])")
 
 
+def _is_user_only_skill(info: Mapping[str, Any]) -> bool:
+    """True when the skill's frontmatter sets `disable-model-invocation: true`: the person alone loads it.
+
+    A skill from a commands table without a SKILL.md path is not user-only."""
+    path = info.get("skill_md_path")
+    if not path:
+        return False
+    try:
+        from agent.skill_utils import parse_frontmatter
+
+        frontmatter, _ = parse_frontmatter(Path(path).read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        return False
+    return frontmatter.get("disable-model-invocation") is True
+
+
 def inline_skill_note(text: Any) -> str:
     """Pointer to the skills a message names with a `/slash` outside its leading command, or "".
 
     A leading `/skill` loads the whole skill into the turn. One typed after prose reaches the model
     as plain text, so it never learned the skill existed. This lists each one by name and
     description only (at most five) and tells the model to ``skill_view`` the ones that apply.
+    A user-only skill (`disable-model-invocation: true`) is the exception: the model cannot
+    ``skill_view`` it, and the person typing its name is the invocation, so it is loaded in full
+    like a leading `/skill` (C117).
     A turn that is already skill scaffolding is scanned for the user's own words, never the skill
     body. Paths (`/usr/local`), URLs and code spans are not references."""
     if not isinstance(text, str):
@@ -815,11 +834,22 @@ def inline_skill_note(text: Any) -> str:
             description = description[:_INLINE_SKILL_DESC_CHARS].rstrip() + "…"
         return f"- {key} (name: {info.get('name') or key.lstrip('/')}): {description}"
 
-    return "\n".join([
-        "[The user's message names these skills with a slash. Only each name and description is shown "
-        "here: call skill_view(name) to load one in full when it applies.]",
-        *(line(key, info) for key, info in entries.items()),
-    ])
+    loaded: list[str] = []
+    pointers: dict[str, dict[str, Any]] = {}
+    for key, info in entries.items():
+        block = build_skill_invocation_message(key) if _is_user_only_skill(info) else None
+        if block:
+            loaded.append(block)
+        else:
+            pointers[key] = info
+    parts: list[str] = []
+    if pointers:
+        parts.append(
+            "[The user's message names these skills with a slash. Only each name and description is shown "
+            "here: call skill_view(name) to load one in full when it applies.]\n"
+            + "\n".join(line(key, info) for key, info in pointers.items())
+        )
+    return "\n\n".join([*parts, *loaded])
 
 
 def _disabled_skill_names(platform: str | None = None) -> set:

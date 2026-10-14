@@ -99,3 +99,38 @@ def test_a_bare_leading_skill_message_gets_no_note(skills):
 def test_non_text_input_gets_no_note(skills):
     assert sc.inline_skill_note(None) == ""
     assert sc.inline_skill_note([{"type": "text", "text": "use /tdd"}]) == ""
+
+
+# A `disable-model-invocation: true` skill is hidden from skills_list and refused by skill_view
+# (C98). The person typing its name is the invocation, so a mid-prompt `/name` must hand the model
+# the whole skill: pointing it at skill_view sends it to a refusal ("user-invoked only").
+@pytest.fixture
+def user_only_skill(skills, tmp_path, monkeypatch):
+    root = tmp_path / "skills"
+    _make_skill(
+        root,
+        "implement",
+        frontmatter_extra="disable-model-invocation: true\n",
+        body="Hand independent tasks to helpers. STEP-ONE-MARKER.",
+    )
+    monkeypatch.setattr(skills_tool, "SKILLS_DIR", root)
+    commands = sc.scan_skill_commands()
+    monkeypatch.setattr(sc, "get_interactive_skill_commands", lambda: commands)
+    return commands
+
+
+def test_a_mid_prompt_user_only_skill_is_loaded_in_full(user_only_skill):
+    note = sc.inline_skill_note("ok, continue /implement until everything completes")
+    assert "STEP-ONE-MARKER" in note
+
+
+def test_a_user_only_skill_is_not_pointed_at_skill_view(user_only_skill):
+    note = sc.inline_skill_note("continue /implement")
+    assert "call skill_view" not in note
+
+
+def test_a_normal_skill_beside_a_user_only_one_stays_a_pointer(user_only_skill):
+    note = sc.inline_skill_note("/implement the plan, check with /tdd")
+    assert "STEP-ONE-MARKER" in note
+    assert "failing test FIRST" not in note
+    assert "- /tdd" in note and "Description for tdd." in note
