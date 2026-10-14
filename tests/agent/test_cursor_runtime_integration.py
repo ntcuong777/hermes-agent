@@ -27,7 +27,7 @@ def _fake_worker(tmp_path, target):
         send({{"type": "ready"}})
         start = recv()
         tid = start["turnId"]
-        assert [t["name"] for t in start["tools"]] == ["read_file"], start["tools"]
+        assert "read_file" in [t["name"] for t in start["tools"]], start["tools"]
         send({{"type": "event", "turnId": tid, "kind": "thinking", "text": "need the file"}})
         send({{"type": "tool-request", "turnId": tid, "callId": "c1", "name": "read_file",
                "args": {{"path": {json.dumps(str(target))}}}}})
@@ -79,26 +79,30 @@ def test_run_conversation_reads_a_file_through_the_live_executor(
     assert "TRACER-CONTENT." in "".join(t for t in streamed if t)
 
 
-def test_unadvertised_tool_never_reaches_the_executor(tmp_path, monkeypatch, agent):
+def test_a_tool_outside_the_enabled_toolsets_is_not_offered_or_dispatched(tmp_path, monkeypatch):
     script = tmp_path / "w.py"
-    script.write_text(
-        textwrap.dedent("""
+    script.write_text(textwrap.dedent("""
         import json, sys
         def send(m): print(json.dumps(m), flush=True)
         def recv(): return json.loads(sys.stdin.readline())
         send({"type": "ready"})
         start = recv(); tid = start["turnId"]
+        assert "terminal" not in [t["name"] for t in start["tools"]]
         send({"type": "tool-request", "turnId": tid, "callId": "c1", "name": "terminal",
               "args": {"command": "touch should-not-exist"}})
         assert recv()["isError"] is True
         send({"type": "done", "turnId": tid, "status": "finished"})
-    """)
-    )
+    """))
     monkeypatch.setenv("CURSOR_API_KEY", "test-key-not-real")
     monkeypatch.setattr(cr, "_worker_command", lambda: [sys.executable, str(script)])
     monkeypatch.chdir(tmp_path)
+    file_only = run_agent.AIAgent(
+        api_key="stub", base_url="https://stub.invalid", provider="cursor", model="composer-2.5",
+        api_mode="cursor_sdk", quiet_mode=True, skip_context_files=True, skip_memory=True,
+        enabled_toolsets=["file"],
+    )
 
-    result = agent.run_conversation("run a command")
+    result = file_only.run_conversation("run a command")
 
     assert result["completed"] is True
     assert not (tmp_path / "should-not-exist").exists()

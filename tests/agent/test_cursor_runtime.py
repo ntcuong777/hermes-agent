@@ -189,18 +189,15 @@ def test_read_tool_round_trips_through_the_executor_and_transcript(tmp_path):
     assert agent.flushes[0] == ["user", "assistant"]
 
 
-def test_only_the_advertised_tool_set_is_offered_and_others_refuse(tmp_path):
-    command = _worker(
-        tmp_path,
-        """
-        assert [t["name"] for t in start["tools"]] == ["read_file"]
-        send({"type": "tool-request", "turnId": tid, "callId": "c1", "name": "terminal", "args": {}})
+def test_every_enabled_tool_is_offered_and_unknown_names_refuse(tmp_path):
+    command = _worker(tmp_path, """
+        assert sorted(t["name"] for t in start["tools"]) == ["read_file", "terminal"]
+        send({"type": "tool-request", "turnId": tid, "callId": "c1", "name": "ghost", "args": {}})
         refusal = recv()
         assert refusal["isError"] is True
         send({"type": "event", "turnId": tid, "kind": "text", "text": "refused"})
         send({"type": "done", "turnId": tid, "status": "finished"})
-    """,
-    )
+    """)
     agent = FakeAgent()
     result = _run(agent, command)
     assert result["completed"] is True

@@ -40,8 +40,6 @@ MAX_WORKER_LINE_CHARS = 1024 * 1024
 _POLL_SECONDS = 0.2
 _CANCEL_GRACE_SECONDS = 5.0
 _DEFAULT_TURN_TIMEOUT_SECONDS = 1800.0
-# Tracer-bullet slice: only read_file is offered; widening the surface is a separate, reviewed change.
-ADVERTISED_TOOLS = frozenset({"read_file"})
 _WORKER_ENV_ALLOWLIST = (
     "PATH",
     "LANG",
@@ -94,7 +92,7 @@ def run_cursor_sdk_turn(
 
 
 def advertised_tools(agent) -> list[dict[str, Any]]:
-    """Wire descriptors for the tools the live agent has enabled, limited to the slice's allowlist."""
+    """Wire descriptors for exactly the tools the live agent has enabled this turn (its active schemas)."""
     valid = getattr(agent, "valid_tool_names", None) or set()
     functions = [
         t["function"]
@@ -108,7 +106,7 @@ def advertised_tools(agent) -> list[dict[str, Any]]:
             "inputSchema": f.get("parameters") or {"type": "object"},
         }
         for f in functions
-        if f["name"] in ADVERTISED_TOOLS and f["name"] in valid
+        if f["name"] in valid
     ]
 
 
@@ -336,9 +334,7 @@ class _Turn:
             message.get("args"),
             message.get("callId"),
         )
-        if name not in ADVERTISED_TOOLS or name not in (
-            getattr(self.agent, "valid_tool_names", None) or set()
-        ):
+        if name not in (getattr(self.agent, "valid_tool_names", None) or set()):
             return self._reply(call_id, "Tool is not available in this runtime.", True)
         if not isinstance(args, dict):
             return self._reply(call_id, "Tool arguments must be an object.", True)
@@ -427,9 +423,25 @@ def _tool_result(messages: list[dict[str, Any]], call_id: str) -> tuple[str, boo
     )
     if row is None:
         return "Tool produced no result.", True
-    content = row.get("content")
-    text = content if isinstance(content, str) else json.dumps(content, default=str)
+    text = _result_text(row.get("content"))
     return text, _looks_failed(row.get("name"), text)
+
+
+def _result_text(content: Any) -> str:
+    """Model-facing text of a tool result; multimodal envelopes keep their text parts only."""
+    if isinstance(content, str):
+        return content
+    try:
+        from agent.tool_executor import (
+            _is_multimodal_tool_result,
+            _multimodal_text_summary,
+        )
+
+        if _is_multimodal_tool_result(content):
+            return str(_multimodal_text_summary(content))
+    except Exception:
+        logger.debug("multimodal tool result summary failed", exc_info=True)
+    return json.dumps(content, default=str)
 
 
 def _looks_failed(name: Any, text: str) -> bool:
