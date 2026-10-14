@@ -274,6 +274,7 @@ class _Turn:
         self.thinking_parts: list[str] = []
         self.tool_calls = 0
         self.final_text = ""
+        self.seen_calls: set[Any] = set()
         self.spinner_on = False
 
     def run(self, start: dict[str, Any]) -> _Outcome:
@@ -354,6 +355,12 @@ class _Turn:
             return self._reply(call_id, "Tool is not available in this runtime.", True)
         if not isinstance(args, dict):
             return self._reply(call_id, "Tool arguments must be an object.", True)
+        if call_id in self.seen_calls:
+            # Call ids are unique per turn; a repeat is a protocol violation and must never run twice.
+            return self._reply(call_id, "Duplicate tool call refused.", True)
+        self.seen_calls.add(call_id)
+        if getattr(self.agent, "_interrupt_requested", False):
+            return self._reply(call_id, "Interrupted before the tool ran.", True)
         return self._run_tool(
             f"cursor_{self.turn_id[:8]}_{call_id}", name, args, call_id
         )
@@ -516,7 +523,7 @@ def _finish(
             "stop",
         )
         append_message(messages, row)
-    agent._flush_messages_to_session_db(messages)
+    flushed = agent._flush_messages_to_session_db(messages) is not False
     agent._iters_since_skill = getattr(agent, "_iters_since_skill", 0) + turn.tool_calls
     if completed:
         _call_guarded(
@@ -528,6 +535,17 @@ def _finish(
                 interrupted=False,
                 messages=messages,
             ),
+        )
+    if completed and not flushed:
+        # Output was already streamed; never report it as saved. agent_persisted stays True so the
+        # gateway does not re-insert rows the agent already owns (same stance as the codex path).
+        logger.warning(
+            "cursor_sdk turn was delivered but NOT persisted (session=%s)",
+            getattr(agent, "session_id", None),
+        )
+        completed, outcome = (
+            False,
+            _Outcome("error", "transcript write failed after the turn"),
         )
     error = (
         None
