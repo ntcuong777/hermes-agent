@@ -121,13 +121,18 @@ def _require_api_key() -> str:
 
 
 def _worker_command() -> list[str]:
+    """Packaged wrapper (HERMES_CURSOR_WORKER or cursor.worker) first; else a source checkout run with Node."""
     from hermes_cli.config import load_config
 
     cfg = load_config().get("cursor") or {}
+    worker = os.environ.get("HERMES_CURSOR_WORKER") or cfg.get("worker")
+    if worker:
+        return [str(worker)]
     runtime_dir = os.environ.get("HERMES_CURSOR_RUNTIME_DIR") or cfg.get("runtime_dir")
     if not runtime_dir:
         raise CursorRuntimeError(
-            "cursor.runtime_dir (or HERMES_CURSOR_RUNTIME_DIR) is not set"
+            "Cursor worker not configured: set HERMES_CURSOR_WORKER (or cursor.worker), "
+            "or cursor.runtime_dir for a source checkout"
         )
     node = cfg.get("node") or shutil.which("node") or "node"
     return [str(node), str(Path(str(runtime_dir)) / "worker-main.ts")]
