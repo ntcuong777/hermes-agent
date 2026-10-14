@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional, Tuple
 from agent.message_metadata import append_message
 from agent.message_sanitization import coalesce_tool_call_id, normalize_provider_tool_call_ids
 from agent.turn_preflight import compress_after_tool_results
-from agent.turn_tool_validation import validate_tool_calls
+from agent.turn_tool_validation import deferred_tool_names_for_errors, validate_tool_calls
 
 logger = logging.getLogger("agent.conversation_loop")
 
@@ -117,7 +117,8 @@ def run_tool_round(
                 "name": tc.function.name,
                 "tool_call_id": coalesce_tool_call_id(tc),
                 "content": _invalid_tool_name_error_content(
-                    tc.function.name, agent.valid_tool_names
+                    tc.function.name, agent.valid_tool_names,
+                    deferred_tool_names_for_errors(agent),
                 ),
             })
         assistant_message.tool_calls = [

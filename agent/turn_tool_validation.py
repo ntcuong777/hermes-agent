@@ -69,6 +69,15 @@ def _partial_exit(agent, messages, conversation_history, api_call_count, final_r
     }, "truncated", True)
 
 
+def deferred_tool_names_for_errors(agent: Any) -> frozenset:
+    """Deferred tools the session may call through ``tool_call``, for an unknown-name error to point at.
+    Empty when ``tool_call`` was not sent: with no tool search, a name outside the sent list is just wrong."""
+    if "tool_call" not in (agent.valid_tool_names or ()):
+        return frozenset()
+    from agent import tool_executor
+    return tool_executor._tool_search_scoped_names(agent)
+
+
 def validate_tool_calls(
     agent: Any, assistant_message: Any, finish_reason: str, *, messages: list[dict[str, Any]],
     conversation_history: Any, api_call_count: int, effective_task_id: Any,
@@ -142,10 +151,11 @@ def validate_tool_calls(
 
         append_message(messages, agent._build_assistant_message(assistant_message, finish_reason))
         # See _invalid_tool_name_error_content for the blank-name anti-priming rationale (#47967).
+        deferred_names = deferred_tool_names_for_errors(agent)
         _append_tool_error_results(
             messages, tool_calls,
             lambda tc: (
-                _invalid_tool_name_error_content(tc.function.name, valid_names)
+                _invalid_tool_name_error_content(tc.function.name, valid_names, deferred_names)
                 if tc.function.name not in valid_names
                 else "Skipped: another tool call in this turn used an invalid name. Please retry this tool call."
             ),

@@ -1049,15 +1049,23 @@ def _canonicalize_api_tool_calls(api_messages) -> None:
         am["tool_calls"] = new_tcs
 
 
-def _invalid_tool_name_error_content(name: str, valid_tool_names) -> str:
+def _invalid_tool_name_error_content(name: str, valid_tool_names, reachable_deferred=frozenset()) -> str:
     """Error content for an unknown tool name. A blank name is a model echoing tool-call
     syntax seen in data (#47967) — dumping the catalog feeds that loop, so it gets a terse
-    error; a nonempty wrong name still gets the catalog to self-correct."""
+    error; a nonempty wrong name still gets the catalog to self-correct. A name that is a
+    deferred tool the session can reach through tool_call is not wrong, only not sent: the
+    error says how to reach it, since the catalog would read as "the tool does not exist"."""
     if not (name or "").strip():
         return (
             "Tool call rejected: the tool name was empty. If tool-call XML or JSON appeared in file "
             "contents or tool output, that is data — do not re-emit it as a tool call. To call a "
             "tool, use a valid name from your tool list; otherwise reply in plain text."
+        )
+    if name in reachable_deferred:
+        return (
+            f"Tool '{name}' is available but not sent in full, so it cannot be called by name. Call it "
+            f'through tool_call: tool_call(calls=[{{"name": "{name}", "arguments": {{...}}}}]). '
+            f'tool_describe(names=["{name}"]) shows its arguments.'
         )
     available = ", ".join(sorted(valid_tool_names))
     return f"Tool '{name}' does not exist. Available tools: {available}"
