@@ -274,6 +274,7 @@ class _Turn:
         self.thinking_parts: list[str] = []
         self.tool_calls = 0
         self.final_text = ""
+        self.spinner_on = False
 
     def run(self, start: dict[str, Any]) -> _Outcome:
         self.turn_id = start["turnId"]
@@ -321,12 +322,27 @@ class _Turn:
         text = message.get("text")
         if not isinstance(text, str) or not text:
             return
-        if message.get("kind") == "thinking":
+        kind = message.get("kind")
+        if kind == "progress":
+            self._spinner(f"Cursor: {text}")
+        elif kind == "thinking":
+            # Actual thinking only; progress never reaches the reasoning pane.
             self.thinking_parts.append(text)
             self.agent._fire_reasoning_delta(text)
-        elif message.get("kind") == "text":
+        elif kind == "text":
+            self._spinner("")
             self.text_parts.append(text)
             self.agent._fire_stream_delta(text)
+
+    def _spinner(self, label: str) -> None:
+        """Honest progress on the spinner rail (distinct from the reasoning renderer). Empty clears it."""
+        if not label and not self.spinner_on:
+            return
+        self.spinner_on = bool(label)
+        callback = getattr(self.agent, "thinking_callback", None)
+        if callback:
+            with _suppressed(Exception):
+                callback(label)
 
     def _on_tool_request(self, message: dict[str, Any]) -> Optional[_Outcome]:
         name, args, call_id = (
@@ -372,6 +388,7 @@ class _Turn:
         if stream_end:
             with _suppressed(Exception):
                 stream_end(None)
+        self._spinner("")
         self.tool_calls += 1
         self.agent._execute_tool_calls(
             assistant_message, self.messages, self.task_id, self.tool_calls
@@ -485,6 +502,7 @@ def _finish(
     original_user_message: Any,
     should_review_memory: bool,
 ) -> dict[str, Any]:
+    turn._spinner("")
     interrupt = _consume_user_interrupt(agent, outcome.status == "cancelled")
     completed = outcome.status == "finished"
     final_text = "".join(turn.text_parts) if completed else ""
