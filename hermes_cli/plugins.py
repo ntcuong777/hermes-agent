@@ -1158,6 +1158,29 @@ def _resolve_hook_callback_timeout() -> float:
     return timeout
 
 
+#: Most a profile may raise the aggregate plugin-section cap to (``plugins.prompt_sections_total_chars``).
+_MAX_PROMPT_SECTIONS_TOTAL_CAP = 32_000
+
+
+def _resolve_prompt_sections_total_cap() -> int:
+    """Aggregate cap on plugin system-prompt sections: ``plugins.prompt_sections_total_chars`` when it is
+    an int between the built-in cap and ``_MAX_PROMPT_SECTIONS_TOTAL_CAP``; anything else (unset, lower,
+    higher, not an int) is the built-in ``MAX_SYSTEM_PROMPT_SECTIONS_TOTAL_CHARS``. It can only raise."""
+    default = MAX_SYSTEM_PROMPT_SECTIONS_TOTAL_CHARS
+    try:
+        plugins_cfg = (load_config_readonly() or {}).get("plugins")
+        raw = plugins_cfg.get("prompt_sections_total_chars") if isinstance(plugins_cfg, dict) else None
+    except Exception:
+        return default
+    if raw is None:
+        return default
+    if isinstance(raw, int) and not isinstance(raw, bool) and default <= raw <= _MAX_PROMPT_SECTIONS_TOTAL_CAP:
+        return raw
+    logger.warning("plugins.prompt_sections_total_chars=%r is not an int in %d..%d; using %d", raw, default,
+                   _MAX_PROMPT_SECTIONS_TOTAL_CAP, default)
+    return default
+
+
 class PluginManager(PluginLoaderMixin, PluginDispatchMixin, PluginLedgerMixin):
     """Central manager that discovers, loads, and invokes plugins."""
 

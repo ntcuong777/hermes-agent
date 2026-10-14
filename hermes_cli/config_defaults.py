@@ -1721,6 +1721,10 @@ DEFAULT_CONFIG = {
         # skipped with the reason "load timed out" and the rest keep loading; the stuck worker thread is
         # abandoned. 0 = no deadline (load inline). Max 600.
         "load_timeout_seconds": 10,
+        # Aggregate cap (characters) on all plugin system-prompt sections together. Only raises: a value
+        # below the built-in 8,000 or above 32,000 is ignored. Each section keeps its own 4,000 cap. A
+        # larger prompt costs tokens every turn; raise it only for a plugin that needs the room.
+        "prompt_sections_total_chars": 8000,
         # Read-only plugin update-check cadence, hours (gateway tick; 0 disables). Applying stays
         # explicit: `hermes plugins update <name>`, or auto_apply below (git-class plugins only,
         # scan-gated by that same pipeline).

@@ -566,8 +566,10 @@ class PluginDispatchMixin:
         self, session_info: Mapping[str, Any]
     ) -> list[RenderedPluginSystemPromptSection]:
         """Render all registered sections deterministically and fail open."""
+        from hermes_cli.plugins import _resolve_prompt_sections_total_cap
         frozen_info = types.MappingProxyType(dict(session_info))
         rendered: list[RenderedPluginSystemPromptSection] = []
+        total_cap = _resolve_prompt_sections_total_cap()
         total_chars = len(PLUGIN_SECTIONS_START) + len(PLUGIN_SECTIONS_END) + 2
         for _section_id, section in sorted(self._system_prompt_sections.items()):
             if len(rendered) >= MAX_SYSTEM_PROMPT_SECTIONS:
@@ -581,11 +583,11 @@ class PluginDispatchMixin:
             rendered_chars = len(format_system_prompt_section(section.id, text))
             if rendered:
                 rendered_chars += 2  # canonical ``\n\n`` separator
-            if total_chars + rendered_chars > MAX_SYSTEM_PROMPT_SECTIONS_TOTAL_CHARS:
+            if total_chars + rendered_chars > total_cap:
                 logger.warning(
                     "Plugin system prompt section %s (%s) exceeded the aggregate "
                     "session budget (%d chars) and was skipped", section.id, section.plugin,
-                    MAX_SYSTEM_PROMPT_SECTIONS_TOTAL_CHARS)
+                    total_cap)
                 continue
             rendered.append(
                 RenderedPluginSystemPromptSection(
