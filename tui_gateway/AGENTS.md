@@ -185,6 +185,20 @@ cosmetic edits do not request a cache-breaking live MCP reload. Busy overrides
 remain session-scoped; composer model changes use `session.mutate`, never global
 `config.set`. Discovery can refresh provider metadata, but never starts inference.
 
+## Composer: external editor draft (`ui-tui/src/app/useComposerState.ts::openEditor`)
+
+The editor shortcut writes the composer to a temp file, suspends Ink and opens `$EDITOR`. What
+the editor saved comes back as an **unsent draft**, never a submit: Enter stays the only send
+(the old submit-on-save made saving in the editor send the prompt). `captureDestination()` and
+`composerRevision` are taken before the editor opens; if the destination (session / profile) or
+the composer text changed meanwhile, the draft is **stashed**, not dropped, not queued (a queue
+sends). One slot (a newer stale edit replaces an older one). A `useEffect` restores it, still
+unsent, once the composer is empty and `isCurrentDestination(stash.destination)` holds, so after
+a session switch it returns when you come back, and after typing meanwhile it returns once that
+text is sent or cleared. It is never merged into newer text. Tests:
+`ui-tui/src/__tests__/composerEditorStash.test.tsx`. Fork-only (branch `personal`): upstream
+queues instead; keep the draft semantics when merging `main` in this area.
+
 ## Dev commands
 
 ```bash
