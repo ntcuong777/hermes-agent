@@ -321,8 +321,10 @@ class TestDelegateTask(unittest.TestCase):
                 child_db = kwargs["session_db"]
                 self.assertIsInstance(child_db, SessionDB)
                 self.assertIsNot(child_db, parent_db)
+                # The same FILE, compared as real paths: the registry resolves the path it opens, so on macOS a
+                # temp dir shows as /private/var/... for the child and /var/... (a symlink) for the parent.
                 self.assertEqual(
-                    str(child_db.db_path), str(parent_db.db_path)
+                    Path(child_db.db_path).resolve(), Path(parent_db.db_path).resolve()
                 )
             finally:
                 if child_db is not None:
