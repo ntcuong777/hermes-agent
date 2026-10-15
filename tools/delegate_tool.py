@@ -36,6 +36,7 @@ from tools.delegate_tool_config import (
     _subagent_auto_approve, _subagent_auto_deny,
 )
 from tools.delegate_tool_dispatch import _Batch, _announce_batch, _capture_origin, _run_batch
+from tools.delegate_roles import RoleProfile, profile_for, reasoning_kwargs, role_catalog
 from tools.delegate_tool_progress import (
     DelegateEvent, SUBAGENT_FAILURE_STATUSES, _batch_prefix, _build_child_progress_callback,
     _build_child_system_prompt, _clean_error_text, _emit_parent_console, _quiet, _resolve_workspace_hint,
@@ -222,6 +223,9 @@ def _build_child_agent(
     # Legacy; accepted for wire compat but ignored (capability is depth-derived).
     role: str = "leaf",
     reasoning_config: Optional[dict[str, Any]] = None,
+    # A plugin-declared role (tools.delegate_roles): its instructions join the child's prompt and its name rides on
+    # the child and the subagent_start event. Toolsets, model and effort are resolved by the caller.
+    profile: Optional[RoleProfile] = None,
 ):
     """Build (don't run) a child AIAgent on the main thread. override_* (from delegation config) replace parent
     inheritance so children can run on a different provider:model pair."""
@@ -243,10 +247,18 @@ def _build_child_agent(
     # global. Only fallback policy follows the owner of a per-call route such
     # as auxiliary.review.
     delegation_cfg = _load_config()
+    if profile is not None:
+        # A role fixes what the child may use and runs on (a toolset the parent lacks is dropped by the intersection
+        # below, never added). An explicit argument from the caller still wins over the role's toolsets.
+        if not toolsets and profile.toolsets:
+            toolsets = list(profile.toolsets)
+        model = profile.model or model
+        if reasoning_config is None:
+            reasoning_config = reasoning_kwargs(profile).get("reasoning_config")
     child_toolsets, child_disabled_toolsets = _resolve_child_toolsets(parent_agent, toolsets, effective_role)
     child_prompt = _build_child_system_prompt(
         goal, context, workspace_path=_resolve_workspace_hint(parent_agent), role=effective_role,
-        max_spawn_depth=max_spawn, child_depth=child_depth,
+        max_spawn_depth=max_spawn, child_depth=child_depth, profile=profile,
     )
     parent_api_key = getattr(parent_agent, "api_key", None)
     if (not parent_api_key) and hasattr(parent_agent, "_client_kwargs"):
@@ -267,6 +279,10 @@ def _build_child_agent(
         override_acp_args=override_acp_args,
         routing_cfg=routing_cfg,
     )
+    if reasoning_config is not None:
+        # rt always carries a reasoning_config (the parent's level or delegation.reasoning_effort): the caller's
+        # replaces it. Passing it as a second keyword raised "multiple values for keyword argument".
+        rt = {**rt, "reasoning_config": reasoning_config}
     if override_request_overrides is not None:
         # honored whenever set, incl. the inherit branch where
         # _resolve_delegation_credentials already merged OVER the parent's
@@ -290,7 +306,6 @@ def _build_child_agent(
                 session_db=child_session_db, parent_session_id=parent_sid, request_overrides=request_overrides,
                 tool_progress_callback=child_progress_cb,
                 iteration_budget=None,  # fresh budget per subagent
-                **({"reasoning_config": reasoning_config} if reasoning_config is not None else {}),
             )
         except BaseException:
             # No child close() will ever run: release the dedicated handle here.
@@ -308,6 +323,7 @@ def _build_child_agent(
     child_session_ref["session_id"] = getattr(child, "session_id", "") or ""
     child._progress_identity_ref = child_session_ref
     child._delegate_depth, child._delegate_role = child_depth, effective_role  # post-degrade role
+    child._delegate_profile = profile.name if profile else None  # the plugin-declared role the task named, if any
     child._subagent_id, child._parent_subagent_id = subagent_id, parent_subagent_id
     _apply_child_compression_cap(child, delegation_cfg)
     # Ownership chain for action=list/steer/stop; weakref so a finished parent
@@ -337,7 +353,7 @@ def _build_child_agent(
             "subagent_start", parent_session_id=parent_sid,
             parent_turn_id=getattr(parent_agent, "_current_turn_id", "") or "", parent_subagent_id=parent_subagent_id,
             child_session_id=getattr(child, "session_id", None), child_subagent_id=subagent_id,
-            child_role=effective_role, child_goal=goal,
+            child_role=effective_role, child_goal=goal, child_profile=profile.name if profile else None,
         )
     return child
 
@@ -429,8 +445,14 @@ def _build_children(
     from tools.delegation_live_log import wrap_progress_callback
     from tools.delegation_output_schema import append_output_contract
     overrides = _credential_overrides(creds, routing_cfg)
+    # Resolve every task's role first: one unknown role refuses the whole call before any child exists.
+    try:
+        profiles = [profile_for(t.get("role")) for t in task_list]
+    except ValueError as exc:
+        return [], str(exc)
     children = []
     for i, t in enumerate(task_list):
+        profile = profiles[i]
         _task_schema = task_schemas[i] if i < len(task_schemas) else None
         _child_context = t.get("context")
         if _task_schema is not None:
@@ -438,9 +460,10 @@ def _build_children(
         try:
             child = _build_child_preserving_parent_tools(
                 task_index=i, goal=t["goal"], context=_child_context,
-                toolsets=None,  # always inherit the parent's toolsets
-                model=creds["model"], max_iterations=max_iterations, task_count=len(task_list),
-                parent_agent=parent_agent, role=_normalize_role(t.get("role") or top_role), **overrides,
+                # The role's toolsets, model and effort are applied inside _build_child_agent, from `profile`.
+                toolsets=None, model=creds["model"], max_iterations=max_iterations, task_count=len(task_list),
+                parent_agent=parent_agent, role=_normalize_role(None if profile else (t.get("role") or top_role)),
+                profile=profile, **overrides,
             )
         except ValueError as exc:
             return [], str(exc)
@@ -686,6 +709,15 @@ def _build_dynamic_schema_overrides() -> dict:
         tasks["items"] = {**tasks["items"], "properties": {
             k: v for k, v in tasks["items"]["properties"].items() if k != "group"
         }}
+    catalog = role_catalog()
+    if catalog:  # a plugin declared roles (tools.delegate_roles): tell the model which, and what each is for
+        tasks = overrides_params["properties"]["tasks"]
+        roles_text = "; ".join(f"{name}: {text}" if text else name for name, text in sorted(catalog.items()))
+        tasks["items"] = {**tasks["items"], "properties": {**tasks["items"]["properties"], "role": _p(
+            "string",
+            f"The declared role this task runs as; it fixes the subagent's tools, model and limits. Roles: {roles_text}.",
+            enum=sorted(catalog),
+        )}}
 
     return {
         "description": _build_top_level_description(independent_completions=independent_completions),
