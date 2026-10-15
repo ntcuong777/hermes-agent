@@ -613,6 +613,18 @@ class GatewayInboundMixin(GatewayPluginInjectionMixin):
             # interrupt_then_dispatch / reject). Unrecognized commands and plain text fall through.
             return True, await self._dispatch_busy_slash_command(event, _cmd_def_inner, _quick_key, source)
 
+        # A plugin command that opted in (`register_command(run_while_busy=True)`) runs now and leaves the agent
+        # alone. Without this it falls through to the interrupt path: the turn is cut off and the command reaches
+        # the model as chat text, never the plugin (P22: /tell from a phone while the chat is working).
+        if _evt_cmd:
+            _busy_plugin = self._hm_busy_plugin_handler(_evt_cmd)
+            if _busy_plugin is not None:
+                try:
+                    return True, await self._hm_run_plugin_command(event, source, _busy_plugin)
+                except Exception as e:
+                    logger.warning("Plugin command dispatch failed while busy: %s", e)
+                    return True, f"/{_evt_cmd} failed: {e}"
+
         # Telegram photo bursts arrive as near-simultaneous updates — never interrupt for a
         # photo-only follow-up; adapter-level batching absorbs them.
         if event.message_type == MessageType.PHOTO:
@@ -1083,26 +1095,41 @@ class GatewayInboundMixin(GatewayPluginInjectionMixin):
                 from hermes_cli.plugins import get_plugin_command_handler
                 plugin_handler = get_plugin_command_handler(command.replace("_", "-"))
                 if plugin_handler:
-                    # The agent-turn path binds HERMES_SESSION_* via _set_session_env; this dispatch
-                    # sits before it, so a handler reading get_session_env() would see an empty or a
-                    # foreign (cron agent's os.environ) session (#108698). No session_entry exists yet,
-                    # so session_key is derived from source. Sync handlers run on the gateway pool
-                    # (contextvars carried), never the loop thread: blocking I/O there starves the
-                    # liveness watchdog and the process exits 75 mid-handler (#105279).
-                    _plugin_context = build_session_context(source, self.config)
-                    _plugin_context.session_key = self._session_key_for_source(source)
-                    user_args = event.get_command_args().strip()
-                    with self._session_env_scope(_plugin_context):
-                        if asyncio.iscoroutinefunction(plugin_handler):
-                            result = await plugin_handler(user_args)
-                        else:
-                            result = await self._run_in_executor_with_context(plugin_handler, user_args)
-                            if asyncio.iscoroutine(result):
-                                result = await result
-                    return True, str(result) if result else None, command
+                    return True, await self._hm_run_plugin_command(event, source, plugin_handler), command
             except Exception as e:
                 logger.warning("Plugin command dispatch failed: %s", e)
         return False, None, command
+
+    async def _hm_run_plugin_command(self, event: MessageEvent, source: SessionSource, plugin_handler) -> Optional[str]:
+        """Run a plugin slash-command handler for this message; its reply text, or None for no reply."""
+        # The agent-turn path binds HERMES_SESSION_* via _set_session_env; this dispatch
+        # sits before it, so a handler reading get_session_env() would see an empty or a
+        # foreign (cron agent's os.environ) session (#108698). No session_entry exists yet,
+        # so session_key is derived from source. Sync handlers run on the gateway pool
+        # (contextvars carried), never the loop thread: blocking I/O there starves the
+        # liveness watchdog and the process exits 75 mid-handler (#105279).
+        _plugin_context = build_session_context(source, self.config)
+        _plugin_context.session_key = self._session_key_for_source(source)
+        user_args = event.get_command_args().strip()
+        with self._session_env_scope(_plugin_context):
+            if asyncio.iscoroutinefunction(plugin_handler):
+                result = await plugin_handler(user_args)
+            else:
+                result = await self._run_in_executor_with_context(plugin_handler, user_args)
+                if asyncio.iscoroutine(result):
+                    result = await result
+        return str(result) if result else None
+
+    @staticmethod
+    def _hm_busy_plugin_handler(command: str):
+        """The handler of a plugin command that opted in to run while the agent works, else None.
+        Underscores normalize to hyphens like the idle path (Telegram's autocomplete form)."""
+        try:
+            from hermes_cli.plugins import get_plugin_commands
+            entry = get_plugin_commands().get(command.replace("_", "-"))
+        except Exception:
+            return None
+        return entry.get("handler") if isinstance(entry, dict) and entry.get("run_while_busy") else None
 
     def _hm_bundle_slash_rewrite(
         self, event: MessageEvent, source: SessionSource, _quick_key: str, command: str

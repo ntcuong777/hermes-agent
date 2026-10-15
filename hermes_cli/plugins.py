@@ -656,6 +656,7 @@ class PluginContext:
         self, name: str, handler: Callable, description: str = "", args_hint: str = "",
         argument_mode: str | None = None,
         subcommands: "dict | list | tuple | None" = None,
+        run_while_busy: bool = False,
     ) -> Optional[PluginRegistration]:
         """Register an in-session slash command (``/name``); handler ``fn(raw_args: str) -> str | None``
         (sync or async). ``args_hint`` (e.g. ``"<file>"``) lets adapters like Discord surface an argument
@@ -682,6 +683,9 @@ class PluginContext:
         entry = {
             "handler": handler, "description": description or "Plugin command",
             "plugin": self.manifest.name, "plugin_key": self.plugin_id, "args_hint": hint,
+            # True: the gateway runs it at once even while the chat's agent is mid-turn (default: the old
+            # path, which interrupts the turn and sends the text to the model) (P22).
+            "run_while_busy": bool(run_while_busy),
             "subcommands": subs,
             "argument_mode": argument_mode if argument_mode in {"options", "text", "mixed"}
             else ("text" if hint else None),
