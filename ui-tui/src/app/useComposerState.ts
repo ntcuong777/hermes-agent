@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import { useStdin, withInkSuspended } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { PasteEvent } from '../components/textInput.js'
 import { droppedTokens, imageToken, nextImageIndex } from '../domain/attachments.js'
@@ -31,7 +31,7 @@ import type {
 } from './interfaces.js'
 import { $isBlocked } from './overlayStore.js'
 import { captureDestination, isCurrentDestination, type SubmissionDestination } from './submissionDestination.js'
-import { getUiState } from './uiStore.js'
+import { $uiSessionId, getUiState } from './uiStore.js'
 
 const TOKEN_MAX_COUNT = 32
 const TOKEN_MAX_TOTAL_BYTES = 4 * 1024 * 1024
@@ -514,6 +514,24 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
     [appendAttachment, attachImageToken, gw, resolveAttachment, sys]
   )
 
+  // One slot: a newer stale edit replaces an older one.
+  const editorStash = useRef<null | { destination: SubmissionDestination; draft: { buf: string[]; line: string } }>(
+    null
+  )
+  const sid = useStore($uiSessionId)
+
+  useEffect(() => {
+    const stash = editorStash.current
+
+    if (!stash || input || inputBuf.length || !isCurrentDestination(stash.destination)) {
+      return
+    }
+
+    editorStash.current = null
+    setInputBuf(stash.draft.buf)
+    setInput(stash.draft.line)
+  }, [input, inputBuf, setInput, setInputBuf, sid])
+
   const openEditor = useCallback(async () => {
     const destination = captureDestination()
     const revision = composerRevision.current
@@ -539,7 +557,11 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
       const draft = draftFromEditorText(readFileSync(file, 'utf8'))
 
       // The composer moved on while the editor was open: applying the draft would overwrite it.
+      // Park it; the effect below restores it (still unsent) once its destination is current and
+      // the composer is empty.
       if (!(isCurrentDestination(destination) && revision === composerRevision.current)) {
+        editorStash.current = { destination, draft }
+
         return
       }
 
