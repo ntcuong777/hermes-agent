@@ -1776,6 +1776,12 @@ DEFAULT_CONFIG = {
         # Answers inside these blocks are the proxy's sentinels, not internal hosts, so the guard
         # dials them instead of rejecting them as private. Empty = normal private-address verdict.
         "fake_ip_ranges": [],
+        # Absolute directories write_file/patch may write although they sit under a system deny prefix
+        # (/etc, /private/etc): the one way to let the agent edit a repo that lives at /etc/nix-darwin.
+        # Only the prefix rule is relaxed: exact paths, the Hermes config guard, the protected-instruction
+        # and approval gates and the sandbox all still apply. A root that is or contains a whole deny
+        # prefix ("/", "/etc") is ignored. Empty = no exemption.
+        "write_allow_roots": [],
         "redact_secrets": True,
         # Persisted acknowledgement for unattended model overrides whose tier lets the vendor train
         # on prompts. The startup guard still warns every run; cost guards are unaffected.

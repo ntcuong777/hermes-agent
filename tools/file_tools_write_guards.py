@@ -144,6 +144,45 @@ def _resolved_or_raw(filepath: str, task_id: str) -> str:
         return filepath
 
 
+def _system_path_allow_roots() -> tuple[str, ...]:
+    """Realpaths of ``security.write_allow_roots``: directories exempt from the system-path PREFIX rule
+    only (P20). A repo that lives under /etc (a nix-darwin checkout at /etc/nix-darwin, realpath
+    /private/etc/nix-darwin) could otherwise never be written by write_file/patch, whatever the sandbox
+    allowed. Absolute entries only; a root that is, or contains, a whole deny prefix (``/``, ``/etc``) is
+    ignored; any config read failure means no roots (fail closed)."""
+    try:
+        from hermes_cli.config import load_config, cfg_get
+        raw = cfg_get(load_config(), "security", "write_allow_roots", default=[])
+    except Exception:
+        return ()
+    if not isinstance(raw, list):
+        return ()
+    roots = []
+    for item in raw:
+        text = os.path.expanduser(str(item or "").strip())
+        if not text or not os.path.isabs(text):
+            continue
+        root = os.path.realpath(text)
+        lifts_a_prefix = any(
+            p.rstrip("/") == root or p.startswith(root.rstrip("/") + "/")
+            for p in _SENSITIVE_PATH_PREFIXES)
+        if not lifts_a_prefix:
+            roots.append(root)
+    return tuple(roots)
+
+
+def _inside_allow_roots(paths: list[str]) -> bool:
+    """True only when EVERY path (after realpath, so ``..`` and symlinks cannot leave) is inside a root."""
+    roots = _system_path_allow_roots()
+    if not roots:
+        return False
+    for path in paths:
+        real = os.path.realpath(path)
+        if not any(real == r or real.startswith(r.rstrip("/") + "/") for r in roots):
+            return False
+    return True
+
+
 def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None:
     """Return an error message if the path targets a sensitive system location."""
     # NT/device-namespace guard on the RAW string, BEFORE the task-base join:
@@ -159,7 +198,9 @@ def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None
         return (
             f"Refusing to write to {filepath}: it climbs above the SSH home and the remote "
             "home could not be detected, so its target cannot be checked. Pass an absolute path.")
-    if any(c.startswith(_SENSITIVE_PATH_PREFIXES) or c in _SENSITIVE_EXACT_PATHS for c in candidates):
+    exact = any(c in _SENSITIVE_EXACT_PATHS for c in candidates)
+    under_prefix = [c for c in candidates if c.startswith(_SENSITIVE_PATH_PREFIXES)]
+    if exact or (under_prefix and not _inside_allow_roots(under_prefix)):
         return (
             f"Refusing to write to sensitive system path: {filepath}\n"
             "Use the terminal tool with sudo if you need to modify system files.")
