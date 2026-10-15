@@ -1177,6 +1177,40 @@ _EXECUTE_CODE_DESCRIPTION = (
 )
 
 
+#: The Ink approval panel shows about 10 wrapped lines and then points "above", where only a one-line preview
+#: ever is. A longer script is saved for the person to read in full before approving (P21).
+_EXECUTE_CODE_VIEW_LINES = 8
+_EXECUTE_CODE_VIEW_KEEP = 30
+
+
+def _execute_code_command(code: str) -> str:
+    """The approval text of a script: ``execute_code <<'PY' ... PY``. A script longer than the panel is also
+    saved, redacted like the panel text, as ``<hermes home>/approvals/execute_code-<hash>.py`` (private, the
+    newest ``_EXECUTE_CODE_VIEW_KEEP`` kept) and the FIRST line names it: the first line is always visible,
+    whatever the panel cuts. Any failure leaves the plain text: approval never depends on this file."""
+    lines = code.count("\n") + 1
+    head = "execute_code <<'PY'"
+    if lines > _EXECUTE_CODE_VIEW_LINES:
+        try:
+            from pathlib import Path
+            from agent.redact import redact_sensitive_text
+            from hermes_constants import get_hermes_home
+            shown = redact_sensitive_text(code, force=True)  # first: a failing redactor writes nothing
+            root = Path(get_hermes_home()) / "approvals"
+            root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            path = root / f"execute_code-{hashlib.sha256(code.encode('utf-8')).hexdigest()[:12]}.py"
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(shown)
+            newest_first = sorted(root.glob("execute_code-*.py"), key=lambda p: p.stat().st_mtime_ns, reverse=True)
+            for stale in newest_first[_EXECUTE_CODE_VIEW_KEEP:]:
+                stale.unlink(missing_ok=True)
+            head += f"  # {lines} lines; full script: {path}"
+        except Exception:
+            logger.debug("execute_code approval: could not save the full script", exc_info=True)
+    return f"{head}\n{code}\nPY"
+
+
 def check_execute_code_guard(code: str, env_type: str, has_host_access: bool = False) -> dict:
     """Approve an execute_code script before its child process is spawned.
 
@@ -1226,13 +1260,14 @@ def check_execute_code_guard(code: str, env_type: str, has_host_access: bool = F
         return _approved()
 
     session_key = get_current_session_key()
-    # Built only past the early-return gates so common paths don't copy a potentially-large script into this string.
-    command = f"execute_code <<'PY'\n{code}\nPY"
 
     # Without this, "Approve session" / "Always" choices are stored but never
     # consulted, so every execute_code call re-prompts (#39275).
     if is_approved(session_key, pattern_key):
         return _approved()
+
+    # Built only past the early-return gates so common paths neither copy a potentially-large script nor write a file.
+    command = _execute_code_command(code)
 
     # Smart mode: an APPROVE only suppresses the redundant whole-script prompt; the per-call terminal() guards still
     # run independently. The gateway renders the pending payload to Discord/Slack, so the script body is redacted for
