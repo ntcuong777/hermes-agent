@@ -79,6 +79,27 @@ def _split_args(sub_text: str) -> tuple[list[str], str]:
     return parts[:-1], parts[-1]
 
 
+def _plugin_subcommand_completions(base_cmd: str, sub_text: str):
+    """Words a plugin announced through ``register_command(subcommands=...)``: the first argument
+    completes from its words, the second from that word's choices; nothing deeper. Never raises."""
+    try:
+        from hermes_cli.plugins import get_plugin_commands
+        entry = get_plugin_commands().get(base_cmd[1:].lower())
+        table = entry.get("subcommands") if isinstance(entry, dict) else None
+        if not table:
+            return
+        done, partial = _split_args(sub_text)
+        if not done:
+            rows = list(table)
+        elif len(done) == 1:
+            rows = list(table.get(done[0].lower(), ()))
+        else:
+            return
+        yield from _prefix_completions(((s, None) for s in rows), partial)
+    except Exception:
+        return
+
+
 # Dynamic argument completers: (sub_text, sub_lower) -> Completion iterator
 def _quiet(gen_fn):
     """Generator decorator: any exception while producing completions just ends the stream."""
@@ -439,6 +460,8 @@ class SlashCommandCompleter(Completer):
             elif first_arg and base_cmd in SUBCOMMANDS and self._command_allowed(base_cmd):
                 yield from _prefix_completions(
                     ((s, None) for s in SUBCOMMANDS[base_cmd]), sub_text)
+            elif base_cmd not in SUBCOMMANDS:
+                yield from _plugin_subcommand_completions(base_cmd, sub_text)
             return
         word = text[1:]
 

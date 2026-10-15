@@ -655,6 +655,7 @@ class PluginContext:
     def register_command(
         self, name: str, handler: Callable, description: str = "", args_hint: str = "",
         argument_mode: str | None = None,
+        subcommands: "dict | list | tuple | None" = None,
     ) -> Optional[PluginRegistration]:
         """Register an in-session slash command (``/name``); handler ``fn(raw_args: str) -> str | None``
         (sync or async). ``args_hint`` (e.g. ``"<file>"``) lets adapters like Discord surface an argument
@@ -670,9 +671,18 @@ class PluginContext:
                                "with a built-in command. Skipping.", self.manifest.name, clean)
                 return
         hint = (args_hint or "").strip()
+        # `subcommands`: words (or {word: choices}) the slash completer offers after `/name ` in the
+        # classic CLI and the Ink TUI. Telegram and Discord cannot complete arguments, so they ignore it.
+        subs: dict[str, tuple[str, ...]] = {}
+        if isinstance(subcommands, dict):
+            for word, choices in subcommands.items():
+                subs[str(word).lower()] = tuple(str(c) for c in (choices or ()))
+        elif subcommands:
+            subs = {str(word).lower(): () for word in subcommands}
         entry = {
             "handler": handler, "description": description or "Plugin command",
             "plugin": self.manifest.name, "plugin_key": self.plugin_id, "args_hint": hint,
+            "subcommands": subs,
             "argument_mode": argument_mode if argument_mode in {"options", "text", "mixed"}
             else ("text" if hint else None),
         }
