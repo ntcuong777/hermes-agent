@@ -1,9 +1,10 @@
 import { looksLikeSlashCommand } from '@hermes/shared/slash'
-import { useEffect, useRef, useState } from 'react'
+import { type MutableRefObject, useEffect, useRef, useState } from 'react'
 
 import type { CompletionItem } from '../app/interfaces.js'
 import { rankSlashItems } from '../app/slash/fuzzyScore.js'
 import { getUiState, sessionCwd } from '../app/uiStore.js'
+import type { InputCursorSnapshot } from '../components/textInput.js'
 import { inlineSlashTrigger } from '../domain/slash.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type { CompletionResponse } from '../gatewayTypes.js'
@@ -31,18 +32,30 @@ export function mergeWidgetAppItems(input: string, items: CompletionItem[]): Com
 
 const TAB_PATH_RE = /((?:["']?(?:[A-Za-z]:[\\/]|\.{1,2}\/|~\/|\/|@|[^"'`\s]+\/))[^\s]*)$/
 
+/**
+ * What to ask the gateway for, from the text BEFORE the caret: `@`, a path or an inline `/skill` typed in the middle of
+ * a prompt completes like one at the end. `replaceTo` is the caret, so applying a row keeps the text after it.
+ */
 export function completionRequestForInput(
-  input: string
+  input: string,
+  caret: number = input.length
 ):
-  | { method: 'complete.path'; params: { word: string; cwd?: string; session_id?: string }; replaceFrom: number }
-  | { method: 'complete.slash'; params: { text: string }; replaceFrom: number; skillsOnly?: boolean }
+  | {
+      method: 'complete.path'
+      params: { word: string; cwd?: string; session_id?: string }
+      replaceFrom: number
+      replaceTo: number
+    }
+  | { method: 'complete.slash'; params: { text: string }; replaceFrom: number; replaceTo: number; skillsOnly?: boolean }
   | null {
-  const isSlashCommand = looksLikeSlashCommand(input)
-  const pathWord = isSlashCommand ? null : (input.match(TAB_PATH_RE)?.[1] ?? null)
+  const at = Math.max(0, Math.min(input.length, caret))
+  const before = input.slice(0, at)
+  const isSlashCommand = looksLikeSlashCommand(before)
+  const pathWord = isSlashCommand ? null : (before.match(TAB_PATH_RE)?.[1] ?? null)
 
   // `/model` uses the two-step ModelPicker (real curated IDs).
   // Slash completion here only showed short aliases + vendor/family meta.
-  if (isSlashCommand && /^\/model(?:\s|$)/.test(input)) {
+  if (isSlashCommand && /^\/model(?:\s|$)/.test(before)) {
     return null
   }
 
@@ -53,19 +66,20 @@ export function completionRequestForInput(
   // It only matches a whitespace-preceded slash sitting at the caret, so
   // ordinary argument completion (`/cron ad`, `/personality alic`) is
   // untouched.
-  const inline = inlineSlashTrigger(input)
+  const inline = inlineSlashTrigger(before)
 
   if (inline) {
     return {
       method: 'complete.slash',
       params: { text: `/${inline.query}` },
       replaceFrom: inline.start + 1,
+      replaceTo: at,
       skillsOnly: true
     }
   }
 
   if (isSlashCommand) {
-    return { method: 'complete.slash', params: { text: input }, replaceFrom: 1 }
+    return { method: 'complete.slash', params: { text: before }, replaceFrom: 1, replaceTo: at }
   }
 
   if (!pathWord) {
@@ -79,14 +93,21 @@ export function completionRequestForInput(
   return {
     method: 'complete.path',
     params: { word: pathWord, ...(cwd ? { cwd } : {}), ...(sid ? { session_id: sid } : {}) },
-    replaceFrom: input.length - pathWord.length
+    replaceFrom: at - pathWord.length,
+    replaceTo: at
   }
 }
 
-export function useCompletion(input: string, blocked: boolean, gw: GatewayClient) {
+export function useCompletion(
+  input: string,
+  blocked: boolean,
+  gw: GatewayClient,
+  caretRef?: MutableRefObject<InputCursorSnapshot | null>
+) {
   const [completions, setCompletions] = useState<CompletionItem[]>([])
   const [compIdx, setCompIdx] = useState(0)
   const [compReplace, setCompReplace] = useState(0)
+  const [compReplaceTo, setCompReplaceTo] = useState(0)
   const ref = useRef('')
 
   useEffect(() => {
@@ -94,6 +115,7 @@ export function useCompletion(input: string, blocked: boolean, gw: GatewayClient
       setCompletions(prev => (prev.length ? [] : prev))
       setCompIdx(prev => (prev ? 0 : prev))
       setCompReplace(prev => (prev ? 0 : prev))
+      setCompReplaceTo(prev => (prev ? 0 : prev))
     }
 
     if (blocked) {
@@ -109,7 +131,9 @@ export function useCompletion(input: string, blocked: boolean, gw: GatewayClient
 
     ref.current = input
 
-    const request = completionRequestForInput(input)
+    // The composer's TextInput records the caret with the value it belongs to; any other value means "at the end".
+    const snapshot = caretRef?.current
+    const request = completionRequestForInput(input, snapshot?.value === input ? snapshot.cursor : input.length)
 
     if (!request) {
       clear()
@@ -138,7 +162,9 @@ export function useCompletion(input: string, blocked: boolean, gw: GatewayClient
           const r = asRpcResult<CompletionResponse>(raw)
 
           const fetched =
-            request.method === 'complete.slash' ? mergeWidgetAppItems(input, r?.items ?? []) : (r?.items ?? [])
+            request.method === 'complete.slash'
+              ? mergeWidgetAppItems(input.slice(0, request.replaceTo), r?.items ?? [])
+              : (r?.items ?? [])
 
           // Mid-message offers SKILLS only. A built-in like `/model` or `/new`
           // acts on the app, so it's meaningless as a reference inside prose —
@@ -158,6 +184,7 @@ export function useCompletion(input: string, blocked: boolean, gw: GatewayClient
           setCompReplace(
             request.method === 'complete.slash' && !request.skillsOnly ? (r?.replace_from ?? 1) : request.replaceFrom
           )
+          setCompReplaceTo(request.replaceTo)
         })
         .catch((e: unknown) => {
           if (ref.current !== input) {
@@ -173,11 +200,12 @@ export function useCompletion(input: string, blocked: boolean, gw: GatewayClient
           ])
           setCompIdx(0)
           setCompReplace(request.replaceFrom)
+          setCompReplaceTo(request.replaceTo)
         })
     }, 60)
 
     return () => clearTimeout(timer)
   }, [blocked, gw, input])
 
-  return { completions, compIdx, setCompIdx, compReplace }
+  return { completions, compIdx, setCompIdx, compReplace, compReplaceTo }
 }

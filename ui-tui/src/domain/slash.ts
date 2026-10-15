@@ -56,11 +56,24 @@ export const inlineSlashTrigger = (text: string): { query: string; start: number
  * input so a `/token` anywhere in the message behaves the same as one at
  * position 0 — an inline `run /cle` replaces from after its own slash.
  */
-export const applyCompletion = (value: string, rowText: string, compReplace: number): string => {
-  const text = value[compReplace - 1] === '/' && rowText.startsWith('/') ? rowText.slice(1) : rowText
+const completionText = (value: string, rowText: string, compReplace: number): string =>
+  value[compReplace - 1] === '/' && rowText.startsWith('/') ? rowText.slice(1) : rowText
 
-  return value.slice(0, compReplace) + text
+/** `replaceTo` is where the replaced word ends: the caret. Text after it stays (the person typed `@` mid-prompt). */
+export const applyCompletion = (
+  value: string,
+  rowText: string,
+  compReplace: number,
+  replaceTo: number = value.length
+): string => {
+  const end = Math.min(value.length, Math.max(compReplace, replaceTo))
+
+  return value.slice(0, compReplace) + completionText(value, rowText, compReplace) + value.slice(end)
 }
+
+/** Where the caret goes after `applyCompletion`: right after the inserted text. */
+export const completionCursor = (value: string, rowText: string, compReplace: number): number =>
+  compReplace + completionText(value, rowText, compReplace).length
 
 /**
  * Decide what Enter does when a completion is highlighted: returns the value
@@ -79,7 +92,8 @@ export const completionToApplyOnSubmit = (
   value: string,
   rowText: string | undefined,
   compReplace: number,
-  isLocalCommand: (name: string) => boolean = () => false
+  isLocalCommand: (name: string) => boolean = () => false,
+  replaceTo: number = value.length
 ): string | null => {
   // The gateway does not know TUI-local commands, so its fuzzy list can rank another command
   // above one typed in full (`/connectors` matches a description word of `/login`).
@@ -89,7 +103,7 @@ export const completionToApplyOnSubmit = (
     return null
   }
 
-  const next = applyCompletion(value, rowText, compReplace)
+  const next = applyCompletion(value, rowText, compReplace, replaceTo)
 
   return next !== value && next.trimEnd() !== value.trimEnd() ? next : null
 }

@@ -7,7 +7,7 @@ import { useStdin, withInkSuspended } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { PasteEvent } from '../components/textInput.js'
+import type { InputCursorSnapshot, PasteEvent } from '../components/textInput.js'
 import { droppedTokens, imageToken, nextImageIndex } from '../domain/attachments.js'
 import type { ClipboardPasteResponse, ImageAttachResponse, InputDetectDropResponse } from '../gatewayTypes.js'
 import { useCompletion } from '../hooks/useCompletion.js'
@@ -165,7 +165,9 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
   } = useQueue(gw)
 
   const { historyRef, historyIdx, setHistoryIdx, historyDraftRef, pushHistory } = useInputHistory()
-  const { completions, compIdx, setCompIdx, compReplace } = useCompletion(input, isBlocked, gw)
+  const caretRef = useRef<InputCursorSnapshot | null>(null)
+
+  const { completions, compIdx, setCompIdx, compReplace, compReplaceTo } = useCompletion(input, isBlocked, gw, caretRef)
 
   const clearIn = useCallback(() => {
     setInput('')
@@ -622,6 +624,7 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
   const refs = useMemo(
     () => ({
       historyDraftRef,
+      caretRef,
       historyRef,
       inputRef,
       queueEditRef,
@@ -629,13 +632,14 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
       submitRef,
       tokensRef
     }),
-    [historyDraftRef, historyRef, inputRef, queueEditRef, queueRef, submitRef]
+    [caretRef, historyDraftRef, historyRef, inputRef, queueEditRef, queueRef, submitRef]
   )
 
   const state = useMemo(
     () => ({
       compIdx,
       compReplace,
+      compReplaceTo,
       completions,
       historyIdx,
       input,
@@ -644,7 +648,7 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
       queuedDisplay,
       tokens
     }),
-    [compIdx, compReplace, completions, historyIdx, input, inputBuf, queueEditIdx, queuedDisplay, tokens]
+    [compIdx, compReplace, compReplaceTo, completions, historyIdx, input, inputBuf, queueEditIdx, queuedDisplay, tokens]
   )
 
   return {

@@ -52,7 +52,8 @@ describe('completionRequestForInput — inline skill references', () => {
     expect(completionRequestForInput('/cle')).toEqual({
       method: 'complete.slash',
       params: { text: '/cle' },
-      replaceFrom: 1
+      replaceFrom: 1,
+      replaceTo: 4
     })
   })
 
@@ -73,7 +74,8 @@ describe('completionRequestForInput — inline skill references', () => {
       expect(completionRequestForInput(input)).toEqual({
         method: 'complete.slash',
         params: { text: input },
-        replaceFrom: 1
+        replaceFrom: 1,
+        replaceTo: input.length
       })
     }
   })
