@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react'
 
 import { DASHBOARD_TUI_MODE } from '../config/env.js'
 import { DOUBLE_ESC_MS, TYPING_IDLE_MS } from '../config/timing.js'
-import { applyCompletion } from '../domain/slash.js'
+import { applyCompletion, completionCursor } from '../domain/slash.js'
 import type { ConfigSetResponse, SlashExecResponse, VoiceRecordResponse } from '../gatewayTypes.js'
 import { t } from '../i18n/runtime.js'
 import { isAction, isCopyShortcut, isMac, isMacActionFallback, isVoiceToggleKey } from '../lib/platform.js'
@@ -988,7 +988,11 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       const row = cState.completions[cState.compIdx]
 
       if (row?.text) {
-        cActions.setInput(applyCompletion(cState.input, row.text, cState.compReplace))
+        // Splice the row in at the word before the caret and keep the rest of the prompt, caret after the row.
+        const end = cState.compReplaceTo || cState.input.length
+        const next = applyCompletion(cState.input, row.text, cState.compReplace, end)
+        cRefs.caretRef.current = { cursor: completionCursor(cState.input, row.text, cState.compReplace), value: next }
+        cActions.setInput(next)
       }
 
       return

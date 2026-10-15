@@ -2,7 +2,7 @@ import type { MouseTrackingMode, ScrollBoxHandle } from '@hermes/ink'
 import type { Usage } from '@hermes/shared/gateway-events'
 import type { MutableRefObject, ReactNode, RefObject, SetStateAction } from 'react'
 
-import type { PasteEvent } from '../components/textInput.js'
+import type { InputCursorSnapshot, PasteEvent } from '../components/textInput.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type {
   BillingCardInfo,
@@ -421,6 +421,8 @@ export interface ComposerRefs {
    *  render, so a callback that resolves later (an RPC round-trip) must compare
    *  against this to know what the user has typed since. */
   inputRef: MutableRefObject<string>
+  /** Composer caret with the text it belongs to: TextInput writes it, completion reads it, applying a row sets it. */
+  caretRef: MutableRefObject<InputCursorSnapshot | null>
   queueEditRef: MutableRefObject<null | number>
   queueRef: MutableRefObject<QueueItem[]>
   submitRef: MutableRefObject<(value: string) => void>
@@ -430,6 +432,8 @@ export interface ComposerRefs {
 export interface ComposerState {
   compIdx: number
   compReplace: number
+  /** End of the word a row replaces (the caret when it was asked); text after it stays. */
+  compReplaceTo: number
   completions: CompletionItem[]
   historyIdx: null | number
   input: string
@@ -601,6 +605,7 @@ export interface AppLayoutActions {
 export interface AppLayoutComposerProps {
   cols: number
   compIdx: number
+  caretRef: MutableRefObject<InputCursorSnapshot | null>
   completions: CompletionItem[]
   empty: boolean
   handleTextPaste: (event: PasteEvent) => MaybePromise<ComposerPasteResult | null>

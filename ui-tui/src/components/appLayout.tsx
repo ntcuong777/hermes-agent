@@ -465,6 +465,7 @@ const ComposerPane = memo(function ComposerPane({
                   accentColor={ui.theme.color.accent}
                   color={ui.theme.color.text}
                   columns={inputColumns}
+                  caretRef={composer.caretRef}
                   cursorSnapshotRef={cursorSnapshotRef}
                   mouseApiRef={inputMouseRef}
                   onChange={composer.updateInput}

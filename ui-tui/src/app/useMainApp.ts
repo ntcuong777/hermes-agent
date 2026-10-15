@@ -1409,6 +1409,7 @@ export function useMainApp(gw: GatewayClient) {
     () => ({
       cols,
       compIdx: composerState.compIdx,
+      caretRef: composerRefs.caretRef,
       completions: composerState.completions,
       empty,
       handleTextPaste: composerActions.handleTextPaste,
@@ -1421,7 +1422,7 @@ export function useMainApp(gw: GatewayClient) {
       updateInput,
       voiceRecordKey
     }),
-    [cols, composerActions, composerState, empty, pagerPageSize, submit, updateInput, voiceRecordKey]
+    [cols, composerActions, composerRefs, composerState, empty, pagerPageSize, submit, updateInput, voiceRecordKey]
   )
 
   // Pass current progress through unfrozen — streaming update throttling

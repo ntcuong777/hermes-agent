@@ -783,6 +783,7 @@ export function TextInput({
   mask,
   mouseApiRef,
   cursorSnapshotRef,
+  caretRef,
   ignoreVerticalArrows = false,
   voiceRecordKey = DEFAULT_VOICE_RECORD_KEY,
   placeholder = '',
@@ -950,9 +951,12 @@ export function TextInput({
     }
 
     pendingParentValue.current = null
-    setCur(value.length)
+    // The parent may say where the caret goes for this value (a completion spliced in mid-prompt); else the end.
+    const asked = caretRef?.current?.value === value ? caretRef.current.cursor : value.length
+    const at = Math.max(0, Math.min(value.length, asked))
+    setCur(at)
     setSel(null)
-    curRef.current = value.length
+    curRef.current = at
     selRef.current = null
     vRef.current = value
     lineWidthRef.current = stringWidth(value.includes('\n') ? value.slice(value.lastIndexOf('\n') + 1) : value)
@@ -1054,6 +1058,13 @@ export function TextInput({
     []
   )
 
+  // Hand the caret over with the value it belongs to (a deferred flush can carry an older value: then say the end).
+  const noteCaret = (value: string) => {
+    if (caretRef) {
+      caretRef.current = { cursor: value === vRef.current ? curRef.current : value.length, value }
+    }
+  }
+
   const flushParentChange = () => {
     if (parentChangeTimer.current) {
       clearTimeout(parentChangeTimer.current)
@@ -1066,6 +1077,7 @@ export function TextInput({
     if (next !== null) {
       self.current = true
       emittedValueRef.current = next
+      noteCaret(next)
       cbChange.current(next)
     }
   }
@@ -1160,6 +1172,7 @@ export function TextInput({
         flushParentChange()
         self.current = true
         emittedValueRef.current = next
+        noteCaret(next)
         cbChange.current(next)
         // A full Ink repaint just happened. Mark it so any fast-echo backspace
         // later in this IME recompose burst is suppressed (it would write
@@ -1832,6 +1845,9 @@ interface TextInputProps {
   color?: string
   columns?: number
   cursorSnapshotRef?: MutableRefObject<InputCursorSnapshot | null>
+  /** Live caret, two ways: written with every value handed to `onChange` (completion reads where `@` was typed),
+   *  and read when the parent sets a new value: a caret recorded for exactly that value is kept, else the end. */
+  caretRef?: MutableRefObject<InputCursorSnapshot | null>
   focus?: boolean
   /** Leave ↑/↓ to the owner: a form that moves field focus with them owns the key, not the field. */
   ignoreVerticalArrows?: boolean

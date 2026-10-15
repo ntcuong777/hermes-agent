@@ -3,7 +3,7 @@ import { type MutableRefObject, useCallback, useEffect, useRef } from 'react'
 
 import { TYPING_IDLE_MS } from '../config/timing.js'
 import { expandTokens } from '../domain/attachments.js'
-import { completionToApplyOnSubmit } from '../domain/slash.js'
+import { completionCursor, completionToApplyOnSubmit } from '../domain/slash.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type { SessionSteerResponse, ShellExecResponse } from '../gatewayTypes.js'
 import { queueItem, type QueueItem } from '../hooks/useQueue.js'
@@ -369,11 +369,21 @@ export function useSubmission(opts: UseSubmissionOptions) {
       if (composerState.completions.length) {
         const row = composerState.completions[composerState.compIdx]
 
-        const next = completionToApplyOnSubmit(value, row?.text, composerState.compReplace, name =>
-          Boolean(findSlashCommand(name))
+        const next = completionToApplyOnSubmit(
+          value,
+          row?.text,
+          composerState.compReplace,
+          name => Boolean(findSlashCommand(name)),
+          composerState.compReplaceTo || value.length
         )
 
-        if (next !== null) {
+        if (next !== null && row?.text) {
+          // Enter on a mid-prompt completion: keep the rest of the prompt, caret right after the row.
+          composerRefs.caretRef.current = {
+            cursor: completionCursor(value, row.text, composerState.compReplace),
+            value: next
+          }
+
           return composerActions.setInput(next)
         }
       }
