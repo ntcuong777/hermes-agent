@@ -19,16 +19,18 @@ def _fmt_pending_list(subsystem: str) -> str:
     if not records:
         return f"No pending {subsystem} writes."
     lines = [f"Pending {subsystem} writes ({len(records)}):"]
-    for r in records:
+    for number, r in enumerate(records, 1):
         origin = r.get("origin", "foreground")
         tag = " [auto]" if origin == "background_review" else ""
-        lines.append(f"  {r['id']}{tag}  {r.get('summary', '')}")
+        lines.append(f"  {number}. {r['id']}{tag}  {r.get('summary', '')}")
         if subsystem == wa.MEMORY:
             lines.extend(f"      {line}" for line in _matched_entries(r["payload"]))
     lines.append("")
-    lines.append(f"Apply: /{subsystem} approve <id>   Reject: /{subsystem} reject <id>")
+    lines.append(f"Apply: /{subsystem} approve <n|id|all>   Reject: /{subsystem} reject <n|id|all>")
     if subsystem == wa.SKILLS:
-        lines.append("Review full diff: /skills diff <id>")
+        lines.append("Review full diff: /skills diff <n|id>")
+    else:
+        lines.append(f"Review one in full: /{subsystem} show <n|id>")
     return "\n".join(lines)
 
 
@@ -50,38 +52,54 @@ def handle_pending_subcommand(
         return _approve(subsystem, rest, memory_store)
     if sub in {"reject", "deny", "drop"}:
         return _reject(subsystem, rest)
+    if sub in {"show", "review"}:
+        return _show(subsystem, rest)
     if sub == "diff" and subsystem == wa.SKILLS:
-        return _diff(rest)
+        return _show(subsystem, rest, verb="diff")
     if sub in {"approval", "mode"}:  # 'mode' kept as a back-compat alias
         return _set_approval(subsystem, rest, set_mode_fn)
     return None  # not ours — caller handles
 
 
-def _usage(subsystem: str) -> str:
-    return f"Usage: /{subsystem} approve|reject <id>  (or 'all')"
+def _which(subsystem: str, token: Optional[str], *, verb: str, allow_all: bool = True):
+    """``(records, None)`` for what *token* names, else ``([], text for the user)``.
+
+    *token* is ``all``, an exact id, or the number a row has in ``/<subsystem> pending`` (1 is the oldest). No
+    token names the one pending write, and only when it is the only one: with several pending the person is
+    asked which, never guessed for (an approval writes to durable memory).
+    """
+    records = wa.list_pending(subsystem)
+    if not records:
+        return [], f"No pending {subsystem} writes."
+    if token is None:
+        if len(records) == 1:
+            return records, None
+        choices = "<n|id|all>" if allow_all else "<n|id>"
+        return [], (f"{len(records)} {subsystem} writes are pending: say which with /{subsystem} {verb} {choices}.\n\n"
+                    + _fmt_pending_list(subsystem))
+    if allow_all and token.lower() == "all":
+        return list(records), None
+    if rec := wa.get_pending(subsystem, token):
+        return [rec], None
+    if token.isdigit():
+        if 1 <= int(token) <= len(records):
+            return [records[int(token) - 1]], None
+        return [], f"No pending {subsystem} write numbered {token}: choose 1-{len(records)}, or an id."
+    return [], f"No pending {subsystem} write with id '{token}'."
 
 
 def _approve(subsystem: str, rest: list[str], memory_store) -> str:
-    if not rest:
-        return _usage(subsystem)
-    target = rest[0]
-    records = wa.list_pending(subsystem)
-    if not records:
-        return f"No pending {subsystem} writes."
-    if target.lower() == "all":
-        targets = list(records)
-    else:
-        rec = wa.get_pending(subsystem, target)
-        if not rec:
-            return f"No pending {subsystem} write with id '{target}'."
-        targets = [rec]
+    targets, problem = _which(subsystem, rest[0] if rest else None, verb="approve")
+    if problem is not None:
+        return problem
 
-    applied, failed, overwritten, patched, removed = 0, [], [], [], []
+    applied, failed, overwritten, patched, removed, done = 0, [], [], [], [], []
     for rec in targets:
         ok, msg, result = _apply_one(subsystem, rec, memory_store)
         if ok:
             wa.discard_pending(subsystem, rec["id"])
             applied += 1
+            done.append(rec)
             overwritten.extend(f"  {rec['id']}: {text}" for text in _changed_entries(result, "replaced"))
             patched.extend(f"  {rec['id']}: {text}" for text in _changed_entries(result, "patched"))
             removed.extend(f"  {rec['id']}: {text}" for text in _changed_entries(result, "removed"))
@@ -89,6 +107,7 @@ def _approve(subsystem: str, rest: list[str], memory_store) -> str:
             failed.append(f"{rec['id']}: {msg}")
 
     out = [f"Approved {applied} {subsystem} write(s)."]
+    out.extend(f"  {rec['id']}  {rec.get('summary', '')}" for rec in done)
     if overwritten:
         # A memory 'replace' overwrites the WHOLE matched entry (#117952); the approver
         # is the last person who can notice a clause went missing, so show what was lost.
@@ -143,24 +162,51 @@ def _apply_one(subsystem: str, rec, memory_store):
 
 
 def _reject(subsystem: str, rest: list[str]) -> str:
-    if not rest:
-        return _usage(subsystem)
-    target = rest[0]
-    if target.lower() == "all":
-        n = sum(1 for rec in wa.list_pending(subsystem) if wa.discard_pending(subsystem, rec["id"]))
+    targets, problem = _which(subsystem, rest[0] if rest else None, verb="reject")
+    if problem is not None:
+        return problem
+    n = sum(1 for rec in targets if wa.discard_pending(subsystem, rec["id"]))
+    if rest and rest[0].lower() == "all":
         return f"Rejected {n} pending {subsystem} write(s)."
-    if wa.discard_pending(subsystem, target):
-        return f"Rejected pending {subsystem} write '{target}'."
-    return f"No pending {subsystem} write with id '{target}'."
+    rec = targets[0]
+    if not n:
+        return f"No pending {subsystem} write with id '{rec['id']}'."
+    summary = rec.get("summary")
+    return f"Rejected pending {subsystem} write '{rec['id']}'." + (f"\n  {summary}" if summary else "")
 
 
-def _diff(rest: list[str]) -> str:
-    if not rest:
-        return "Usage: /skills diff <id>"
-    rec = wa.get_pending(wa.SKILLS, rest[0])
-    if not rec:
-        return f"No pending skill write with id '{rest[0]}'."
-    return f"# Pending skill write {rec['id']}: {rec.get('summary', '')}\n\n" + wa.skill_pending_diff(rec)
+def _show(subsystem: str, rest: list[str], verb: str = "show") -> str:
+    """One pending write in full: the list only carries a one-line summary."""
+    targets, problem = _which(subsystem, rest[0] if rest else None, verb=verb, allow_all=False)
+    if problem is not None:
+        return problem
+    rec = targets[0]
+    if subsystem == wa.SKILLS:
+        return f"# Pending skill write {rec['id']}: {rec.get('summary', '')}\n\n" + wa.skill_pending_diff(rec)
+    return _memory_review(rec)
+
+
+def _memory_review(rec) -> str:
+    """Everything a staged memory write would do: new text, what it finds, the entry it is pinned to."""
+    from tools.memory_tool import destructive_ops
+    payload = rec.get("payload") or {}
+    ops = (payload.get("operations") or []) if payload.get("action") == "batch" else [payload]
+    destructive = destructive_ops(payload)
+    tag = " [auto]" if rec.get("origin") == "background_review" else ""
+    lines = [f"# Pending memory write {rec['id']}{tag}", f"summary: {rec.get('summary', '')}",
+             f"target: {payload.get('target')}"]
+    for number, op in enumerate(ops, 1):
+        lines.append(f"{number}. {op.get('action')}")
+        if op.get("old_text"):
+            lines.append(f"   finds: {op['old_text']}")
+        if op.get("content"):
+            lines.append(f"   new text: {op['content']}")
+        if any(op is d for d in destructive):
+            lines.append(f"   entry it applies to: {op['matched_entry']}" if op.get("matched_entry") else
+                         "   entry it applies to: none pinned (a legacy write): reject and recreate before approving")
+    lines.append("")
+    lines.append(f"Apply: /memory approve {rec['id']}   Reject: /memory reject {rec['id']}")
+    return "\n".join(lines)
 
 
 _APPROVAL_VALUES = {

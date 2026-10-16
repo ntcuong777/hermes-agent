@@ -43,6 +43,18 @@ def test_anything_else_of_memory_is_still_refused(arg):
     assert command_verdict("memory", arg) == "refused"
 
 
+@pytest.mark.parametrize("arg", ["show", "show 2", "review", "review d281178d"])
+def test_show_and_review_of_memory_are_reads(arg):
+    assert command_verdict("memory", arg) == "read"
+    assert command_verdict("skills", arg) == "read"
+
+
+def test_an_unbalanced_quote_is_decided_not_raised():
+    assert command_verdict("memory", 'approve "x') == "control"
+    assert command_verdict("memory", '"x') == "refused"
+    assert command_verdict("memory", 'show "x') == "read"
+
+
 def test_skills_review_verbs_are_unchanged():
     assert command_verdict("skills", "approve abc") == "control"
     assert command_verdict("skills", "pending") == "read"

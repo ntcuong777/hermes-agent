@@ -57,13 +57,19 @@ def _first_token(arg):
     return ''
 
 
+def _first_word(arg):
+    """The first whitespace-separated word, lowercased: no quoting rules, so an unbalanced quote cannot raise."""
+    words = arg.split()
+    return words[0].lower() if words else ''
+
+
 # The read-only argument forms of a read command whose other subcommands write: ``/usage reset``
 # redeems a credit, ``/memory approve|approval`` applies writes / edits config.yaml,
 # ``/suggestions accept|catalog`` schedules cron jobs delivering to this (non-messaging) chat.
 _READ_ARGUMENTS = {
-    'skills': lambda arg: _first_token(arg) in {'', 'pending', 'diff'},
+    'skills': lambda arg: _first_token(arg) in {'', 'pending', 'diff', 'show', 'review'},
     'usage': lambda arg: not arg.strip(),
-    'memory': lambda arg: arg.strip().lower() in {'', 'pending'},
+    'memory': lambda arg: _first_word(arg) in {'', 'pending', 'show', 'review'},
     'suggestions': lambda arg: not arg.strip(),
     'kanban': lambda arg: _first_token(arg) in _KANBAN_READS,
 }
@@ -77,7 +83,7 @@ _READ_ARGUMENTS = {
 _WRITE_APPROVAL_VERBS = frozenset({'approve', 'apply', 'reject', 'deny', 'drop', 'approval', 'mode'})
 _CONTROL_ARGUMENTS = {
     'skills': lambda arg: _first_token(arg) in _WRITE_APPROVAL_VERBS,
-    'memory': lambda arg: _first_token(arg) in _WRITE_APPROVAL_VERBS,
+    'memory': lambda arg: _first_word(arg) in _WRITE_APPROVAL_VERBS,
 }
 
 
