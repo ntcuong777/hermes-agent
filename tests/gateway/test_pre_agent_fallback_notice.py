@@ -73,15 +73,17 @@ def test_credential_resolution_fallback_reaches_agent_notice_not_agent_kwargs():
         _hooks_ref=SimpleNamespace(loaded_hooks=False),
     )
     def primary_auth_fails(**kw):
-        if kw.get("requested") is None:  # the primary, resolved from config.yaml
+        # The primary is asked for by name: the gateway route's own provider (B21), never the shared one.
+        if kw.get("requested") == "openai-codex":
             raise AuthError("expired")
         return dict(fb)  # the fallback entry, walked by resolve_runtime_with_fallback
 
+    route = {"model": {"provider": "openai-codex", "default": "gpt-5.6-sol"},
+             "fallback_providers": [{"provider": "anthropic", "model": "claude-sonnet-5"}]}
     with patch("hermes_cli.runtime_provider.resolve_runtime_provider", side_effect=primary_auth_fails), \
          patch("hermes_cli.runtime_provider._get_model_config",
                return_value={"provider": "openai-codex", "default": "gpt-5.6-sol"}), \
-         patch("gateway.run._load_gateway_config",
-               return_value={"fallback_providers": [{"provider": "anthropic", "model": "claude-sonnet-5"}]}), \
+         patch("gateway.run._load_gateway_config", return_value=route), \
          patch("gateway.run._resolve_gateway_model", return_value="gpt-5.6-sol"), \
          patch("gateway.run._get_channel_override", return_value=None):
         result = TurnRunner(runner, ctx).run_sync()
