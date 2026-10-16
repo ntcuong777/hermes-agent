@@ -7,8 +7,11 @@ export const canonicalEn = {
   canonical: {
     // app/slash/canonicalSessionControls.ts + canonicalSessionCommands.ts
     controls: {
-      modelUsage: 'usage: /model <model> [--provider <provider>] [--session]',
+      modelUsage: 'usage: /model <model> [--provider <provider>] [--reasoning <level>] [--session]',
       unsupportedModelOption: (flag: string) => `unsupported canonical model option: ${flag}`,
+      unsupportedReasoning: (level: string) => `unsupported reasoning level: ${level}`,
+      reasoningNotSet: (model: string, reason: string) =>
+        `switched to ${model}, but the reasoning level was not set: ${reason}; set it with /reasoning <level>`,
       identityUnavailable: 'session execution identity unavailable; reconnect before editing',
       compressedStale: 'compressed transcript is stale; reopen the session',
       compressed: '✓ transcript compressed',

@@ -17,10 +17,28 @@ interface MutationGateway {
 // must query that receipt, not silently authorize another write at a new revision.
 const pending = new WeakMap<MutationGateway, Map<string, Record<string, unknown>>>()
 
+// The levels `hermes_constants.parse_reasoning_effort` accepts; the display words are config.yaml writes.
+export const REASONING_EFFORTS = new Set([
+  'none',
+  'false',
+  'disabled',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+  'ultra'
+])
+
+/** `<model> [--provider <p>] [--reasoning <level>] [--session]`. The owner's `model` mutation carries the model
+ *  and provider only; the level is its own `reasoning` mutation, so it is split out here. The model picker's
+ *  third step emits `--reasoning`, so refusing it refused every pick that chose a level. */
 function modelPayload(arg: string) {
   const parts = arg.trim().split(/\s+/)
   const model = parts.shift()!
   const payload: Record<string, string> = { model }
+  let effort = ''
 
   if (model.startsWith('--')) {
     throw new Error(t('canonical.controls.modelUsage'))
@@ -39,10 +57,20 @@ function modelPayload(arg: string) {
       continue
     }
 
+    if (flag === '--reasoning' && parts[0] && !parts[0].startsWith('--')) {
+      effort = parts.shift()!.toLowerCase()
+
+      if (!REASONING_EFFORTS.has(effort)) {
+        throw new Error(t('canonical.controls.unsupportedReasoning', effort))
+      }
+
+      continue
+    }
+
     throw new Error(t('canonical.controls.unsupportedModelOption', flag))
   }
 
-  return payload
+  return { effort, payload }
 }
 
 export type CanonicalOperation = 'model' | 'branch' | 'compress' | 'delete' | 'rename' | 'rewind' | 'reasoning'
@@ -151,14 +179,43 @@ export async function mutateCanonicalSession(
 ) {
   // `confirm`: the owner's one-time token for a guarded model target the user accepted. It keys a
   // separate retained request, so an ambiguous reply to the confirmed send retries that exact one.
-  const payload = {
-    ...(operation === 'model' ? modelPayload(arg) : arg ? { [operation === 'branch' ? 'title' : 'focus']: arg } : {}),
-    ...(confirm ? { confirm } : {})
-  }
+  const { effort, payload: body } =
+    operation === 'model'
+      ? modelPayload(arg)
+      : { effort: '', payload: arg ? { [operation === 'branch' ? 'title' : 'focus']: arg } : {} }
 
+  const payload = { ...body, ...(confirm ? { confirm } : {}) }
   const mutation = await mutateCanonical(gw, sid, operation, payload, stale)
 
-  return mutation?.result ? { result: mutation.result, expectedGeneration: mutation.expectedGeneration } : undefined
+  if (!mutation?.result) {
+    return undefined
+  }
+
+  // The level follows only a switch that was applied: a refusal threw above, and a guarded target the owner
+  // wants confirmed wrote nothing, so the confirmed re-send (same argument) carries the level then.
+  if (!effort || mutation.result.status === 'confirmation_required') {
+    return { result: mutation.result, expectedGeneration: mutation.expectedGeneration }
+  }
+
+  let level
+
+  try {
+    level = await mutateCanonical(gw, sid, 'reasoning', { effort }, stale)
+  } catch (error) {
+    throw new Error(t('canonical.controls.reasoningNotSet', mutation.result.model as string, (error as Error).message))
+  }
+
+  // The reasoning receipt is newer: report its generation, or the live session.info it published would mark
+  // the model result as superseded and the switch would go unannounced.
+  const generation = Math.max(
+    Number(mutation.result.execution_generation ?? 0),
+    Number(level?.result?.execution_generation ?? 0)
+  )
+
+  return {
+    result: { ...mutation.result, execution_generation: generation },
+    expectedGeneration: mutation.expectedGeneration
+  }
 }
 
 type CanonicalControlResult = NonNullable<Awaited<ReturnType<typeof mutateCanonicalSession>>>['result']
