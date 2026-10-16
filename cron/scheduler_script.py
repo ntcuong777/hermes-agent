@@ -151,7 +151,14 @@ def _posix_cron_script_argv(script: Path) -> tuple[list[str], dict[str, str]]:
     from pm.environments import project_python
 
     repo = Path(__file__).resolve().parents[1]
-    if resolve_store_python(repo) is None:
+    from hermes_cli.steward import read_install_stamp
+
+    # An external (Nix) install owns its interpreter, which already carries the dependencies, as
+    # launcher publication and venv_sync assume. Its stamp names no store, so store_root falls back
+    # to ~/.hermes/tools; a PM Python left there by another install must not make the runner ask
+    # for a venv inside the read-only package: every script job failed (C149).
+    external = read_install_stamp(repo).get("updateMechanism") == "external"
+    if external or resolve_store_python(repo) is None:
         return [sys.executable, str(script)], {}
     # project_python, not committed_venv as on Windows: a pre-PM venv selected before the first
     # commit runs on its OWN interpreter here, so there is no ABI mix (#122183).
