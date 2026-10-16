@@ -457,3 +457,14 @@ def test_a_real_session_db_round_trip(tmp_path, monkeypatch):
         "cost_usd": 0.75,
         "cost_status": "estimated",
     }
+
+
+def test_a_session_that_made_calls_but_has_no_price_says_unknown_not_blank():
+    """Opus 5.5 turns with no price (B17): the bar must show n/a, not nothing, so a missing cost is visible."""
+
+    class Unpriced(_Agent):
+        session_estimated_cost_usd = 0.0
+        session_cost_status = "unknown"
+        session_api_calls = 3
+
+    assert usage_status.cost_fields(Unpriced()) == {"cost_status": "unpriced"}

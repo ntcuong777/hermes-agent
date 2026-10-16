@@ -19,6 +19,10 @@ describe('costLabel', () => {
     expect(costLabel({ cost_status: 'included' })).toBe('incl.')
   })
 
+  it('says n/a, not nothing, when calls were made and none had a price (B17)', () => {
+    expect(costLabel({ cost_status: 'unpriced' })).toBe('n/a')
+  })
+
   it('says nothing without data', () => {
     expect(costLabel({})).toBe('')
     expect(costLabel({ cost_status: 'unknown', cost_usd: 0 })).toBe('')

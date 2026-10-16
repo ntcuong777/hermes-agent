@@ -15,7 +15,12 @@ export const costLabel = (usage: Pick<Usage, 'cost_status' | 'cost_usd'>): strin
     return usd < 0.01 ? `${mark}<$0.01` : `${mark}$${usd.toFixed(2)}`
   }
 
-  return usage.cost_status === 'included' ? 'incl.' : ''
+  if (usage.cost_status === 'included') {
+    return 'incl.'
+  }
+
+  // Calls were made but none had a price (B17): say so instead of a blank bar.
+  return usage.cost_status === 'unpriced' ? 'n/a' : ''
 }
 
 /** Short window name: the 5-hour session reads `5h`, the weekly cap `wk`, anything else its first word. */

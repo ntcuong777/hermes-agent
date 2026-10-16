@@ -136,6 +136,11 @@ def _carried(agent: Any, counter: float) -> tuple[float, str]:
     return result
 
 
+def _has_calls(agent: Any) -> bool:
+    """True once the agent has made at least one provider call (a cold session has no cost to explain)."""
+    return int(getattr(agent, "session_api_calls", 0) or 0) > 0
+
+
 def cost_fields(agent: Any) -> dict[str, Any]:
     """``cost_usd`` (session total, only when above zero) and ``cost_status`` (when known).
 
@@ -156,6 +161,9 @@ def cost_fields(agent: Any) -> dict[str, Any]:
             out["cost_usd"] = round(amount, 4)
         if status and status != "unknown" and (amount > 0 or status == "included"):
             out["cost_status"] = status
+        elif status in ("", "unknown") and amount <= 0 and _has_calls(agent):
+            # Calls were made but none had a price (B17): say so, so the bar shows n/a rather than nothing.
+            out["cost_status"] = "unpriced"
     return out
 
 
