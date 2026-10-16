@@ -2320,7 +2320,10 @@ def _resolve_runtime_agent_kwargs() -> dict:
     _primary_provider = (routed_model.get("provider") or "").strip()
 
     try:
-        runtime, fallback_entry = resolve_runtime_with_fallback(routed)
+        # Name the route's own provider and model: left unset, the resolver reads the shared `model.provider`
+        # and a phone turn sends `gateway.model.default` to the CLI's provider (B21).
+        runtime, fallback_entry = resolve_runtime_with_fallback(
+            routed, requested=_primary_provider or None, target_model=_primary_model or None)
     except Exception as exc:
         raise RuntimeError(format_runtime_provider_error(exc)) from exc
 
