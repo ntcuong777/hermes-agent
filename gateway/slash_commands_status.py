@@ -135,8 +135,13 @@ def _status_model_route(
         user_config = _quiet_sync(lambda: gateway_route_config(_load_gateway_config()), {})
     model_cfg = user_config.get("model", {}) if isinstance(user_config, dict) else {}
     model_cfg = model_cfg if isinstance(model_cfg, dict) else {}
-    model_name = model_name or _resolve_gateway_model(user_config)
-    provider_name = provider_name or _clean_str(model_cfg.get("provider"))
+    configured_model = _resolve_gateway_model(user_config)
+    configured_provider = _clean_str(model_cfg.get("provider"))
+    # Fill a missing half only when the known half matches this configured route.
+    if not model_name and (not provider_name or provider_name == configured_provider):
+        model_name = configured_model
+    if not provider_name and model_name == configured_model:
+        provider_name = configured_provider
     # No raw ``model.context_length`` pin here: the resolver applies it only while the displayed
     # route still matches the configured one (a session /model switch must not inherit it).
     return model_name, provider_name, context_used, context_total, {"provider": provider_name, **route}

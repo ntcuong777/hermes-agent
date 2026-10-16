@@ -90,3 +90,21 @@ def test_incomplete_gateway_override_keeps_cli_model_provider_pair(gateway):
             None, {}, {}, {}, SimpleNamespace(last_prompt_tokens=0)
         )
     assert result[:2] == ("claude-sonnet-5-5", "anthropic")
+
+
+@pytest.mark.parametrize(
+    ("row", "expected"),
+    [
+        ({"model": "saved-other-model"}, ("saved-other-model", "")),
+        ({"billing_provider": "saved-other-provider"}, ("", "saved-other-provider")),
+        ({"billing_provider": "openai-codex"}, ("gpt-6-luna", "openai-codex")),
+    ],
+)
+def test_partial_saved_route_only_inherits_matching_config_identity(row, expected):
+    from gateway.slash_commands_status import _status_model_route
+
+    with patch("gateway.run._load_gateway_config", return_value=CONFIG):
+        result = _status_model_route(
+            None, {}, {}, row, SimpleNamespace(last_prompt_tokens=0)
+        )
+    assert result[:2] == expected
