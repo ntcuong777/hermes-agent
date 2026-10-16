@@ -165,7 +165,7 @@ def stage_local_session(authority, actor, params, *, trusted_policy=None, truste
     if 'session:create' not in actor.capabilities:
         raise RuntimeStoreError('permission_denied')
     from gateway.session_policy import build_policy, BYPASS_FIELDS
-    from gateway.run import _load_gateway_config, _resolve_gateway_model
+    from gateway.run import _gateway_config_home, _load_gateway_config, _resolve_gateway_model
     from dataclasses import replace
     private_secrets = dict(trusted_secrets or {})
     if trusted_policy is not None:
@@ -174,7 +174,10 @@ def stage_local_session(authority, actor, params, *, trusted_policy=None, truste
         policy = _bypass_policy(params, private_secrets=private_secrets)
     else:
         from gateway.session_local_route import resolve_launch_route
-        config = _load_gateway_config()
+        from gateway.route_config import local_session_config
+        from hermes_cli.host_overlay import read_host_file
+        # The machine's CLI model (host.yaml), not the phone's gateway.model: a TUI session is local (C150).
+        config = local_session_config(_load_gateway_config(), read_host_file(_gateway_config_home()))
         raw_model = params.get('model')
         params = resolve_launch_route(params, config)
         # A client's session.create is the one caller whose named folder may select the coding posture.

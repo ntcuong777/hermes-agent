@@ -138,7 +138,11 @@ class LocalSessionPolicy:
         if held is not None and held[0] == self:
             return held[1]
         from gateway.run import _load_gateway_config
-        return present_sections(_load_gateway_config(Path(authority.db.db_path).resolve().parent / 'config.yaml'))
+        from gateway.route_config import local_session_config
+        from hermes_cli.host_overlay import read_host_file
+        # Following keeps the CLI model too: never the phone's gateway.model (C150).
+        home = Path(authority.db.db_path).resolve().parent
+        return present_sections(local_session_config(_load_gateway_config(home / 'config.yaml'), read_host_file(home)))
 
     def current_toolsets(self, config):
         """The next turn's toolsets from its resolved *config*: a following session without an explicit
