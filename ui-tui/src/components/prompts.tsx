@@ -45,7 +45,7 @@ type ApprovalKey = {
   upArrow?: boolean
 }
 
-type ApprovalAction = { kind: 'choose'; choice: ApprovalChoice } | { kind: 'move'; delta: -1 | 1 } | { kind: 'noop' }
+type ApprovalAction = { kind: 'choose'; choice: ApprovalChoice } | { kind: 'move'; delta: -1 | 1 } | { kind: 'toggle' } | { kind: 'noop' }
 
 /**
  * Pure key-dispatch for the approval prompt — exported so the regression
@@ -64,6 +64,10 @@ export function approvalAction(
   sel: number,
   opts: readonly ApprovalChoice[] = APPROVAL_OPTS
 ): ApprovalAction {
+  if (ch === 'v') {
+    return { kind: 'toggle' }
+  }
+
   if (key.escape) {
     return { kind: 'choose', choice: 'deny' }
   }
@@ -89,9 +93,20 @@ export function approvalAction(
   return { kind: 'noop' }
 }
 
+/**
+ * The lines an approval shows: the first few when collapsed, all of them when the person asks for the full text (v),
+ * so a long script is never cut from the one prompt the person must read before approving (B16).
+ */
+export function approvalPreview(rawLines: readonly string[], expanded: boolean): { shown: readonly string[]; overflow: number } {
+  const shown = expanded ? rawLines : rawLines.slice(0, CMD_PREVIEW_LINES)
+
+  return { shown, overflow: rawLines.length - shown.length }
+}
+
 export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptProps) {
   const T = useT()
   const [sel, setSel] = useState(0)
+  const [expanded, setExpanded] = useState(false)
   const opts = approvalOptions(req)
 
   useInput((ch, key) => {
@@ -99,6 +114,8 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
 
     if (action.kind === 'choose') {
       onChoice(action.choice)
+    } else if (action.kind === 'toggle') {
+      setExpanded(e => !e)
     } else if (action.kind === 'move') {
       setSel(s => s + action.delta)
     }
@@ -113,8 +130,7 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
     .split('\n')
     .flatMap(line => wrapAnsi(line, innerWidth, { hard: true, trim: false }).split('\n'))
 
-  const shown = rawLines.slice(0, CMD_PREVIEW_LINES)
-  const overflow = rawLines.length - shown.length
+  const { shown, overflow } = approvalPreview(rawLines, expanded)
 
   return (
     <Box borderColor={t.color.warn} borderStyle="double" flexDirection="column" paddingX={1}>
@@ -143,7 +159,7 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
         </Text>
       ))}
 
-      <Text color={t.color.muted}>↑/↓ select · Enter confirm · 1-{opts.length} quick pick · Esc/Ctrl+C deny</Text>
+      <Text color={t.color.muted}>↑/↓ select · Enter confirm · 1-{opts.length} quick pick · v {expanded ? 'collapse' : 'full text'} · Esc/Ctrl+C deny</Text>
     </Box>
   )
 }

@@ -8,7 +8,7 @@ export const overlaysEn = {
       title: '⚠ approval required',
       // "above" was never true: the tool row above is a one-line preview. execute_code names a file with the whole
       // script on this panel's first line (tools/approval.py, P21).
-      moreLines: (count: number) => `… +${count} more line${count === 1 ? '' : 's'} (rest not shown here)`,
+      moreLines: (count: number) => `… +${count} more line${count === 1 ? '' : 's'} (press v for the full text)`,
       once: 'Allow once',
       session: 'Allow this session',
       always: 'Always allow',
