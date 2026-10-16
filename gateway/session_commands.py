@@ -71,9 +71,13 @@ _READ_ARGUMENTS = {
 
 # The write forms of a command whose reads are above: the messaging handler's own review verbs,
 # applied for this session's profile (`/skills approve|reject` the staged queue, `/skills approval`
-# its config.yaml switch, as main's CLI wrote it).
+# its config.yaml switch, as main's CLI wrote it). `/memory` has the same queue and the same verbs
+# (`hermes_cli/write_approval_commands.py` serves both); without them a pending memory write could be
+# listed here and never approved.
+_WRITE_APPROVAL_VERBS = frozenset({'approve', 'apply', 'reject', 'deny', 'drop', 'approval', 'mode'})
 _CONTROL_ARGUMENTS = {
-    'skills': lambda arg: _first_token(arg) in {'approve', 'apply', 'reject', 'deny', 'drop', 'approval', 'mode'},
+    'skills': lambda arg: _first_token(arg) in _WRITE_APPROVAL_VERBS,
+    'memory': lambda arg: _first_token(arg) in _WRITE_APPROVAL_VERBS,
 }
 
 
