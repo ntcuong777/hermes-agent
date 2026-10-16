@@ -167,7 +167,7 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
   const { historyRef, historyIdx, setHistoryIdx, historyDraftRef, pushHistory } = useInputHistory()
   const caretRef = useRef<InputCursorSnapshot | null>(null)
 
-  const { completions, compIdx, setCompIdx, compReplace, compReplaceTo } = useCompletion(input, isBlocked, gw, caretRef)
+  const { completions, compIdx, setCompIdx, compReplace } = useCompletion(input, isBlocked, gw, caretRef)
 
   const clearIn = useCallback(() => {
     setInput('')
@@ -639,7 +639,6 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
     () => ({
       compIdx,
       compReplace,
-      compReplaceTo,
       completions,
       historyIdx,
       input,
@@ -648,7 +647,7 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
       queuedDisplay,
       tokens
     }),
-    [compIdx, compReplace, compReplaceTo, completions, historyIdx, input, inputBuf, queueEditIdx, queuedDisplay, tokens]
+    [compIdx, compReplace, completions, historyIdx, input, inputBuf, queueEditIdx, queuedDisplay, tokens]
   )
 
   return {

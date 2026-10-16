@@ -107,7 +107,6 @@ export function useCompletion(
   const [completions, setCompletions] = useState<CompletionItem[]>([])
   const [compIdx, setCompIdx] = useState(0)
   const [compReplace, setCompReplace] = useState(0)
-  const [compReplaceTo, setCompReplaceTo] = useState(0)
   const ref = useRef('')
 
   useEffect(() => {
@@ -115,7 +114,6 @@ export function useCompletion(
       setCompletions(prev => (prev.length ? [] : prev))
       setCompIdx(prev => (prev ? 0 : prev))
       setCompReplace(prev => (prev ? 0 : prev))
-      setCompReplaceTo(prev => (prev ? 0 : prev))
     }
 
     if (blocked) {
@@ -184,7 +182,6 @@ export function useCompletion(
           setCompReplace(
             request.method === 'complete.slash' && !request.skillsOnly ? (r?.replace_from ?? 1) : request.replaceFrom
           )
-          setCompReplaceTo(request.replaceTo)
         })
         .catch((e: unknown) => {
           if (ref.current !== input) {
@@ -200,12 +197,11 @@ export function useCompletion(
           ])
           setCompIdx(0)
           setCompReplace(request.replaceFrom)
-          setCompReplaceTo(request.replaceTo)
         })
     }, 60)
 
     return () => clearTimeout(timer)
   }, [blocked, gw, input])
 
-  return { completions, compIdx, setCompIdx, compReplace, compReplaceTo }
+  return { completions, compIdx, setCompIdx, compReplace }
 }

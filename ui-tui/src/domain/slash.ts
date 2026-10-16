@@ -59,7 +59,15 @@ export const inlineSlashTrigger = (text: string): { query: string; start: number
 const completionText = (value: string, rowText: string, compReplace: number): string =>
   value[compReplace - 1] === '/' && rowText.startsWith('/') ? rowText.slice(1) : rowText
 
-/** `replaceTo` is where the replaced word ends: the caret. Text after it stays (the person typed `@` mid-prompt). */
+/**
+ * Where the word being completed ends NOW: the live caret when the composer recorded it for this very text, else the
+ * end. Never the span recorded when the completion was requested: its rows arrive a moment later, and what was typed
+ * in between belongs to the word (a stale end left it behind: `/writing-skillst` after picking `/writing-skills`).
+ */
+export const completionEnd = (value: string, caret: null | undefined | { cursor: number; value: string }): number =>
+  caret?.value === value ? Math.max(0, Math.min(value.length, caret.cursor)) : value.length
+
+/** `replaceTo` is where the replaced word ends (`completionEnd`). Text after it stays (the person typed `@` mid-prompt). */
 export const applyCompletion = (
   value: string,
   rowText: string,

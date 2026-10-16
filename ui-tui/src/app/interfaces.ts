@@ -438,8 +438,6 @@ export interface ComposerRefs {
 export interface ComposerState {
   compIdx: number
   compReplace: number
-  /** End of the word a row replaces (the caret when it was asked); text after it stays. */
-  compReplaceTo: number
   completions: CompletionItem[]
   historyIdx: null | number
   input: string
