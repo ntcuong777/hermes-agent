@@ -31,6 +31,7 @@ export function mergeWidgetAppItems(input: string, items: CompletionItem[]): Com
 }
 
 const TAB_PATH_RE = /((?:["']?(?:[A-Za-z]:[\\/]|\.{1,2}\/|~\/|\/|@|[^"'`\s]+\/))[^\s]*)$/
+const AT_WORD_RE = /^["']?@/
 
 /**
  * What to ask the gateway for, from the text BEFORE the caret: `@`, a path or an inline `/skill` typed in the middle of
@@ -51,7 +52,11 @@ export function completionRequestForInput(
   const at = Math.max(0, Math.min(input.length, caret))
   const before = input.slice(0, at)
   const isSlashCommand = looksLikeSlashCommand(before)
-  const pathWord = isSlashCommand ? null : (before.match(TAB_PATH_RE)?.[1] ?? null)
+  const typedWord = before.match(TAB_PATH_RE)?.[1] ?? null
+  // After a leading `/command` or `/skill` the rest is arguments or prose. An `@` reference is prose-level and opens
+  // the file picker wherever it is typed; any other path-like word there stays with the command's own completer
+  // (`/skills install owner/na` is not a file).
+  const pathWord = !isSlashCommand || (typedWord !== null && AT_WORD_RE.test(typedWord)) ? typedWord : null
 
   // `/model` uses the two-step ModelPicker (real curated IDs).
   // Slash completion here only showed short aliases + vendor/family meta.
@@ -78,7 +83,7 @@ export function completionRequestForInput(
     }
   }
 
-  if (isSlashCommand) {
+  if (isSlashCommand && !pathWord) {
     return { method: 'complete.slash', params: { text: before }, replaceFrom: 1, replaceTo: at }
   }
 
