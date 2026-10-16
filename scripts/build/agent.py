@@ -119,6 +119,13 @@ def assemble(inputs: AgentInputs, out: Path) -> dict:
             if not Path(command).is_file():
                 raise FileNotFoundError(f"prepared command missing: {command}")
         env = {**inputs.env, "HERMES_PYTHON": str(inputs.python), "HERMES_INSTALL_ROOT": str(repo)}
+        if inputs.tui_scripts is not None:
+            # The installed code lives in the prepared environment, which has no ui-tui/. The Ink TUI runs
+            # <HERMES_PYTHON_SRC_ROOT>/ui-tui/scripts/*.py (the gateway bootstrap on every start and recover, the
+            # clipboard image on paste) and the launcher defaults that root to the Python package directory, so
+            # without this the TUI cannot reach its gateway at all (C148). A copy: a build input may be collected.
+            _copy(inputs.tui_scripts, repo / "ui-tui/scripts", replace=True)
+            env.setdefault("HERMES_PYTHON_SRC_ROOT", str(repo))
         links = {RESOURCE_ENV[name]: (path, repo / name) for name, path in inputs.resources.items()}
         for name, path in inputs.frontends.items():
             key, destination = {"tui": ("HERMES_TUI_DIR", out / "ui-tui"),

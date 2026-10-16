@@ -53,6 +53,10 @@ class AgentInputs:
     ref: str | None = None
     stamp: Path | None = None
     features: Path | None = None
+    # The Ink TUI's Python helpers (gateway_bootstrap.py, clipboard_image.py): it runs them from
+    # $HERMES_PYTHON_SRC_ROOT/ui-tui/scripts, which an install that keeps its code in a prepared
+    # environment (the `references` placement) does not have unless they are shipped here.
+    tui_scripts: Path | None = None
     env: dict[str, str] = field(default_factory=dict)
 
     @classmethod
@@ -62,7 +66,7 @@ class AgentInputs:
             raise ValueError(f"unknown agent inputs: {', '.join(sorted(unknown))}")
         values = dict(data)
         for key in ("project", "code", "python", "site_packages", "environment", "tools",
-                    "pm_runtime", "command_dir", "stamp", "features"):
+                    "pm_runtime", "command_dir", "stamp", "features", "tui_scripts"):
             if values.get(key) is not None:
                 values[key] = Path(values[key])
         for key in ("resources", "frontends"):
@@ -74,6 +78,8 @@ class AgentInputs:
             raise ValueError(f"unsupported target: {self.target}")
         if self.placement not in ("contained", "fixed", "references"):
             raise ValueError(f"unknown placement: {self.placement}")
+        if self.tui_scripts is not None and not self.tui_scripts.is_dir():
+            raise ValueError(f"tui_scripts must be a directory: {self.tui_scripts}")
         if Path(self.repo).is_absolute() or ".." in Path(self.repo).parts:
             raise ValueError("repo must be an output-relative path")
         if not re.fullmatch(r"[A-Za-z0-9_-]+", self.bin_dir):

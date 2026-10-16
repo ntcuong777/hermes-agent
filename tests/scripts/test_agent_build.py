@@ -137,6 +137,61 @@ def test_referenced_installed_code_uses_derived_command_map_without_copying(tmp_
     assert before == {p: p.read_bytes() for p in source.rglob("*") if p.is_file()}
 
 
+def _referenced_inputs(tmp_path, **extra):
+    """The Nix shape: code stays in the prepared environment, the assembler only links and describes."""
+    _, data = inputs_fixture(tmp_path)
+    bindir = tmp_path / "installed env/bin"
+    bindir.mkdir(parents=True)
+    command = bindir / "probe"
+    command.write_text(f"#!{sys.executable}\n", encoding="utf-8")
+    command.chmod(0o755)
+    data.update(placement="references", repo="share/hermes-agent", command_dir=str(bindir), **extra)
+    return data
+
+
+def _tui_scripts(tmp_path):
+    scripts = tmp_path / "tui scripts"
+    scripts.mkdir()
+    (scripts / "gateway_bootstrap.py").write_text("# the TUI runs this to ensure and attach the shared gateway\n", encoding="utf-8")
+    (scripts / "clipboard_image.py").write_text("# the TUI runs this to save a pasted image\n", encoding="utf-8")
+    return scripts
+
+
+@pytest.mark.platforms("posix")
+def test_referenced_install_ships_the_scripts_the_tui_runs_and_points_its_source_root_at_them(tmp_path):
+    # The Ink TUI starts and recovers its gateway by running <root>/ui-tui/scripts/gateway_bootstrap.py and saves a
+    # pasted image with <root>/ui-tui/scripts/clipboard_image.py, root = $HERMES_PYTHON_SRC_ROOT. The launcher defaults
+    # that to the Python package directory, which holds neither: the TUI sat on "retrying in ..." forever (C148).
+    out = tmp_path / "nix output"
+    data = _referenced_inputs(tmp_path, tui_scripts=str(_tui_scripts(tmp_path)))
+    result = build_cli(data, out, tmp_path)
+    assert result.returncode == 0, result.stderr
+    env = json.loads((out / "command-map.json").read_text())["env"]
+    root = Path(env["HERMES_PYTHON_SRC_ROOT"])
+    assert root == out / "share/hermes-agent"
+    for name in ("gateway_bootstrap.py", "clipboard_image.py"):
+        shipped = root / "ui-tui/scripts" / name
+        assert shipped.is_file() and not shipped.is_symlink(), name  # a copy: a build input may be collected
+    assert (out / "ui-tui").is_symlink(), "the compiled TUI link is untouched"
+
+
+@pytest.mark.platforms("posix")
+def test_referenced_install_without_tui_scripts_changes_nothing(tmp_path):
+    out = tmp_path / "nix output"
+    result = build_cli(_referenced_inputs(tmp_path), out, tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert "HERMES_PYTHON_SRC_ROOT" not in json.loads((out / "command-map.json").read_text())["env"]
+    assert not (out / "share/hermes-agent/ui-tui").exists()
+
+
+@pytest.mark.platforms("posix")
+def test_a_tui_scripts_input_that_is_not_a_folder_is_refused(tmp_path):
+    out = tmp_path / "nix output"
+    result = build_cli(_referenced_inputs(tmp_path, tui_scripts=str(tmp_path / "missing")), out, tmp_path)
+    assert result.returncode != 0
+    assert "tui_scripts" in result.stderr
+
+
 @pytest.mark.platforms("posix")
 def test_fixed_root_keeps_privilege_shim_and_resolves_venv_command_symlink(tmp_path):
     out, data = inputs_fixture(tmp_path)

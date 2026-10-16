@@ -169,8 +169,21 @@ let
     ];
   };
 
+  # The Ink TUI runs these two from $HERMES_PYTHON_SRC_ROOT/ui-tui/scripts: the gateway bootstrap on every
+  # start and recover, the clipboard image on paste. The installed code lives in the Python environment, which
+  # has no ui-tui/, so the assembler ships them (C148). Named one by one: a rename fails this evaluation instead
+  # of leaving the TUI on "retrying in ..."; and a TUI source edit elsewhere does not rebuild the agent.
+  tuiScripts = lib.fileset.toSource {
+    root = ../ui-tui/scripts;
+    fileset = lib.fileset.unions [
+      ../ui-tui/scripts/gateway_bootstrap.py
+      ../ui-tui/scripts/clipboard_image.py
+    ];
+  };
+
   agentInputsFile = writeText "hermes-agent-inputs.json" (builtins.toJSON {
     project = "${../pyproject.toml}";
+    tui_scripts = "${tuiScripts}";
     code = "${hermesVenv}/${sitePackagesPath}";
     repo = "share/hermes-agent";
     placement = "references";
