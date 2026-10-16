@@ -238,6 +238,11 @@ _SNAPSHOTS: tuple[tuple[str, Optional[str], str, dict], ...] = (
         "anthropic.claude-haiku-4-5": ("0.80", "4.00", "0.08", "1.00"),
         "amazon.nova-pro": ("0.80", "3.20"), "amazon.nova-lite": ("0.06", "0.24"), "amazon.nova-micro": ("0.035", "0.14"),
     }),
+    # Z.AI publishes per-1M-token rates on its pricing page (cached input is the cache-read rate).
+    ("zai", "https://docs.z.ai/guides/overview/pricing", "zai-pricing-2026-10", {
+        "glm-5.3-flash": ("0.15", "0.50", "0.03"),
+        "glm-5.3": ("1.40", "4.40", "0.26"),
+    }),
     ("minimax", None, "minimax-pricing-2026-04", {"minimax-m2.7": ("0.30", "1.20")}),
     ("minimax-cn", None, "minimax-pricing-2026-04", {"minimax-m2.7": ("0.30", "1.20")}),
     # Fireworks AI serverless (Standard tier) publishes a per-model cached_input
