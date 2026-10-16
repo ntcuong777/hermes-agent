@@ -131,7 +131,8 @@ def _fuzzy_basename_items(root: str, path_part: str, prefix_tag: str) -> list[di
     return [
         _item(
             f"@{'folder' if is_dir else tag}:{rel}{'/' if is_dir else ''}",
-            "dir" if is_dir else os.path.dirname(rel), basename + ("/" if is_dir else ""))
+            # A directory shows its parent path like a file does; two `file_types/` look alike without it (B20).
+            (os.path.dirname(rel) or "dir") if is_dir else os.path.dirname(rel), basename + ("/" if is_dir else ""))
         for _, rel, basename, is_dir in ranked[:30]]
 
 
