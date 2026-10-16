@@ -373,6 +373,17 @@ class _SendFailed(Exception):
     """Raised by handle_ws._reply when a reply could not be written: ends the read loop."""
 
 
+def _runs_apart(req: Any) -> bool:
+    """A request that takes minutes where every other takes milliseconds: `session.mutate` with `compress`."""
+    params = req.get("params") if isinstance(req, dict) else None
+    return (
+        isinstance(req, dict)
+        and req.get("method") == "session.mutate"
+        and isinstance(params, dict)
+        and params.get("operation") == "compress"
+    )
+
+
 async def handle_ws(ws: Any, *, auth_identity: dict | None = None, subprotocol: str | None = None,
                     operator: bool = False) -> None:
     """Run one WebSocket session. Wire-compatible with ``tui_gateway.entry``. *auth_identity* is the server-minted
@@ -398,27 +409,50 @@ async def handle_ws(ws: Any, *, auth_identity: dict | None = None, subprotocol: 
     pending: asyncio.Queue = asyncio.Queue(maxsize=_WS_DISPATCH_QUEUE_MAX)
     dispatcher: asyncio.Task | None = None
     stop = object()  # queue sentinel; a JSON ``null`` frame parses to None, so None can't be it
+    apart: set[asyncio.Task] = set()  # requests answered when they finish, not before the next one is read
+
+    async def _serve(req: Any) -> None:
+        """One request through the dispatcher, then its reply."""
+        nonlocal dispatch_crashes
+        req_id = req.get("id") if isinstance(req, dict) else None
+        req_method = req.get("method") if isinstance(req, dict) else None
+        # dispatch() may schedule long handlers on the pool; it returns None then and the worker
+        # writes the response itself via transport.write (a separate thread, so that is the safe
+        # path). Inline handlers return the response dict, written here from the loop.
+        try:
+            resp = await _dispatch_request(authority_connection, req, req_method, transport)
+        except Exception:
+            dispatch_crashes += 1
+            _log.exception("ws dispatch crash peer=%s id=%s method=%s", peer, req_id, req_method)
+            await _reply(_error(-32603, "internal error", req_id), "send_failed_after_dispatch_crash",
+                         "ws dispatch-crash reply send failed peer=%s id=%s method=%s", peer, req_id, req_method)
+            return
+        if resp is not None:
+            await _reply(resp, "send_failed_after_response",
+                         "ws response send failed peer=%s id=%s method=%s", peer, req_id, req_method)
+
+    async def _serve_apart(req: Any) -> None:
+        """`_serve` as its own task: a reply it cannot send ends the dispatcher, as a failed reply from the loop does."""
+        try:
+            await _serve(req)
+        except _SendFailed:
+            if dispatcher is not None:
+                dispatcher.cancel()
 
     async def _dispatch_loop() -> None:
-        """Dispatch queued requests one at a time in arrival order until the ``stop`` sentinel."""
-        nonlocal dispatch_crashes
+        """Dispatch queued requests one at a time in arrival order until the ``stop`` sentinel.
+
+        A compression is served as its own task (`_runs_apart`): it summarises the transcript through a model and takes
+        minutes, and every request read after it (the model picker, completions, slash commands) sat unanswered
+        behind it on an apparently live connection. Its reply is written when it finishes.
+        """
         while (req := await pending.get()) is not stop:
-            req_id = req.get("id") if isinstance(req, dict) else None
-            req_method = req.get("method") if isinstance(req, dict) else None
-            # dispatch() may schedule long handlers on the pool; it returns None then and the worker
-            # writes the response itself via transport.write (a separate thread, so that is the safe
-            # path). Inline handlers return the response dict, written here from the loop.
-            try:
-                resp = await _dispatch_request(authority_connection, req, req_method, transport)
-            except Exception:
-                dispatch_crashes += 1
-                _log.exception("ws dispatch crash peer=%s id=%s method=%s", peer, req_id, req_method)
-                await _reply(_error(-32603, "internal error", req_id), "send_failed_after_dispatch_crash",
-                             "ws dispatch-crash reply send failed peer=%s id=%s method=%s", peer, req_id, req_method)
+            if _runs_apart(req):
+                task = asyncio.create_task(_serve_apart(req))
+                apart.add(task)
+                task.add_done_callback(apart.discard)
                 continue
-            if resp is not None:
-                await _reply(resp, "send_failed_after_response",
-                             "ws response send failed peer=%s id=%s method=%s", peer, req_id, req_method)
+            await _serve(req)
 
     async def _unless_dispatch_failed(aw: Any) -> Any:
         """Await *aw*, or raise _SendFailed once the dispatcher has ended on a reply it could not send."""
@@ -521,6 +555,13 @@ async def handle_ws(ws: Any, *, auth_identity: dict | None = None, subprotocol: 
             failure = None if dispatcher.cancelled() else dispatcher.exception()
             if failure is not None and not isinstance(failure, _SendFailed):
                 _log.error("ws dispatcher failed peer=%s", peer, exc_info=failure)
+            # A compression still summarising is in-flight work too: finish it (or, on a cancelled connection, stop it)
+            # before the teardown parks this transport's sessions and the authority connection closes under it.
+            if apart:
+                if task is not None and task.cancelling():
+                    for running in tuple(apart):
+                        running.cancel()
+                await asyncio.wait(tuple(apart))
         if authority_connection is not None:
             # After the dispatcher drained: an in-flight authority call must not see its connection closed.
             await authority_connection.close()
