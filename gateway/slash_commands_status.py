@@ -107,6 +107,7 @@ def _status_model_route(
     a winner without a ``base_url`` leaves the lookup on the default runtime route.
     """
     from gateway.run import _AGENT_PENDING_SENTINEL, _load_gateway_config, _resolve_gateway_model
+    from gateway.route_config import gateway_route_config
     context_used = context_total = 0
     routes: list[tuple[str, str, dict]] = []
     if status_agent is not None and status_agent is not _AGENT_PENDING_SENTINEL:
@@ -130,7 +131,8 @@ def _status_model_route(
     context_used = context_used or _int_value(getattr(session_entry, "last_prompt_tokens", 0))
     user_config: dict[str, Any] = {}
     if not model_name or not provider_name:
-        user_config = _quiet_sync(_load_gateway_config, {})
+        # Keep fallback model/provider on the same route that gateway turns use.
+        user_config = _quiet_sync(lambda: gateway_route_config(_load_gateway_config()), {})
     model_cfg = user_config.get("model", {}) if isinstance(user_config, dict) else {}
     model_cfg = model_cfg if isinstance(model_cfg, dict) else {}
     model_name = model_name or _resolve_gateway_model(user_config)

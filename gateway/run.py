@@ -2388,7 +2388,7 @@ def _resolve_gateway_model_context(
     def _read_config() -> None:
         nonlocal config_context_length, provider, base_url, custom_providers
         nonlocal configured_model, configured_provider, configured_base_url
-        data = _load_gateway_config()
+        data = gateway_route_config(_load_gateway_config())
         if not data:
             return
         model_cfg = data.get("model", {})
