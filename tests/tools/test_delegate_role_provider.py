@@ -1,4 +1,4 @@
-"""delegate_task roles: a role may pin the provider as well as the model (fork patch P35).
+"""delegate_task roles: a role may pin the provider as well as the model (fork patch P39).
 
 Bug: a role's ``model`` was handed to the child alone, so a child built for ``openai-codex/gpt-6-luna`` kept the
 PARENT's provider (anthropic) and sent that string to api.anthropic.com: ``HTTP 404: model: openai-codex/gpt-6-luna``.
