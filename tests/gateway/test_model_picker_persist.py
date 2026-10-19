@@ -181,26 +181,25 @@ async def _drive_picker(runner, event):
 )
 async def test_picker_tap_global_flag_persists(tmp_path, monkeypatch, seed_model):
     """Tapping a model in a ``/model --global`` picker persists to config.yaml,
-    matching the typed ``/model --global`` path. The written ``model:`` must
-    always end up a nested dict regardless of the seed shape."""
+    matching the typed ``/model --global`` path. A gateway pick writes the gateway's own
+    route (``gateway.model``, always a nested dict whatever the CLI seed shape) and leaves the
+    CLI's ``model:`` alone."""
     adapter = _FakePickerAdapter()
     cfg_path = _setup_isolated_home(tmp_path, monkeypatch, seed_model)
+    cli_model_before = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))["model"]
 
     confirmation = await _drive_picker(_make_runner(adapter), _make_event("/model --global"))
 
     assert confirmation is not None
     assert "gpt-5.5" in confirmation
     written = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-    assert isinstance(written["model"], dict), (
-        "model: should be coerced to a dict, got {!r}".format(written["model"])
-    )
-    assert written["model"]["default"] == "gpt-5.5"
-    assert written["model"]["provider"] == "openrouter"
-    # The resolved aggregator endpoint is persisted (same shape as CLI/TUI --global, #25106).
-    assert written["model"]["base_url"] == "https://openrouter.ai/api/v1"
-    assert "api_key" not in written["model"]
-    assert written["model"]["api_mode"] == "chat_completions"
-    assert "context_length" not in written["model"]
+    assert written["model"] == cli_model_before
+    route = written["gateway"]["model"]
+    assert isinstance(route, dict), "gateway.model should be a nested dict, got {!r}".format(route)
+    assert route["default"] == "gpt-5.5"
+    assert route["provider"] == "openrouter"
+    # The gateway route is model + provider only: the endpoint is resolved at launch, never persisted here.
+    assert set(route) == {"default", "provider"}
 
 
 @pytest.mark.asyncio
@@ -253,8 +252,9 @@ async def test_multiplex_picker_global_persists_only_named_profile(
     assert yaml.safe_load((default_home / "config.yaml").read_text()) == default_cfg
     written = yaml.safe_load((named_home / "config.yaml").read_text())
     assert written["marker"] == "named"
-    assert written["model"]["default"] == "gpt-5.5"
-    assert written["model"]["provider"] == "openrouter"
+    assert written["model"] == named_cfg["model"]
+    assert written["gateway"]["model"]["default"] == "gpt-5.5"
+    assert written["gateway"]["model"]["provider"] == "openrouter"
 
 
 def _make_store_runner(adapter, sessions_dir, monkeypatch):
@@ -300,7 +300,7 @@ async def test_global_switch_clears_redundant_session_override(tmp_path, monkeyp
     confirmation = await drive(runner)
 
     assert "config.yaml" in confirmation
-    assert yaml.safe_load(cfg_path.read_text(encoding="utf-8"))["model"]["default"] == "gpt-5.5"
+    assert yaml.safe_load(cfg_path.read_text(encoding="utf-8"))["gateway"]["model"]["default"] == "gpt-5.5"
     assert runner._session_model_override(session_key) is None
     assert runner.session_store.get_model_override(session_key) is None
     # Restart: a fresh store + runner rehydrate nothing, so config.yaml decides the model.
@@ -320,7 +320,7 @@ async def test_global_switch_keeps_session_override_when_config_write_fails(tmp_
     session_key = runner._session_key_for_source(source)
     runner.session_store.get_or_create_session(source)
 
-    async def _disk_full(result, config_path):
+    async def _disk_full(result, config_path, **_kwargs):
         raise OSError("disk full")
 
     monkeypatch.setattr("gateway.slash_commands_model._persist_model_switch_to_config", _disk_full)
@@ -358,7 +358,7 @@ async def test_concurrent_model_commands_commit_in_issue_order(tmp_path, monkeyp
     await asyncio.gather(runner._handle_model_command(_make_event("/model model-A --global")),
                          runner._handle_model_command(_make_event("/model model-B")))
 
-    assert yaml.safe_load(cfg_path.read_text(encoding="utf-8"))["model"]["default"] == "model-A"
+    assert yaml.safe_load(cfg_path.read_text(encoding="utf-8"))["gateway"]["model"]["default"] == "model-A"
     assert runner._session_model_override(session_key)["model"] == "model-B"
     assert runner.session_store.get_model_override(session_key)["model"] == "model-B"
 

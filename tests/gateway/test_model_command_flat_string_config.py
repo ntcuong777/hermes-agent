@@ -82,8 +82,8 @@ def _setup_isolated_home(tmp_path, monkeypatch, model_yaml_value):
 async def test_model_global_persists_when_config_has_flat_string_model(tmp_path, monkeypatch):
     """Regression: ``model: deepseek-v4-flash`` (flat string) used to crash
     the gateway ``/model X --global`` persist branch with TypeError. After
-    the fix, the flat string is coerced to ``{"default": ...}`` and the new
-    model+provider are persisted on top.
+    the fix, the gateway route is persisted as ``gateway.model`` and the CLI's
+    flat string is left untouched.
     """
     cfg_path = _setup_isolated_home(tmp_path, monkeypatch, "deepseek-v4-flash")
 
@@ -95,15 +95,12 @@ async def test_model_global_persists_when_config_has_flat_string_model(tmp_path,
     assert result is not None
     assert "gpt-5.5" in result
 
-    # The persist block must have rewritten config.yaml as a nested dict.
+    # The gateway route is a nested gateway.model; the CLI's flat model string is left alone.
     written = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-    assert isinstance(written["model"], dict), (
-        "model: should be coerced to a dict, got {!r}".format(written["model"])
-    )
-    assert written["model"]["default"] == "gpt-5.5"
-    assert written["model"]["provider"] == "openrouter"
-    # The resolved aggregator endpoint is persisted (same shape as CLI/TUI --global, #25106).
-    assert written["model"]["base_url"] == "https://openrouter.ai/api/v1"
+    assert written["model"] == "deepseek-v4-flash"
+    assert written["gateway"]["model"]["default"] == "gpt-5.5"
+    assert written["gateway"]["model"]["provider"] == "openrouter"
+    assert set(written["gateway"]["model"]) == {"default", "provider"}
 
 
 @pytest.mark.asyncio
@@ -133,8 +130,8 @@ async def test_model_global_persists_when_config_has_missing_model(tmp_path, mon
 
     assert result is not None
     written = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-    assert isinstance(written["model"], dict)
-    assert written["model"]["default"] == "gpt-5.5"
-    assert written["model"]["provider"] == "openrouter"
+    assert "model" not in written
+    assert written["gateway"]["model"]["default"] == "gpt-5.5"
+    assert written["gateway"]["model"]["provider"] == "openrouter"
 
 
