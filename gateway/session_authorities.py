@@ -172,6 +172,9 @@ def authority_for_home(runner, home):
 
 
 def authority_for_profile_id(runner, profile_id):
+    # A profile id IS its home path: a bare name would resolve against the cwd and write a home there.
+    if not Path(profile_id).is_absolute():
+        raise ValueError(f"profile id must be an absolute home path, got {profile_id!r}")
     return authority_for_home(runner, Path(profile_id))
 
 

@@ -711,9 +711,10 @@ def hosted_owner(tmp_path, monkeypatch):
     loop = asyncio.new_event_loop()
     thread = threading.Thread(target=loop.run_forever)
     thread.start()
-    authority = asyncio.run_coroutine_threadsafe(initialize_session_authority(runner, profile_id='owned', instance_id='first'), loop).result()
+    home_id = str(tmp_path / 'owned')  # a profile id is its home path; a bare name would resolve against the cwd
+    authority = asyncio.run_coroutine_threadsafe(initialize_session_authority(runner, profile_id=home_id, instance_id='first'), loop).result()
     monkeypatch.setattr(authority, '_schedule', lambda ref: None)
-    principal = Principal('durable-room-owner', 'owned', frozenset({'session:create', 'session:read', 'session:submit', 'session:control', 'session:approve'}), 'room-worker')
+    principal = Principal('durable-room-owner', home_id, frozenset({'session:create', 'session:read', 'session:submit', 'session:control', 'session:approve'}), 'room-worker')
     yield authority, loop, principal, agent
     loop.call_soon_threadsafe(loop.stop)
     thread.join()
