@@ -80,7 +80,25 @@ def usage_stats(agent) -> dict:
                  model=str(getattr(agent, "model", "") or ""), provider=str(getattr(agent, "provider", "") or ""),
                  fallback_model=(str(getattr(agent, "model", "") or "") or None)
                  if getattr(agent, "_fallback_activated", False) is True else None)
+    stats.update(_bar_fields(agent))
     return stats
+
+
+def _bar_fields(agent) -> dict:
+    """The status bar's opt-in read-outs (``display.status_bar.fields``: ``cost``, ``quota``), as ``tui_gateway.
+    usage_status`` builds them for the embedded ticker. A viewer of the shared gateway reads this module instead of
+    ``server._get_usage``, so without this the listed fields never reached its bar. Nothing is added, and no quota
+    is polled, for a bar that does not list them."""
+    out: dict = {}
+    with contextlib.suppress(Exception):  # a status-bar read-out must never break usage reporting
+        from hermes_cli.config import load_config_readonly
+        from tui_gateway.usage_status import bar_wants, cost_fields, quota_fields
+        cfg = load_config_readonly()
+        if bar_wants(cfg, "cost"):
+            out.update(cost_fields(agent))
+        if bar_wants(cfg, "quota"):
+            out.update(quota_fields(agent))
+    return out
 
 
 def carried_compression_count(live, agent=None) -> int:
@@ -134,6 +152,7 @@ def tui_usage(stats: dict) -> dict:
             usage[key] = round(float(stats[source_key]), 1)
     if isinstance(stats.get("active_subagents"), int):
         usage["active_subagents"] = stats["active_subagents"]
+    usage.update({key: stats[key] for key in ("cost_usd", "cost_status", "quota") if key in stats})
     return usage
 
 
