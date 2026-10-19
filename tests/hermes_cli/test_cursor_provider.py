@@ -40,7 +40,7 @@ def test_a_user_can_still_pin_cursor_to_the_plain_chat_wire(monkeypatch):
 
 
 def test_other_providers_are_untouched(monkeypatch):
-    monkeypatch.setattr(rp, "_get_model_config", lambda: {})
+    monkeypatch.setattr(rp, "_get_model_config", dict)
     assert rp._maybe_apply_cursor_sdk_runtime(
         provider="anthropic", api_mode="anthropic_messages", model_cfg={}, requested_provider="anthropic"
     ) == "anthropic_messages"
@@ -85,3 +85,43 @@ def test_a_failed_listing_falls_back_to_none_so_the_catalog_check_in_the_worker_
 
     monkeypatch.setattr("hermes_cli.urllib_security.open_credentialed_url", boom)
     assert get_provider_profile("cursor").fetch_models(api_key="crsr_test_key") is None
+
+
+# -- the SDK catalog, not the REST list (grok-4.7 and grok-4.6 were missing) ---------------------------------------
+
+
+def _fake_worker(tmp_path, body: str):
+    script = tmp_path / "worker"
+    script.write_text(f"#!/bin/sh\n[ \"$1\" = \"--list-models\" ] || exit 9\n[ -n \"$CURSOR_API_KEY\" ] || exit 8\n{body}\n")
+    script.chmod(0o755)
+    return str(script)
+
+
+def _rest(monkeypatch, body):
+    monkeypatch.setattr(
+        "hermes_cli.urllib_security.open_credentialed_url", lambda req, timeout=0: _Resp(json.dumps(body).encode())
+    )
+
+
+def test_models_come_from_the_workers_sdk_catalog_when_a_worker_is_configured(tmp_path, monkeypatch):
+    # The REST list held 15 pre-flattened variants; the SDK catalog has the base models (grok-4.7, grok-4.6 ...).
+    worker = _fake_worker(
+        tmp_path, """echo '[{"id":"grok-4.7","displayName":"Grok 4.7"},{"id":"grok-4.6"},{"id":"composer-2.5"}]'"""
+    )
+    monkeypatch.setenv("HERMES_CURSOR_WORKER", worker)
+    monkeypatch.setattr(
+        "hermes_cli.urllib_security.open_credentialed_url", lambda *a, **k: pytest.fail("REST must not be used")
+    )
+    assert get_provider_profile("cursor").fetch_models(api_key="crsr_test_key") == ["grok-4.7", "grok-4.6", "composer-2.5"]
+
+
+def test_a_failing_worker_falls_back_to_the_rest_list(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_CURSOR_WORKER", _fake_worker(tmp_path, "exit 3"))
+    _rest(monkeypatch, {"models": ["composer-2"]})
+    assert get_provider_profile("cursor").fetch_models(api_key="crsr_test_key") == ["composer-2"]
+
+
+def test_worker_output_that_is_not_a_model_list_is_ignored(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_CURSOR_WORKER", _fake_worker(tmp_path, "echo 'not json'"))
+    _rest(monkeypatch, {"models": ["composer-2"]})
+    assert get_provider_profile("cursor").fetch_models(api_key="crsr_test_key") == ["composer-2"]

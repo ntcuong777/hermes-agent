@@ -7,6 +7,8 @@ here (base URL, auth) serve model discovery and the picker only; the worker auth
 
 import base64
 import json
+import subprocess
+import tempfile
 import urllib.request
 from typing import Any
 
@@ -30,6 +32,9 @@ class _CursorProfile(ProviderProfile):
         when it cannot be read: the worker then checks the chosen id against the SDK catalog itself."""
         if not api_key:
             return None
+        from_sdk = self._sdk_models(api_key)
+        if from_sdk:
+            return from_sdk
         from hermes_cli.urllib_security import open_credentialed_url
 
         req = urllib.request.Request(self.models_url)
@@ -40,6 +45,24 @@ class _CursorProfile(ProviderProfile):
             with open_credentialed_url(req, timeout=timeout) as resp:
                 return _ids(json.loads(resp.read().decode())) or None
         except (OSError, ValueError):
+            return None
+
+    @staticmethod
+    def _sdk_models(api_key: str) -> list[str] | None:
+        """The SDK's own catalog through the worker (`--list-models`): the base models (grok-4.7, grok-4.6 ...) the
+        worker will accept, with effort and fast as parameters. Cursor's REST list holds only a few pre-flattened
+        variants, so it hid models the SDK serves. None when no worker is configured or it fails."""
+        from agent.cursor_runtime import CursorRuntimeError, _worker_command, _worker_env
+
+        try:
+            command = [*_worker_command(), "--list-models"]
+            with tempfile.TemporaryDirectory() as scratch:
+                done = subprocess.run(
+                    command, env=_worker_env(api_key, scratch), capture_output=True, text=True, timeout=30,
+                    stdin=subprocess.DEVNULL, check=False,
+                )
+            return _ids(json.loads(done.stdout)) if done.returncode == 0 else None
+        except (CursorRuntimeError, OSError, ValueError, subprocess.SubprocessError):
             return None
 
 
