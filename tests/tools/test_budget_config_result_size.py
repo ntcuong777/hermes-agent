@@ -115,6 +115,16 @@ def test_spillover_default_keeps_a_spill_for_the_session_retention_window(config
     assert path.exists()
 
 
+def test_a_configured_sub_day_spill_age_is_floored_at_a_day(config_home):
+    """A one-hour override must not cut off a spill the first write just made (the pointer would name a missing file)."""
+    home = config_home("tool_budget:\n  spillover_max_age_hours: 1\n")
+    path = _old_spill(home, hours_old=2)
+    from tools.tool_result_storage import cleanup_spillover_cache
+
+    assert cleanup_spillover_cache() == 0
+    assert path.exists()
+
+
 def test_the_configured_age_wins_over_the_callers_age(config_home):
     """The gateway's hourly sweep passes the media cache age; the setup's choice must still hold."""
     home = config_home("tool_budget:\n  spillover_max_age_hours: 168\n")

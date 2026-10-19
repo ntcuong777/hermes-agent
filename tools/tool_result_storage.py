@@ -130,14 +130,17 @@ def cleanup_spillover_cache(max_age_hours: int | None = None) -> int:
     """Delete spillover files older than *max_age_hours*; returns count removed (same
     contract as the ``cleanup_*_cache`` helpers the gateway housekeeping loop runs hourly).
     A ``None`` age means the session retention window, not a cache TTL. ``tool_budget.spillover_max_age_hours``
-    wins over the caller's value: the gateway sweep passes the media cache age, and a setup that keeps spills
-    longer must hold there too. An expired file is deleted only
+    wins over the caller's value (never below 24h): the gateway sweep passes the media cache age, and a setup
+    that keeps spills longer must hold there too. An expired file is deleted only
     when no message in the home's state.db references it: the transcript's
     ``<persisted-output>`` promise outlives the archive's mtime exactly as long as the
     owning session does (#126351) — referenced archives leave with their session, via the
     unlink SessionDB delete/prune performs, not with the age sweep."""
-    age_hours = configured_budget_int(
-        "spillover_max_age_hours", _spillover_retention_hours() if max_age_hours is None else max_age_hours)
+    default_age = _spillover_retention_hours() if max_age_hours is None else max_age_hours
+    # Floored at the legacy 24h like the retention default: a sub-day override cuts off the spill the
+    # first write just made, and the transcript pointer then names a missing file.
+    configured = configured_budget_int("spillover_max_age_hours", 0)
+    age_hours = max(SPILLOVER_MAX_AGE_HOURS, configured) if configured else default_age
     cutoff = time.time() - (age_hours * 3600)
     expired = []
     try:
