@@ -1,0 +1,5 @@
+name: cursor-provider
+kind: model-provider
+version: 1.0.0
+description: Cursor models; the turn runs on the Cursor SDK worker, Hermes runs every tool
+author: personal fork

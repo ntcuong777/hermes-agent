@@ -296,7 +296,7 @@ def test_prompt_carries_system_history_and_current_user(tmp_path):
     assert result["completed"] is True
 
 
-def test_overlay_selects_cursor_sdk_only_when_opted_in():
+def test_overlay_selects_cursor_sdk_for_the_cursor_provider_unless_pinned_to_chat():
     from hermes_cli.runtime_provider import _maybe_apply_cursor_sdk_runtime as pick
 
     assert (
@@ -313,6 +313,15 @@ def test_overlay_selects_cursor_sdk_only_when_opted_in():
             provider="cursor",
             api_mode="chat_completions",
             model_cfg={},
+            requested_provider="cursor",
+        )
+        == "cursor_sdk"  # P41: choosing the provider is the switch
+    )
+    assert (
+        pick(
+            provider="cursor",
+            api_mode="chat_completions",
+            model_cfg={"cursor_runtime": "chat"},
             requested_provider="cursor",
         )
         == "chat_completions"

@@ -342,14 +342,14 @@ def _maybe_apply_codex_app_server_runtime(*, provider: str, api_mode: str, model
 
 def _maybe_apply_cursor_sdk_runtime(*, provider: str, api_mode: str, model_cfg: Optional[dict[str, Any]],
                                     requested_provider: str = "") -> str:
-    """Opt-in rewrite to "cursor_sdk" via ``model.cursor_runtime: sdk``. Eligible: the ``cursor`` provider
-    only. The whole turn then runs on the Cursor SDK worker (agent/cursor_runtime.py), which authenticates
-    with CURSOR_API_KEY, not the resolved credential. No-op when unset or any other value."""
-    if not model_cfg or str(model_cfg.get("cursor_runtime") or "").strip().lower() != "sdk":
+    """Rewrite to "cursor_sdk" for the ``cursor`` provider: choosing the provider IS the switch, so no other model
+    changes (``model.cursor_runtime: chat`` pins the plain wire). The whole turn then runs on the Cursor SDK
+    worker (agent/cursor_runtime.py), which authenticates with CURSOR_API_KEY, not the resolved credential."""
+    if provider != "cursor" and requested_provider != "cursor":
         return api_mode
-    if provider == "cursor" or requested_provider == "cursor":
-        return "cursor_sdk"
-    return api_mode
+    if str((model_cfg or {}).get("cursor_runtime") or "").strip().lower() == "chat":
+        return api_mode
+    return "cursor_sdk"
 
 
 # ── base_url / credential helpers ──────────────────────────────────────────────────────────
