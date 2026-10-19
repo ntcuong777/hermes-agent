@@ -105,13 +105,14 @@ def test_spillover_keeps_files_for_the_configured_hours(config_home):
     assert path.exists()
 
 
-def test_spillover_default_is_still_a_day(config_home):
+def test_spillover_default_keeps_a_spill_for_the_session_retention_window(config_home):
+    """An unreferenced spill is kept for the session retention window by default (#126351), not a day."""
     home = config_home("terminal:\n  backend: local\n")
     path = _old_spill(home, hours_old=30)
     from tools.tool_result_storage import cleanup_spillover_cache
 
-    assert cleanup_spillover_cache() == 1
-    assert not path.exists()
+    assert cleanup_spillover_cache() == 0
+    assert path.exists()
 
 
 def test_the_configured_age_wins_over_the_callers_age(config_home):

@@ -4,8 +4,9 @@ import { mutateCanonicalSession } from '../app/slash/canonicalSessionControls.js
 import { modelPickerCommand } from '../components/modelPicker.js'
 
 // The model picker's third step emits `<model> --provider <slug> --reasoning <level> --session`.
-// On a shared-gateway session `/model` is a `model` mutation that carries only model + provider, and
-// the level is a separate `reasoning` mutation. The command must apply both, never refuse the pair.
+// On a shared-gateway session `/model` is one `model` mutation carrying model, provider and the level
+// together (main's one-selection contract: a deferred busy pick commits them at the same boundary).
+// The command must apply all of them, never refuse the pair.
 function gateway(refuse = false) {
   const mutations: Array<{ operation: string; payload: Record<string, unknown> }> = []
 
@@ -28,19 +29,18 @@ function gateway(refuse = false) {
 }
 
 describe('/model with --reasoning on a shared-gateway session', () => {
-  it('sends the model and provider, then the level as its own mutation', async () => {
+  it('sends the model, provider and level as one mutation', async () => {
     const gw = gateway()
     const arg = modelPickerCommand('gpt-6.1-sol', 'openai-codex', false, 'high')
 
     await mutateCanonicalSession(gw, 's', 'model', arg)
 
     expect(gw.mutations).toEqual([
-      { operation: 'model', payload: { model: 'gpt-6.1-sol', provider: 'openai-codex' } },
-      { operation: 'reasoning', payload: { effort: 'high' } }
+      { operation: 'model', payload: { model: 'gpt-6.1-sol', provider: 'openai-codex', reasoning: 'high' } }
     ])
   })
 
-  it('sends no reasoning mutation when the picker kept the current level', async () => {
+  it('sends no level when the picker kept the current one', async () => {
     const gw = gateway()
 
     await mutateCanonicalSession(gw, 's', 'model', modelPickerCommand('gpt-6.1-sol', 'openai-codex', false, ''))
