@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { approvalAction, approvalPreview, approvalSplit } from '../components/prompts.js'
+import { approvalAction, approvalPreview, approvalSplit, approvalWindow } from '../components/prompts.js'
 
 const lines = Array.from({ length: 25 }, (_, i) => `line ${i + 1}`)
 
@@ -45,5 +45,29 @@ describe('approval panel shows what the rule is about (B16, C168)', () => {
 
     expect(approvalPreview(detail, false).overflow).toBe(20)
     expect(approvalPreview(detail, true).shown).toEqual(detail)
+  })
+})
+
+describe('approval panel scrolls the full text (B16)', () => {
+  const many = Array.from({ length: 50 }, (_, i) => `row ${i + 1}`)
+
+  it('PageDown / PageUp / Ctrl+D / Ctrl+U scroll and are not choices', () => {
+    expect(approvalAction('', { pageDown: true }, 0)).toEqual({ kind: 'scroll', dir: 1 })
+    expect(approvalAction('', { pageUp: true }, 0)).toEqual({ kind: 'scroll', dir: -1 })
+    expect(approvalAction('d', { ctrl: true }, 0)).toEqual({ kind: 'scroll', dir: 1 })
+    expect(approvalAction('u', { ctrl: true }, 0)).toEqual({ kind: 'scroll', dir: -1 })
+  })
+
+  it('a window shows `size` lines from the offset and says how many are above and below', () => {
+    expect(approvalWindow(many, 10, 8)).toEqual({ above: 10, below: 32, offset: 10, shown: many.slice(10, 18) })
+  })
+
+  it('the offset is clamped so the last page stays full and the first never goes negative', () => {
+    expect(approvalWindow(many, 999, 8)).toMatchObject({ offset: 42, below: 0, above: 42 })
+    expect(approvalWindow(many, -5, 8)).toMatchObject({ offset: 0, above: 0 })
+  })
+
+  it('text that fits is shown whole with nothing to scroll', () => {
+    expect(approvalWindow(['a', 'b'], 3, 8)).toEqual({ above: 0, below: 0, offset: 0, shown: ['a', 'b'] })
   })
 })

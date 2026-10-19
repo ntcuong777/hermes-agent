@@ -1,4 +1,4 @@
-import { Box, Text, useInput, wrapAnsi } from '@hermes/ink'
+import { Box, Text, useInput, useStdout, wrapAnsi } from '@hermes/ink'
 import { useEffect, useState } from 'react'
 
 import { messages } from '../i18n/runtime.js'
@@ -39,13 +39,16 @@ export function approvalOptions(req: ApprovalReq): readonly ApprovalChoice[] {
 }
 
 type ApprovalKey = {
+  ctrl?: boolean
   downArrow?: boolean
+  pageDown?: boolean
+  pageUp?: boolean
   escape?: boolean
   return?: boolean
   upArrow?: boolean
 }
 
-type ApprovalAction = { kind: 'choose'; choice: ApprovalChoice } | { kind: 'move'; delta: -1 | 1 } | { kind: 'toggle' } | { kind: 'noop' }
+type ApprovalAction = { kind: 'choose'; choice: ApprovalChoice } | { kind: 'move'; delta: -1 | 1 } | { kind: 'toggle' } | { kind: 'scroll'; dir: -1 | 1 } | { kind: 'noop' }
 
 /**
  * Pure key-dispatch for the approval prompt — exported so the regression
@@ -66,6 +69,14 @@ export function approvalAction(
 ): ApprovalAction {
   if (ch === 'v') {
     return { kind: 'toggle' }
+  }
+
+  if (key.pageDown || (key.ctrl && ch === 'd')) {
+    return { kind: 'scroll', dir: 1 }
+  }
+
+  if (key.pageUp || (key.ctrl && ch === 'u')) {
+    return { kind: 'scroll', dir: -1 }
   }
 
   if (key.escape) {
@@ -103,6 +114,18 @@ export function approvalPreview(rawLines: readonly string[], expanded: boolean):
   return { shown, overflow: rawLines.length - shown.length }
 }
 
+/** The slice of the full text on screen: `size` lines from `offset`, the offset clamped so the last page stays full.
+ *  The expanded panel pages through it, since a long script is taller than the terminal. */
+export function approvalWindow(
+  lines: readonly string[],
+  offset: number,
+  size: number
+): { above: number; below: number; offset: number; shown: readonly string[] } {
+  const start = Math.max(0, Math.min(offset, lines.length - size))
+
+  return { above: start, below: Math.max(0, lines.length - start - size), offset: start, shown: lines.slice(start, start + size) }
+}
+
 /** A description's first line is the panel title; the rest says what the call is about (a plugin approval's command,
  *  path or URL, C168) and joins the body, so the preview cap and `v` apply to it too. */
 export function approvalSplit(description: string): { detail: string[]; title: string } {
@@ -115,6 +138,10 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
   const T = useT()
   const [sel, setSel] = useState(0)
   const [expanded, setExpanded] = useState(false)
+  const [offset, setOffset] = useState(0)
+  const { stdout } = useStdout()
+  // The panel needs ~12 rows for title, options and hint; the rest is the page.
+  const page = Math.max(5, (stdout?.rows ?? 30) - 14)
   const opts = approvalOptions(req)
 
   useInput((ch, key) => {
@@ -124,6 +151,9 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
       onChoice(action.choice)
     } else if (action.kind === 'toggle') {
       setExpanded(e => !e)
+      setOffset(0)
+    } else if (action.kind === 'scroll') {
+      setOffset(o => Math.max(0, o + action.dir * (page - 1)))
     } else if (action.kind === 'move') {
       setSel(s => s + action.delta)
     }
@@ -140,7 +170,10 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
     wrapAnsi(line, innerWidth, { hard: true, trim: false }).split('\n')
   )
 
-  const { shown, overflow } = approvalPreview(rawLines, expanded)
+  const preview = approvalPreview(rawLines, expanded)
+  const win = expanded ? approvalWindow(rawLines, offset, page) : null
+  const shown = win ? win.shown : preview.shown
+  const overflow = win ? 0 : preview.overflow
 
   return (
     <Box borderColor={t.color.warn} borderStyle="double" flexDirection="column" paddingX={1}>
@@ -149,12 +182,14 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
       </Text>
 
       <Box flexDirection="column" paddingLeft={1}>
+        {win && win.above > 0 ? <Text color={t.color.muted}>… {win.above} line{win.above === 1 ? '' : 's'} above (PgUp)</Text> : null}
         {shown.map((line, i) => (
           <Text color={t.color.text} key={i} wrap="truncate-end">
             {line || ' '}
           </Text>
         ))}
 
+        {win && win.below > 0 ? <Text color={t.color.muted}>… {win.below} line{win.below === 1 ? '' : 's'} below (PgDn)</Text> : null}
         {overflow > 0 ? <Text color={t.color.muted}>{T.prompt.approval.moreLines(overflow)}</Text> : null}
       </Box>
 
@@ -169,7 +204,7 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
         </Text>
       ))}
 
-      <Text color={t.color.muted}>↑/↓ select · Enter confirm · 1-{opts.length} quick pick · v {expanded ? 'collapse' : 'full text'} · Esc/Ctrl+C deny</Text>
+      <Text color={t.color.muted}>↑/↓ select · Enter confirm · 1-{opts.length} quick pick · v {expanded ? 'collapse · PgUp/PgDn scroll' : 'full text'} · Esc/Ctrl+C deny</Text>
     </Box>
   )
 }
