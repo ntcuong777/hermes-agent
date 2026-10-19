@@ -32,7 +32,7 @@ from tools.delegate_tool_config import (
     _DEFAULT_MAX_CONCURRENT_CHILDREN, _get_child_timeout, _get_max_async_children, _get_max_concurrent_children,
     _get_max_spawn_depth, _get_oneshot_max_children, _get_orchestrator_enabled, _get_subagent_approval_callback, _get_worktree_isolation,
     _inherit_parent_capabilities, _load_config, _merge_request_overrides, _resolve_child_credential_pool,
-    _resolve_child_runtime, _resolve_delegation_credentials,
+    _resolve_child_runtime, _resolve_delegation_credentials, _runtime_provider_credentials,
     _subagent_auto_approve, _subagent_auto_deny,
 )
 from tools.delegate_tool_dispatch import _Batch, _announce_batch, _capture_origin, _run_batch
@@ -253,6 +253,16 @@ def _build_child_agent(
         if not toolsets and profile.toolsets:
             toolsets = list(profile.toolsets)
         model = profile.model or model
+        if profile.provider:
+            try:
+                creds = _runtime_provider_credentials({"provider": profile.provider, "model": model}, None)
+            except ValueError as exc:
+                raise ValueError(f"Role {profile.name!r} pins provider {profile.provider!r}: {exc}") from exc
+            override_provider, override_base_url = creds["provider"], creds["base_url"]
+            override_api_key, override_api_mode = creds["api_key"], creds["api_mode"]
+            override_request_overrides = creds.get("request_overrides")
+            override_acp_command, override_acp_args = creds.get("command"), creds.get("args")
+            model = creds["model"] or model
         if reasoning_config is None:
             reasoning_config = reasoning_kwargs(profile).get("reasoning_config")
     child_toolsets, child_disabled_toolsets = _resolve_child_toolsets(parent_agent, toolsets, effective_role)

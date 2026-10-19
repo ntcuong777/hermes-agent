@@ -31,6 +31,9 @@ class RoleProfile:
     name: str
     toolsets: tuple[str, ...] = ()
     model: Optional[str] = None
+    #: Provider that serves ``model``. Without it the child keeps the parent's provider, so a model of another
+    #: provider would be sent to the parent's endpoint (404). It wins over ``delegation.provider``, as ``model`` does.
+    provider: Optional[str] = None
     instructions: str = ""
     reasoning_effort: Optional[str] = None
     #: One line shown to the model next to the role's name in the tool schema.
