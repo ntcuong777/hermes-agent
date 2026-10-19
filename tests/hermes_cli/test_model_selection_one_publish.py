@@ -22,7 +22,7 @@ _SEED = "model:\n  default: old-model\n  provider: openrouter\n"
 
 
 def test_gateway_route_publish_failure_leaves_config_untouched(tmp_path, monkeypatch):
-    import hermes_cli.config as config
+    from hermes_cli import config
 
     cfg = tmp_path / "config.yaml"
     cfg.write_text(_SEED, encoding="utf-8")

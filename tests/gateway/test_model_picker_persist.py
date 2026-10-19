@@ -195,7 +195,7 @@ async def test_picker_tap_global_flag_persists(tmp_path, monkeypatch, seed_model
     written = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
     assert written["model"] == cli_model_before
     route = written["gateway"]["model"]
-    assert isinstance(route, dict), "gateway.model should be a nested dict, got {!r}".format(route)
+    assert isinstance(route, dict), f"gateway.model should be a nested dict, got {route!r}"
     assert route["default"] == "gpt-5.5"
     assert route["provider"] == "openrouter"
     # The gateway route is model + provider only: the endpoint is resolved at launch, never persisted here.
