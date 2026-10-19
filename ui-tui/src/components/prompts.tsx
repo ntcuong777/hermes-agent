@@ -103,6 +103,14 @@ export function approvalPreview(rawLines: readonly string[], expanded: boolean):
   return { shown, overflow: rawLines.length - shown.length }
 }
 
+/** A description's first line is the panel title; the rest says what the call is about (a plugin approval's command,
+ *  path or URL, C168) and joins the body, so the preview cap and `v` apply to it too. */
+export function approvalSplit(description: string): { detail: string[]; title: string } {
+  const [title = '', ...detail] = description.split('\n')
+
+  return { detail, title }
+}
+
 export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptProps) {
   const T = useT()
   const [sel, setSel] = useState(0)
@@ -126,16 +134,18 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
   // reviewable before approving). Border + paddingX + inner padding ≈ 8 cols.
   const innerWidth = Math.max(20, cols - 8)
 
-  const rawLines = req.command
-    .split('\n')
-    .flatMap(line => wrapAnsi(line, innerWidth, { hard: true, trim: false }).split('\n'))
+  const { detail, title } = approvalSplit(req.description)
+
+  const rawLines = [...detail, ...req.command.split('\n')].flatMap(line =>
+    wrapAnsi(line, innerWidth, { hard: true, trim: false }).split('\n')
+  )
 
   const { shown, overflow } = approvalPreview(rawLines, expanded)
 
   return (
     <Box borderColor={t.color.warn} borderStyle="double" flexDirection="column" paddingX={1}>
       <Text bold color={t.color.warn}>
-        {T.prompt.approval.title} · {req.description}
+        {T.prompt.approval.title} · {title}
       </Text>
 
       <Box flexDirection="column" paddingLeft={1}>
