@@ -1847,6 +1847,36 @@ def _host_file_target(config_path):
     return host.resolve() if host.is_symlink() else host
 
 
+def _set_dotted(doc: dict, dotted: str, value: Any) -> None:
+    """Set one dotted key in *doc*, creating its parent mappings; ``None`` removes the key."""
+    *parents, leaf = dotted.split(".")
+    node = doc
+    for key in parents:
+        if not isinstance(node.get(key), dict):
+            node[key] = {}
+        node = node[key]
+    if value is None:
+        node.pop(leaf, None)
+    else:
+        node[leaf] = value
+
+
+def _publish_route(target: Any, updates: list, *, config: bool) -> None:
+    """Apply every dotted update to ONE snapshot of *target* and publish it once: a failed write leaves
+    the previous route whole, never a half-written one. ``config`` picks the config.yaml writer; the
+    host file takes the plain round-trip primitive."""
+    from hermes_cli.config import _CONFIG_LOCK, atomic_config_replace, read_user_config_raw
+    from utils import atomic_roundtrip_yaml_save
+    with _CONFIG_LOCK:
+        doc = read_user_config_raw(target)
+        for dotted, value in updates:
+            _set_dotted(doc, dotted, value)
+        if config:
+            atomic_config_replace(target, doc)
+        else:
+            atomic_roundtrip_yaml_save(target, doc)
+
+
 def persist_model_selection(
     result: ModelSwitchResult, config_path: Any = None, *, surface: str = "cli", reasoning_effort: str = "",
 ) -> None:
@@ -1869,25 +1899,22 @@ def persist_model_selection(
     """
     from pathlib import Path
     from hermes_cli.config import _CONFIG_LOCK, atomic_config_replace, get_config_path, read_user_config_raw
-    from utils import atomic_roundtrip_yaml_update
     path = Path(config_path) if config_path else get_config_path()
     host_target = _host_file_target(path) if surface != "gateway" else None
-    if surface == "gateway" or host_target is not None:
-        if surface == "gateway":
-            updates = [
-                (f"gateway.model.{key}", value)
-                for key, value in gateway_model_config_updates(result, reasoning_effort).items()
-            ]
-            target = path
-        else:
-            updates = [("model.default", result.new_model), ("model.provider", result.target_provider)]
-            if reasoning_effort:
-                updates.append(("agent.reasoning_effort", reasoning_effort))
-            target = host_target
-        for dotted, value in updates:
-            atomic_roundtrip_yaml_update(target, dotted, value)
+    target = path
+    if surface == "gateway":
+        updates = [
+            (f"gateway.model.{key}", value)
+            for key, value in gateway_model_config_updates(result, reasoning_effort).items()
+        ]
+        _publish_route(path, updates, config=True)
+    elif host_target is not None:
+        updates = [("model.default", result.new_model), ("model.provider", result.target_provider)]
+        if reasoning_effort:
+            updates.append(("agent.reasoning_effort", reasoning_effort))
+        target = host_target
+        _publish_route(host_target, updates, config=False)
     else:
-        target = path
         planned_from = read_user_config_raw(path).get("model")
         updates = model_selection_config_updates(result, planned_from)
         with _CONFIG_LOCK:
