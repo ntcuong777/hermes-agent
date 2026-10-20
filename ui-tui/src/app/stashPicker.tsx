@@ -16,13 +16,21 @@ interface StashPickerState {
 }
 
 export function selectStash(state: StashPickerState, { ch, key }: WidgetInput): StashPickerState | null {
-  if (key.escape) {return null}
+  if (key.escape) {
+    return null
+  }
 
-  if (key.upArrow) {return { ...state, selected: Math.max(0, state.selected - 1) }}
+  if (key.upArrow) {
+    return { ...state, selected: Math.max(0, state.selected - 1) }
+  }
 
-  if (key.downArrow) {return { ...state, selected: Math.min(state.entries.length - 1, state.selected + 1) }}
+  if (key.downArrow) {
+    return { ...state, selected: Math.min(state.entries.length - 1, state.selected + 1) }
+  }
 
-  if (key.return) {return { ...state, chosen: state.selected }}
+  if (key.return) {
+    return { ...state, chosen: state.selected }
+  }
   const number = /^[1-9]$/.test(ch) ? Number(ch) - 1 : -1
 
   return number >= 0 && number < state.entries.length ? { ...state, chosen: number } : state
@@ -31,9 +39,13 @@ export function selectStash(state: StashPickerState, { ch, key }: WidgetInput): 
 function StashPicker({ state, rows }: { state: StashPickerState; rows: number }) {
   const applied = useRef(false)
   useEffect(() => {
-    if (state.chosen === null || applied.current) {return}
+    if (state.chosen === null || applied.current) {
+      return
+    }
 
-    if ($overlayState.get().widget?.state !== state) {return}
+    if ($overlayState.get().widget?.state !== state) {
+      return
+    }
     applied.current = true
     closeWidget()
     state.apply(state.chosen, state.entries[state.chosen]!)
@@ -79,7 +91,9 @@ export function showStashPicker(output: string, apply: StashPickerState['apply']
     throw new Error('Invalid stash snapshot')
   }
 
-  if (snapshot.entries.length === 0) {return}
+  if (snapshot.entries.length === 0) {
+    return
+  }
   openWidget(stashPicker, {
     entries: snapshot.entries,
     maximum: snapshot.max,
@@ -95,6 +109,8 @@ export async function applyStashSelection(selection: {
   accept: (text: string) => boolean
   acknowledge: (argument: string) => Promise<void>
 }): Promise<void> {
-  if (!selection.accept(selection.text)) {return}
+  if (!selection.accept(selection.text)) {
+    return
+  }
   await selection.acknowledge(JSON.stringify({ index: selection.index, text: selection.text }))
 }

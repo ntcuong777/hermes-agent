@@ -290,7 +290,10 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       // legacy server→client request resolves its response frame locally.
       if (overlay.approval.sharedControl) {
         return gateway
-          .rpc<SharedControlRespondResponse>('approval.respond', { choice: 'deny', ...sharedControlParams(overlay.approval) })
+          .rpc<SharedControlRespondResponse>('approval.respond', {
+            choice: 'deny',
+            ...sharedControlParams(overlay.approval)
+          })
           .then(r => r && fresh() && settle())
       }
 
@@ -549,9 +552,13 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     return void gateway
       .rpc<SlashExecResponse>('slash.exec', { command: 'stash snapshot', session_id: sid })
       .then(r => {
-        if (getUiState().sid !== sid || cRefs.revisionRef.current !== revision) {return}
+        if (getUiState().sid !== sid || cRefs.revisionRef.current !== revision) {
+          return
+        }
 
-        if (!r?.output) {return}
+        if (!r?.output) {
+          return
+        }
 
         if (JSON.parse(r.output).count === 0) {
           actions.sys('stash empty (0)')
@@ -584,7 +591,9 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
                 session_id: sid
               })
 
-              if (result?.output) {actions.sys(result.output)}
+              if (result?.output) {
+                actions.sys(result.output)
+              }
             }
           }).catch(() => actions.sys('stash: draft restored; removal failed, entry still held'))
         })
