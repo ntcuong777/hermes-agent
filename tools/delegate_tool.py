@@ -452,12 +452,15 @@ def _build_children(
 ) -> tuple[list[tuple], Optional[str]]:
     """Build every child on the main thread (construction is not thread-safe);
     ``(children, None)`` or ``([], error)`` on an explicit-pin preflight failure."""
+    from tools.delegate_model_override import confirmed_model_profile
     from tools.delegation_live_log import wrap_progress_callback
     from tools.delegation_output_schema import append_output_contract
     overrides = _credential_overrides(creds, routing_cfg)
     # Resolve every task's role first: one unknown role refuses the whole call before any child exists.
     try:
         profiles = [profile_for(t.get("role")) for t in task_list]
+        profiles = [confirmed_model_profile(task, profile, parent_agent, creds)
+                    for task, profile in zip(task_list, profiles)]
     except ValueError as exc:
         return [], str(exc)
     children = []
@@ -725,9 +728,18 @@ def _build_dynamic_schema_overrides() -> dict:
         roles_text = "; ".join(f"{name}: {text}" if text else name for name, text in sorted(catalog.items()))
         tasks["items"] = {**tasks["items"], "properties": {**tasks["items"]["properties"], "role": _p(
             "string",
-            f"The declared role this task runs as; it fixes the subagent's tools, model and limits. Roles: {roles_text}.",
+            f"The declared role this task runs as; it fixes tools and limits, and supplies the default model. Roles: {roles_text}.",
             enum=sorted(catalog),
         )}}
+        tasks["items"]["properties"].update({
+            "model": _p("string", "Optional model ID overriding this role's default for this launch. "
+                        "A different route requires explicit user confirmation and model_rationale. "
+                        "Use provider separately; do not prefix this ID with a provider."),
+            "provider": _p("string", "Optional provider for this launch; inherits the role/delegation route otherwise. "
+                           "A changed provider also requires explicit user confirmation."),
+            "model_rationale": _p("string", "Why this task needs a model/provider different from its role default; "
+                                  "shown with both routes and the task before this launch is approved."),
+        })
 
     return {
         "description": _build_top_level_description(independent_completions=independent_completions),
