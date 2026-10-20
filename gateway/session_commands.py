@@ -435,6 +435,9 @@ async def execute_command(connection, ref, params, *, dispatch=False):
     if runner_command is not None:
         with _profile_runtime_scope(home), _session_workspace(authority.runner, live.source):
             output = await _run_runner_command(authority.runner, live, name, arg, *runner_command)
+        # Composer directives must reach local clients, not become a printed Python dict.
+        if isinstance(output, dict) and output.get('type') in {'prefill', 'stash-saved'}:
+            return output
         return {'type': 'exec', 'output': _text(output)}
     if definition is None:
         def build():  # in the session's folder: its trusted project skills, as its catalog lists them

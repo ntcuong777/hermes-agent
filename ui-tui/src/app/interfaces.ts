@@ -427,6 +427,7 @@ export interface ComposerRefs {
    *  render, so a callback that resolves later (an RPC round-trip) must compare
    *  against this to know what the user has typed since. */
   inputRef: MutableRefObject<string>
+  revisionRef: MutableRefObject<number>
   /** Composer caret with the text it belongs to: TextInput writes it, completion reads it, applying a row sets it. */
   caretRef: MutableRefObject<InputCursorSnapshot | null>
   queueEditRef: MutableRefObject<null | number>

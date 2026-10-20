@@ -260,9 +260,16 @@ class GatewayInboundHooksMixin:
         return False, None, command
 
     async def _hm_run_plugin_handler(
-        self, plugin_handler, event: MessageEvent, source: SessionSource, session_entry=None, args=None
-    ) -> Optional[str]:
-        """Run a resolved plugin command handler for *source* → its reply text or None; raises what
+        self,
+        plugin_handler,
+        event: MessageEvent,
+        source: SessionSource,
+        session_entry=None,
+        args=None,
+    ) -> str | dict | None:
+        """Run a plugin handler; local composer directives stay structured, messaging stays text.
+
+        Raises what
         the handler raises (``gateway/session_commands.py`` resolves the exact registered name).
         *args* is the argument as typed (a local session's command); otherwise the message's
         command arguments, with the messaging dash repair of ``get_command_args``."""
@@ -277,17 +284,24 @@ class GatewayInboundHooksMixin:
             # The chat's current session, if it has one (lookup only: a command never creates one), so
             # HERMES_SESSION_ID / session_id name what a later /new reports as old_session_id (#123245).
             session_entry = await self.async_session_store.lookup_by_session_key(
-                self._session_key_for_source(source))
+                self._session_key_for_source(source)
+            )
         _plugin_context = build_session_context(source, self.config, session_entry)
         if session_entry is None:
             _plugin_context.session_key = self._session_key_for_source(source)
         user_args = event.get_command_args().strip() if args is None else args
         from hermes_cli.plugin_command_dispatch import invoke_plugin_command
         from gateway.plugin_messages import bind_live_source
+
         call = functools.partial(
-            invoke_plugin_command, plugin_handler, user_args, source=source,
-            session_id=_plugin_context.session_id or "", session_key=_plugin_context.session_key or "",
-            platform=source.platform.value)
+            invoke_plugin_command,
+            plugin_handler,
+            user_args,
+            source=source,
+            session_id=_plugin_context.session_id or "",
+            session_key=_plugin_context.session_key or "",
+            platform=source.platform.value,
+        )
         # ctx.post_message from the handler reaches this chat even before its session is stored.
         with self._session_env_scope(_plugin_context), bind_live_source(source):
             if inspect.iscoroutinefunction(plugin_handler):
@@ -296,6 +310,9 @@ class GatewayInboundHooksMixin:
                 result = await self._run_in_executor_with_context(call)
                 if inspect.isawaitable(result):
                     result = await result
+        # Local clients consume composer directives; messaging adapters only render text.
+        if source.platform.value == "local" and isinstance(result, dict):
+            return result
         return str(result) if result else None
 
     @staticmethod

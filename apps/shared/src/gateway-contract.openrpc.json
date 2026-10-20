@@ -12109,6 +12109,30 @@
             ],
             "default": null,
             "title": "Status"
+          },
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Count"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max"
           }
         },
         "required": [
@@ -16751,7 +16775,8 @@
           "plugin",
           "send",
           "skill",
-          "prefill"
+          "prefill",
+          "stash-saved"
         ],
         "title": "DispatchType",
         "type": "string"
@@ -41156,6 +41181,30 @@
             ],
             "default": null,
             "title": "Status"
+          },
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Count"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max"
           }
         },
         "title": "SlashExecResult",

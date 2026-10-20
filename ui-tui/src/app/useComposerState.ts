@@ -627,6 +627,7 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
       caretRef,
       historyRef,
       inputRef,
+      revisionRef: composerRevision,
       queueEditRef,
       queueRef,
       submitRef,

@@ -3817,9 +3817,11 @@ export interface CommandDispatchResult {
   display?: string | null
   name?: string | null
   status?: string | null
+  count?: number | null
+  max?: number | null
 }
 /** ``apps/shared/src/slash.ts::parseCommandDispatch`` branches on this. */
-export type DispatchType = 'exec' | 'alias' | 'plugin' | 'send' | 'skill' | 'prefill'
+export type DispatchType = 'exec' | 'alias' | 'plugin' | 'send' | 'skill' | 'prefill' | 'stash-saved'
 export interface SlashExecParams {
   session_id: string
   command: string
@@ -3836,6 +3838,8 @@ export interface SlashExecResult {
   display?: string | null
   name?: string | null
   status?: string | null
+  count?: number | null
+  max?: number | null
 }
 export interface InsightsGetParams {
   days?: number | null

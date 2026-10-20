@@ -272,6 +272,7 @@ class DispatchType(WireEnum):
     send = "send"
     skill = "skill"
     prefill = "prefill"
+    stash_saved = "stash-saved"
 
 
 class CommandDispatchParams(Params):
@@ -293,6 +294,8 @@ class CommandDispatchResult(Result):
     display: str | None = None
     name: str | None = None
     status: str | None = None
+    count: int | None = None
+    max: int | None = None
 
 
 method("command.dispatch", params=CommandDispatchParams, result=CommandDispatchResult,
@@ -318,6 +321,8 @@ class SlashExecResult(Result):
     display: str | None = None
     name: str | None = None
     status: str | None = None
+    count: int | None = None
+    max: int | None = None
 
 
 method("slash.exec", params=SlashExecParams, result=SlashExecResult,

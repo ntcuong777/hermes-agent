@@ -37,6 +37,7 @@ import {
   SENSITIVE_PROMPTS
 } from './overlayStore.js'
 import { respondToServerRequest } from './serverRequestStore.js'
+import { applyStashSelection, showStashPicker } from './stashPicker.js'
 import { turnController } from './turnController.js'
 import { patchTurnState } from './turnStore.js'
 import { getUiState } from './uiStore.js'
@@ -465,11 +466,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
   // server-side and per-profile (each HERMES_HOME owns its stash.json, the
   // same file `/stash pop` reads). JSON.stringify preserves exact text
   // (newlines, leading/trailing whitespace) through the command string.
-  // With an empty composer the same keybind restores instead: `/stash peek`
-  // answers with the /undo prefill directive ({"type":"prefill"}), applied
-  // here exactly like createSlashHandler's handleDispatch does. A successful
-  // push answers with {"type":"stash-saved"} — the ONLY signal this code may
-  // clear the composer on (see apps/shared/src/slash.ts).
+  // Empty composers open the numbered stash picker. Only stash-saved clears a draft.
   //
   // The (session, draft) pair of the save currently in flight, or null. Two Alt+S
   // presses before the first answer pushed the same draft twice (review S-V).
@@ -485,6 +482,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     const lastLine = cRefs.inputRef.current
     const draft = composerDraftText(cState.inputBuf, lastLine)
     const sid = getUiState().sid
+    const revision = cRefs.revisionRef.current
 
     // `clearIn()` empties the tokens too, and the stash holds text only: saving here
     // would discard the attachments. Refuse and say why rather than lose them silently.
@@ -526,12 +524,8 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
             // Drop the composer only if it still holds what we stashed, and only
             // from the session we stashed it in; text typed while the RPC was in
             // flight must survive. Both checks read a live ref for that reason.
-            // The one edit they cannot see is a continuation line appended during the
-            // round trip (a trailing `\` moves `input` into `inputBuf` and empties it,
-            // and `inputBuf` has no live ref); with `lastLine` then empty the pair can
-            // still match. Accepted rather than plumbed: it needs an Alt+S on an empty
-            // last line plus a keystroke inside the RPC window.
-            if (cRefs.inputRef.current === lastLine && !cRefs.tokensRef.current.length && getUiState().sid === sid) {
+            // Revision covers edits to continuation lines as well as the last line.
+            if (cRefs.revisionRef.current === revision && !cRefs.tokensRef.current.length && getUiState().sid === sid) {
               cActions.clearIn()
             }
 
@@ -553,45 +547,49 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     }
 
     return void gateway
-      .rpc<SlashExecResponse>('slash.exec', { command: 'stash peek', session_id: sid })
+      .rpc<SlashExecResponse>('slash.exec', { command: 'stash snapshot', session_id: sid })
       .then(r => {
-        const d = parseCommandDispatch(r)
+        if (getUiState().sid !== sid || cRefs.revisionRef.current !== revision) {return}
 
-        if (d?.type === 'prefill') {
-          if (d.notice?.trim()) {
-            actions.sys(d.notice)
-          }
+        if (!r?.output) {return}
 
-          if (d.message) {
-            // Non-destructive restore: `stash peek` leaves the entry in the store, so
-            // text typed while this RPC was in flight is never overwritten and the
-            // stashed draft is not consumed by a pop the user did not see land. Nothing
-            // consumes it later either — a restored entry stays until `/stash pop` or
-            // `/stash clear` removes it, which is the trade the non-destructive restore
-            // makes. The live refs decide whether the composer is still empty (the whole
-            // composer, not just its last line), and the session is re-checked so a
-            // restored draft cannot land in another session's composer.
-            if (getUiState().sid !== sid) {
-              return
-            }
-
-            if (composerDraftText(cState.inputBuf, cRefs.inputRef.current).trim()) {
-              actions.sys('stash: kept in store (composer not empty) — /stash pop to replace')
-
-              return
-            }
-
-            cActions.setInput(d.message)
-          }
+        if (JSON.parse(r.output).count === 0) {
+          actions.sys('stash empty (0)')
 
           return
         }
 
-        // Plain string result ("stash empty", usage errors) — surface it.
-        if (r?.output) {
-          actions.sys(r.output)
-        }
+        showStashPicker(r.output, (index, text) => {
+          void applyStashSelection({
+            index,
+            text,
+            accept: draft => {
+              if (
+                getUiState().sid !== sid ||
+                cRefs.revisionRef.current !== revision ||
+                cRefs.tokensRef.current.length > 0
+              ) {
+                actions.sys('stash: draft kept in store; composer changed')
+
+                return false
+              }
+
+              cActions.setInput(draft)
+
+              return true
+            },
+            acknowledge: async argument => {
+              const result = await gateway.rpc<SlashExecResponse>('slash.exec', {
+                command: `stash applied ${argument}`,
+                session_id: sid
+              })
+
+              if (result?.output) {actions.sys(result.output)}
+            }
+          }).catch(() => actions.sys('stash: draft restored; removal failed, entry still held'))
+        })
       })
+      .catch(() => actions.sys('stash: picker failed — stored drafts kept'))
   }
 
   // Double-Esc discards the draft, matching Claude Code / Gemini CLI. It
