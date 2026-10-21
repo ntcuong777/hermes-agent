@@ -106,6 +106,19 @@ export const resumeRowContextHintSegments = (): OrchestratorHintSegment[] => {
   ]
 }
 
+/** `session.list` params for the switcher: the caller's workspace only while the filter is on. */
+export const sessionListWorkspaceParams = (workspaceOnly: boolean, cwd: string): { cwd?: string } =>
+  workspaceOnly && cwd ? { cwd } : {}
+
+export const workspaceHintSegments = (workspaceOnly: boolean): OrchestratorHintSegment[] => {
+  const h = messages().pickers.session.hint
+
+  return [
+    { role: 'hotkey', text: 'w' },
+    { role: 'text', text: workspaceOnly ? h.allSessions : h.thisWorkspace }
+  ]
+}
+
 export type OrchestratorHintRole = 'hotkey' | 'label' | 'text'
 
 export interface OrchestratorHintSegment {
@@ -326,6 +339,8 @@ export function ActiveSessionSwitcher({
   // the 1.5s live-status poll re-indexing rows can't redirect the delete to a
   // different session. Any other key cancels the prompt.
   const [confirmDelete, setConfirmDelete] = useState<null | string>(null)
+  // `w` narrows the list to the TUI's workspace (repo root, else directory); see `session.list` cwd.
+  const [workspaceOnly, setWorkspaceOnly] = useState(false)
   const T = useT()
   const S = T.pickers.session
   const C = T.pickers.common
@@ -359,7 +374,7 @@ export function ActiveSessionSwitcher({
     // `quiet` skips the loading spinner (used by the live-status poll);
     // `includeHistory` re-queries the resumable DB list (skipped on the 1.5s
     // poll, which only needs fresh live-session status).
-    async (quiet = false, includeHistory = true) => {
+    async (quiet = false, includeHistory = true, workspace = workspaceOnly) => {
       if (!quiet) {
         setLoading(true)
       }
@@ -370,7 +385,8 @@ export function ActiveSessionSwitcher({
         // resumable history degrades on its own.
         const canonicalList = gw.isCanonical
           ? gw.request<{ scope?: string; sessions?: (SessionListRow & { running?: boolean })[] }>('session.list', {
-              limit: 200
+              limit: 200,
+              ...sessionListWorkspaceParams(workspace, process.cwd())
             })
           : null
 
@@ -387,7 +403,8 @@ export function ActiveSessionSwitcher({
           includeHistory
             ? gw.request<SessionListResult>('session.list', {
                 limit: 200,
-                ...(canonicalList ? { scope: 'stored' } : {})
+                ...(canonicalList ? { scope: 'stored' } : {}),
+                ...sessionListWorkspaceParams(workspace, process.cwd())
               })
             : Promise.resolve(null)
         ])
@@ -469,7 +486,7 @@ export function ActiveSessionSwitcher({
         return []
       }
     },
-    [currentSessionId, gw]
+    [currentSessionId, gw, workspaceOnly]
   )
 
   useEffect(() => {
@@ -627,6 +644,15 @@ export function ActiveSessionSwitcher({
       if (newSelected) {
         setPickingModel(true)
       }
+
+      return
+    }
+
+    if (!key.ctrl && lower === 'w' && !newSelected) {
+      const next = !workspaceOnly
+
+      setWorkspaceOnly(next)
+      void load(false, true, next)
 
       return
     }
@@ -919,7 +945,13 @@ export function ActiveSessionSwitcher({
         </Box>
       )}
 
-      <OrchestratorHintText segments={orchestratorGlobalHotkeyHintSegments()} t={t} />
+      <OrchestratorHintText
+        segments={[
+          ...orchestratorGlobalHotkeyHintSegments(),
+          ...(newSelected ? [] : workspaceHintSegments(workspaceOnly))
+        ]}
+        t={t}
+      />
     </Box>
   )
 }

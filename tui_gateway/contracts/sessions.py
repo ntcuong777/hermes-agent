@@ -222,6 +222,8 @@ class SessionListParams(ProfileParams):
     title: str | None = None  # exact-title lookup (title as identity); windowless
     limit: int | None = None
     include_hidden: bool = False
+    # The caller's directory: list only sessions in its workspace (repo root, else the directory).
+    cwd: str | None = None
 
 
 class SessionListRow(Result):

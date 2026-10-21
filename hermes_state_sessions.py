@@ -5,6 +5,7 @@ counting, delete cascades, and the auto-archive sweep."""
 import glob
 import json
 import logging
+import os
 import re
 import sqlite3
 import time
@@ -33,6 +34,22 @@ def workspace_key(row: dict[str, Any]) -> Optional[str]:
     """Workspace grouping key: git repo root, else cwd, else None (branch excluded: a checkout must not
     fragment history)."""
     return (row.get("git_repo_root") or "").strip() or (row.get("cwd") or "").strip() or None
+
+
+def workspace_for_dir(cwd: str) -> str:
+    """The key a session started in ``cwd`` carries: the main repo root (linked worktrees fold
+    into it), else the directory itself. Same probe the store writes as ``git_repo_root``."""
+    from tui_gateway import git_probe
+
+    real = os.path.realpath(cwd)
+    return git_probe.common_repo_root(real) or real
+
+
+def rows_in_workspace(rows: Sequence[dict[str, Any]], workspace: Optional[str]) -> list[dict[str, Any]]:
+    """Rows whose :func:`workspace_key` is ``workspace``; no filter when it is None."""
+    if not workspace:
+        return list(rows)
+    return [row for row in rows if (workspace_key(row) or "").rstrip("/") == workspace.rstrip("/")]
 
 
 def _delegate_from_json(col: str = "model_config") -> str:

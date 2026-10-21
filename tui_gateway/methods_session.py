@@ -563,7 +563,13 @@ def _(rid, params: dict, db) -> dict:
         db_path = getattr(db, "db_path", None)
         include_subagents = bool(db_path) and show_subagent_sessions(Path(db_path).parent)
         rows = _listing_rows(db, max(limit * 2, 200), include_hidden=_flag(params, "include_hidden"),
-                             include_subagents=include_subagents)[:limit]
+                             include_subagents=include_subagents)
+        # ``cwd``: only sessions in the caller's workspace (repo root, else directory).
+        cwd = _str_param(params, "cwd")
+        if cwd:
+            from hermes_state_sessions import rows_in_workspace, workspace_for_dir
+            rows = rows_in_workspace(rows, workspace_for_dir(cwd))
+        rows = rows[:limit]
         # No live_message_count here on purpose: the bulk listing serves rows whose open
         # paths never demand history (expectHistory defaults false); the count is a
         # per-session scan and would turn one listing call into hundreds of them.

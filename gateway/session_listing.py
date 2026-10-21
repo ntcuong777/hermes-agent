@@ -23,12 +23,15 @@ def _picker_row(row, tip, sid):
             'message_count': row.get('message_count', 0), 'model': tip.get('model'), 'running': False}
 
 
-def stored_picker_sessions(authority, actor, *, limit, include_hidden=False):
+def stored_picker_sessions(authority, actor, *, limit, include_hidden=False, workspace=None):
     """Offer legacy local rows only to the same native transport that may resume them.
 
     Canonical sessions are already in the live feed. Old local rows have no policy
     receipt until explicit resume; listing them must not claim or restore anything.
+    ``workspace`` (a :func:`hermes_state_sessions.workspace_for_dir` key) keeps only that workspace's rows.
     """
+    from hermes_state_sessions import workspace_key
+
     if actor.profile_id != authority.profile_id:
         raise RuntimeStoreError('profile_mismatch')
     if (getattr(authority, '_native_legacy_transports', {}).get(actor.transport_id) != actor
@@ -41,6 +44,8 @@ def stored_picker_sessions(authority, actor, *, limit, include_hidden=False):
         rows = db.list_sessions_rich(exclude_sources=_excluded_sources(), limit=200, offset=offset,
             order_by_last_active=True, compact_rows=True, include_hidden=include_hidden)
         for row in rows:
+            if workspace is not None and (workspace_key(row) or '').rstrip('/') != workspace.rstrip('/'):
+                continue
             local = row['source'] in _LOCAL_SOURCES
             if not local and _messaging_platform(row['source']) is None:
                 continue  # neither a local nor a messaging label (acp, unknown, ...): nothing this picker resumes

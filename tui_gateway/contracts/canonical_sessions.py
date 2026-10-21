@@ -162,6 +162,8 @@ class CanonicalListParams(ProfileParams):
     limit: int = 200
     title: str | None = None
     include_hidden: bool = False
+    # The caller's directory: list only sessions in its workspace (repo root, else the directory).
+    cwd: str | None = None
 
 
 class CanonicalSessionListRow(Result):

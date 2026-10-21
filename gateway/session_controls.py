@@ -512,14 +512,19 @@ class AuthorityConnection:
         if 'session:read' not in self.actor.capabilities:
             raise RuntimeStoreError('permission_denied')
         limit = params.get('limit', 200)
-        if set(params) - {'limit', 'title', 'include_hidden', 'scope'} or type(limit) is not int or not 1 <= limit <= 200:
+        if set(params) - {'limit', 'title', 'include_hidden', 'scope', 'cwd'} or type(limit) is not int or not 1 <= limit <= 200:
             raise RuntimeStoreError('invalid_params')
         if params.get('scope', 'live') not in {'live', 'stored'} or ('title' in params and 'scope' in params):
             raise RuntimeStoreError('invalid_params')
+        # ``cwd`` narrows the list to the caller's workspace; it is a listing filter, not a title lookup.
+        if 'cwd' in params and ('title' in params or not isinstance(params['cwd'], str) or not params['cwd'].strip()):
+            raise RuntimeStoreError('invalid_params')
+        from hermes_state_sessions import workspace_for_dir
+        workspace = workspace_for_dir(params['cwd'].strip()) if 'cwd' in params else None
         if params.get('scope') == 'stored':
             from gateway.session_listing import stored_picker_sessions
             return await asyncio.to_thread(stored_picker_sessions, self.authority, self.actor,
-                limit=limit, include_hidden=params.get('include_hidden', False))
+                limit=limit, include_hidden=params.get('include_hidden', False), workspace=workspace)
         if 'title' in params:
             # Title-as-identity lookup (the Bots roster's forever-chat registry): the same
             # resolver `session.resume title=` uses, so a hidden canonical chat answers here
@@ -538,7 +543,7 @@ class AuthorityConnection:
                                   'message_count': row.get('message_count', 0),
                                   'running': found.session_id in self.authority.sessions}],
                     'scope': 'stored'}
-        from hermes_state_sessions import INTERNAL_LISTING_SOURCES
+        from hermes_state_sessions import INTERNAL_LISTING_SOURCES, workspace_key
         from gateway.session_live_listing import live_entries
         sessions = []
         for entry in await live_entries(self.authority, self.actor):
@@ -548,6 +553,8 @@ class AuthorityConnection:
             # viewer and idle: main lists it as resumable (the stored feed), not as a live session.
             if row.get('source') in INTERNAL_LISTING_SOURCES or entry.closed or (
                     not params.get('include_hidden') and (row.get('hidden') or row.get('archived'))):
+                continue
+            if workspace is not None and (workspace_key(row) or '').rstrip('/') != workspace.rstrip('/'):
                 continue
             sessions.append({'session_id': entry.session_id, 'id': entry.session_id, 'title': row.get('title') or '',
                              'source': row.get('source'), 'started_at': row.get('started_at'),

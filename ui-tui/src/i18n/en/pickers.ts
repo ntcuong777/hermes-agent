@@ -137,6 +137,8 @@ export const pickersEn = {
         resumableLabel: 'Resumable:',
         resume: ' resume · ',
         delete: ' delete',
+        allSessions: ' all sessions · ',
+        thisWorkspace: ' this workspace · ',
         newRowLabel: 'New row:',
         typePrompt: ' type prompt · ',
         start: ' start · ',

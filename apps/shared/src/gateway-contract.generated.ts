@@ -3247,6 +3247,7 @@ export interface SessionListParams {
   title?: string | null
   limit?: number | null
   include_hidden?: boolean
+  cwd?: string | null
 }
 export interface SessionListResult {
   sessions: SessionListRow[]
@@ -5062,6 +5063,7 @@ export interface CanonicalListParams {
   limit?: number
   title?: string | null
   include_hidden?: boolean
+  cwd?: string | null
 }
 export interface CanonicalListResult {
   sessions: CanonicalSessionListRow[]

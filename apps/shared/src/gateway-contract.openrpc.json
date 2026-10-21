@@ -9041,6 +9041,18 @@
             "default": false,
             "title": "Include Hidden",
             "type": "boolean"
+          },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cwd"
           }
         },
         "title": "CanonicalListParams",
@@ -37291,6 +37303,18 @@
             "default": false,
             "title": "Include Hidden",
             "type": "boolean"
+          },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cwd"
           }
         },
         "title": "SessionListParams",
