@@ -181,6 +181,20 @@ export interface TextInsertResult {
   value: string
 }
 
+/**
+ * Whether a key event inserts text into the composer. Ctrl chords and Alt/Option
+ * letters (meta) are shortcuts, not typed text: Alt+S would otherwise insert "s"
+ * on top of the stash action. A pasted payload is text even when it carries a
+ * control byte, so `isPasted` wins.
+ */
+export function isTypedTextEvent(event: InputEvent): boolean {
+  if (event.keypress.isPasted) {
+    return PRINTABLE.test(event.input.replace(BRACKET_PASTE, ''))
+  }
+
+  return !event.isControlChord && !event.key.meta && event.input.length > 0 && PRINTABLE.test(event.input)
+}
+
 export function applyPrintableInsert(
   value: string,
   cursor: number,
@@ -1486,10 +1500,7 @@ export function TextInput({
       const range = selRange()
       const delFwd = k.delete || fwdDel.current
 
-      const isPrintableInput =
-        !event.isControlChord &&
-        (event.keypress.isPasted || inp.length > 0) &&
-        PRINTABLE.test(inp.replace(BRACKET_PASTE, ''))
+      const isPrintableInput = isTypedTextEvent(event)
 
       if (!isPrintableInput) {
         flushKeyBurst()
