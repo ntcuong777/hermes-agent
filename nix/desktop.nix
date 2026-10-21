@@ -193,6 +193,47 @@ stdenv.mkDerivation {
     makeWrapper ${lib.getExe electron} $out/bin/hermes-desktop \
       ${lib.escapeShellArgs wrapperArgs}
 
+    ${lib.optionalString stdenv.hostPlatform.isDarwin ''
+      # macOS: a bare binary is no app for Spotlight, Launchpad or the Dock. Copy nixpkgs'
+      # Electron.app, give it Hermes' identity and icon, and launch through the same env and
+      # renderer as bin/hermes-desktop. Electron's helper processes keep their upstream names.
+      app=$out/Applications/Hermes.app
+      mkdir -p $out/Applications
+      cp -a ${electron}/Applications/Electron.app $app
+      chmod -R u+w $app
+      cp ${generatedIcons}/apps/desktop/assets/icon.icns $app/Contents/Resources/icon.icns
+      cat > $app/Contents/Info.plist <<'PLIST'
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+      <plist version="1.0">
+      <dict>
+        <key>CFBundleDevelopmentRegion</key><string>en</string>
+        <key>CFBundleDisplayName</key><string>Hermes</string>
+        <key>CFBundleExecutable</key><string>Hermes</string>
+        <key>CFBundleIconFile</key><string>icon.icns</string>
+        <key>CFBundleIdentifier</key><string>com.nousresearch.hermes</string>
+        <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+        <key>CFBundleName</key><string>Hermes</string>
+        <key>CFBundlePackageType</key><string>APPL</string>
+        <key>CFBundleShortVersionString</key><string>${renderer.version}</string>
+        <key>CFBundleVersion</key><string>${renderer.version}</string>
+        <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
+        <key>LSMinimumSystemVersion</key><string>12.0</string>
+        <key>NSHighResolutionCapable</key><true/>
+        <key>NSMicrophoneUsageDescription</key><string>Hermes uses the microphone for voice input.</string>
+        <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/></dict>
+      </dict>
+      </plist>
+      PLIST
+      cat > $app/Contents/MacOS/Hermes <<'LAUNCHER'
+      #!/bin/sh
+      ${lib.concatStringsSep "\n" (lib.mapAttrsToList (name: value: "export ${name}=${lib.escapeShellArg (toString value)}") wrapperEnv)}
+      ${lib.concatStringsSep "\n" extraRun}
+      exec "$(dirname "$0")/Electron" --enable-features=WaylandWindowDecorations "${placeholder "out"}/share/hermes-desktop" "$@"
+      LAUNCHER
+      chmod +x $app/Contents/MacOS/Hermes
+    ''}
+
     # XDG launcher entry
     mkdir -p $out/share/applications $out/share/icons/hicolor/1024x1024/apps
     install -m 0644 ${generatedIcons}/apps/desktop/assets/icon.png \
@@ -204,6 +245,12 @@ stdenv.mkDerivation {
     entry_name=$(python3 -c 'from linux_desktop_entry import DESKTOP_ENTRY_NAME; print(DESKTOP_ENTRY_NAME)')
     python3 -c 'import os; from linux_desktop_entry import render_desktop_entry; print(render_desktop_entry(os.environ["DESKTOP_EXEC"], os.environ["DESKTOP_ICON"]))' > "$out/share/applications/$entry_name"
     runHook postInstall
+  '';
+
+  # Sign last: fixupPhase rewrites the launcher's shebang and Mach-O load commands, and a
+  # signature made in installPhase no longer matches the bundle.
+  postFixup = lib.optionalString stdenv.hostPlatform.isDarwin ''
+    /usr/bin/codesign --force --sign - $out/Applications/Hermes.app
   '';
 
   passthru = {
