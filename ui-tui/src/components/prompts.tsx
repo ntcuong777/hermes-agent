@@ -126,6 +126,12 @@ export function approvalWindow(
   return { above: start, below: Math.max(0, lines.length - start - size), offset: start, shown: lines.slice(start, start + size) }
 }
 
+/** What the expanded panel tells the person to press. Ctrl+U/Ctrl+D scroll on every keyboard; PgUp/PgDn work too
+ *  but are not on every laptop or terminal, so they are not what the panel advertises (B27). */
+export function approvalScrollHints(): { above: string; below: string; keys: string } {
+  return { above: '(Ctrl+U)', below: '(Ctrl+D)', keys: 'Ctrl+U/Ctrl+D scroll' }
+}
+
 /** A description's first line is the panel title; the rest says what the call is about (a plugin approval's command,
  *  path or URL, C168) and joins the body, so the preview cap and `v` apply to it too. */
 export function approvalSplit(description: string): { detail: string[]; title: string } {
@@ -172,6 +178,7 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
 
   const preview = approvalPreview(rawLines, expanded)
   const win = expanded ? approvalWindow(rawLines, offset, page) : null
+  const scrollHints = approvalScrollHints()
   const shown = win ? win.shown : preview.shown
   const overflow = win ? 0 : preview.overflow
 
@@ -182,14 +189,14 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
       </Text>
 
       <Box flexDirection="column" paddingLeft={1}>
-        {win && win.above > 0 ? <Text color={t.color.muted}>… {win.above} line{win.above === 1 ? '' : 's'} above (PgUp)</Text> : null}
+        {win && win.above > 0 ? <Text color={t.color.muted}>… {win.above} line{win.above === 1 ? '' : 's'} above {scrollHints.above}</Text> : null}
         {shown.map((line, i) => (
           <Text color={t.color.text} key={i} wrap="truncate-end">
             {line || ' '}
           </Text>
         ))}
 
-        {win && win.below > 0 ? <Text color={t.color.muted}>… {win.below} line{win.below === 1 ? '' : 's'} below (PgDn)</Text> : null}
+        {win && win.below > 0 ? <Text color={t.color.muted}>… {win.below} line{win.below === 1 ? '' : 's'} below {scrollHints.below}</Text> : null}
         {overflow > 0 ? <Text color={t.color.muted}>{T.prompt.approval.moreLines(overflow)}</Text> : null}
       </Box>
 
@@ -204,7 +211,7 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
         </Text>
       ))}
 
-      <Text color={t.color.muted}>↑/↓ select · Enter confirm · 1-{opts.length} quick pick · v {expanded ? 'collapse · PgUp/PgDn scroll' : 'full text'} · Esc/Ctrl+C deny</Text>
+      <Text color={t.color.muted}>↑/↓ select · Enter confirm · 1-{opts.length} quick pick · v {expanded ? `collapse · ${scrollHints.keys}` : 'full text'} · Esc/Ctrl+C deny</Text>
     </Box>
   )
 }
