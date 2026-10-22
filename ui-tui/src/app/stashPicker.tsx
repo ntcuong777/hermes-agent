@@ -12,7 +12,9 @@ interface StashPickerState {
   maximum: number
   selected: number
   chosen: number | null
+  dropped: number | null
   apply: (index: number, text: string) => void
+  drop: (index: number, text: string) => void
 }
 
 export function selectStash(state: StashPickerState, { ch, key }: WidgetInput): StashPickerState | null {
@@ -31,6 +33,9 @@ export function selectStash(state: StashPickerState, { ch, key }: WidgetInput): 
   if (key.return) {
     return { ...state, chosen: state.selected }
   }
+  if (ch === 'x' || ch === 'd') {
+    return { ...state, dropped: state.selected }
+  }
   const number = /^[1-9]$/.test(ch) ? Number(ch) - 1 : -1
 
   return number >= 0 && number < state.entries.length ? { ...state, chosen: number } : state
@@ -39,7 +44,9 @@ export function selectStash(state: StashPickerState, { ch, key }: WidgetInput): 
 function StashPicker({ state, rows }: { state: StashPickerState; rows: number }) {
   const applied = useRef(false)
   useEffect(() => {
-    if (state.chosen === null || applied.current) {
+    const index = state.chosen ?? state.dropped
+
+    if (index === null || applied.current) {
       return
     }
 
@@ -48,7 +55,7 @@ function StashPicker({ state, rows }: { state: StashPickerState; rows: number })
     }
     applied.current = true
     closeWidget()
-    state.apply(state.chosen, state.entries[state.chosen]!)
+    ;(state.chosen === null ? state.drop : state.apply)(index, state.entries[index]!)
   }, [state])
   const visible = Math.max(1, rows - 6)
   const start = Math.max(0, state.selected - visible + 1)
@@ -56,7 +63,7 @@ function StashPicker({ state, rows }: { state: StashPickerState; rows: number })
   return (
     <Box borderStyle="round" flexDirection="column">
       <Text bold>
-        Stash ({state.entries.length}/{state.maximum}) — ↑↓ Enter · 1–9 · Esc cancel
+        Stash ({state.entries.length}/{state.maximum}) — ↑↓ Enter · 1–9 · x delete · Esc cancel
       </Text>
       {state.entries.slice(start, start + visible).map((text, offset) => (
         <Text inverse={start + offset === state.selected} key={start + offset} wrap="truncate-end">
@@ -76,7 +83,7 @@ const stashPicker = defineWidgetApp<StashPickerState>({
   render: ({ state, rows }) => <StashPicker rows={rows} state={state} />
 })
 
-export function showStashPicker(output: string, apply: StashPickerState['apply']): void {
+function parseSnapshot(output: string): { entries: readonly string[]; max: number } {
   const snapshot: unknown = JSON.parse(output)
 
   if (
@@ -91,16 +98,51 @@ export function showStashPicker(output: string, apply: StashPickerState['apply']
     throw new Error('Invalid stash snapshot')
   }
 
-  if (snapshot.entries.length === 0) {
+  return { entries: snapshot.entries, max: snapshot.max }
+}
+
+export function showStashPicker(
+  output: string,
+  apply: StashPickerState['apply'],
+  drop: StashPickerState['drop'] = () => {}
+): void {
+  const { entries, max } = parseSnapshot(output)
+
+  if (entries.length === 0) {
     return
   }
   openWidget(stashPicker, {
-    entries: snapshot.entries,
-    maximum: snapshot.max,
-    selected: snapshot.entries.length - 1,
+    entries,
+    maximum: max,
+    selected: entries.length - 1,
     chosen: null,
-    apply
+    dropped: null,
+    apply,
+    drop
   })
+}
+
+/** Alt+S on an empty composer, like Pi's stash extension: a lone entry is restored at once
+ *  (no list to pick from), several open the picker, none reports empty. */
+export function openStashes(
+  output: string,
+  apply: StashPickerState['apply'],
+  drop: StashPickerState['drop']
+): 'applied' | 'empty' | 'picker' {
+  const { entries } = parseSnapshot(output)
+
+  if (entries.length === 0) {
+    return 'empty'
+  }
+
+  if (entries.length === 1) {
+    apply(0, entries[0]!)
+
+    return 'applied'
+  }
+  showStashPicker(output, apply, drop)
+
+  return 'picker'
 }
 
 export async function applyStashSelection(selection: {

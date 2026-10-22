@@ -37,7 +37,7 @@ import {
   SENSITIVE_PROMPTS
 } from './overlayStore.js'
 import { respondToServerRequest } from './serverRequestStore.js'
-import { applyStashSelection, showStashPicker } from './stashPicker.js'
+import { applyStashSelection, openStashes } from './stashPicker.js'
 import { turnController } from './turnController.js'
 import { patchTurnState } from './turnStore.js'
 import { getUiState } from './uiStore.js'
@@ -549,56 +549,80 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
         })
     }
 
-    return void gateway
-      .rpc<SlashExecResponse>('slash.exec', { command: 'stash snapshot', session_id: sid })
-      .then(r => {
-        if (getUiState().sid !== sid || cRefs.revisionRef.current !== revision) {
-          return
-        }
+    // After a delete the list is fetched again; a lone survivor is not restored behind the
+    // person's back, the delete message ("stash (1 left)") already says it is there.
+    const openList = (revision: number, afterDelete = false): void =>
+      void gateway
+        .rpc<SlashExecResponse>('slash.exec', { command: 'stash snapshot', session_id: sid })
+        .then(r => {
+          if (getUiState().sid !== sid || cRefs.revisionRef.current !== revision) {
+            return
+          }
 
-        if (!r?.output) {
-          return
-        }
+          if (!r?.output) {
+            return
+          }
 
-        if (JSON.parse(r.output).count === 0) {
-          actions.sys('stash empty (0)')
+          if (afterDelete && JSON.parse(r.output).count < 2) {
+            return
+          }
 
-          return
-        }
+          const apply = (index: number, text: string) => {
+            void applyStashSelection({
+              index,
+              text,
+              accept: draft => {
+                if (
+                  getUiState().sid !== sid ||
+                  cRefs.revisionRef.current !== revision ||
+                  cRefs.tokensRef.current.length > 0
+                ) {
+                  actions.sys('stash: draft kept in store; composer changed')
 
-        showStashPicker(r.output, (index, text) => {
-          void applyStashSelection({
-            index,
-            text,
-            accept: draft => {
-              if (
-                getUiState().sid !== sid ||
-                cRefs.revisionRef.current !== revision ||
-                cRefs.tokensRef.current.length > 0
-              ) {
-                actions.sys('stash: draft kept in store; composer changed')
+                  return false
+                }
 
-                return false
+                cActions.setInput(draft)
+
+                return true
+              },
+              acknowledge: async argument => {
+                const result = await gateway.rpc<SlashExecResponse>('slash.exec', {
+                  command: `stash applied ${argument}`,
+                  session_id: sid
+                })
+
+                if (result?.output) {
+                  actions.sys(result.output)
+                }
               }
+            }).catch(() => actions.sys('stash: draft restored; removal failed, entry still held'))
+          }
 
-              cActions.setInput(draft)
-
-              return true
-            },
-            acknowledge: async argument => {
-              const result = await gateway.rpc<SlashExecResponse>('slash.exec', {
-                command: `stash applied ${argument}`,
+          // `stash applied` removes exactly this entry when it is still the one stored.
+          const drop = (index: number, text: string) => {
+            void gateway
+              .rpc<SlashExecResponse>('slash.exec', {
+                command: `stash applied ${JSON.stringify({ index, text })}`,
                 session_id: sid
               })
+              .then(result => {
+                if (result?.output) {
+                  actions.sys(result.output)
+                }
 
-              if (result?.output) {
-                actions.sys(result.output)
-              }
-            }
-          }).catch(() => actions.sys('stash: draft restored; removal failed, entry still held'))
+                openList(cRefs.revisionRef.current, true)
+              })
+              .catch(() => actions.sys('stash: delete failed — entry still held'))
+          }
+
+          if (openStashes(r.output, apply, drop) === 'empty') {
+            actions.sys('stash empty (0)')
+          }
         })
-      })
-      .catch(() => actions.sys('stash: picker failed — stored drafts kept'))
+        .catch(() => actions.sys('stash: picker failed — stored drafts kept'))
+
+    return openList(revision)
   }
 
   // Double-Esc discards the draft, matching Claude Code / Gemini CLI. It

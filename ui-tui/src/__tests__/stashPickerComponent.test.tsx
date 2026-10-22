@@ -58,3 +58,23 @@ it('cancels selection without applying or consuming a draft', () => {
   expect(getOverlayState().widget).toBeNull()
   expect(apply).not.toHaveBeenCalled()
 })
+
+it('x deletes the selected draft through drop, not apply', async () => {
+  resetOverlayState()
+  const apply = vi.fn()
+  const drop = vi.fn()
+  showStashPicker('{"entries":["first draft","second draft"],"count":2,"max":9}', apply, drop)
+  const { instance, text } = mountPicker()
+
+  try {
+    await vi.waitFor(() => expect(text()).toContain('x delete'), { timeout: 3000 })
+    dispatchWidgetInput(key('x'))
+    await vi.waitFor(() => expect(drop).toHaveBeenCalledExactlyOnceWith(1, 'second draft'), { timeout: 3000 })
+    expect(apply).not.toHaveBeenCalled()
+    expect(getOverlayState().widget).toBeNull()
+  } finally {
+    instance.unmount()
+    instance.cleanup()
+    resetOverlayState()
+  }
+})
