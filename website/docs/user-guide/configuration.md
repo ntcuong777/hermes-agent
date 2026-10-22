@@ -2051,6 +2051,21 @@ providers:
 
 Differences from `agent.service_tier`: the tier is always on for that provider (no `auto`/`cold` window), `/fast` does not toggle it, and Hermes does not validate the value — the gateway decides what it accepts and what it bills.
 
+## Model Pricing
+
+Session cost (the status bar, `/usage`) is priced from a bundled table of published rates, then OpenRouter's catalog, the endpoint's `/models` metadata and models.dev. A model in none of them shows no cost. `pricing:` sets the rates yourself, in USD per 1M tokens, and is read before the bundled table:
+
+```yaml
+pricing:
+  anthropic/claude-sonnet-5-5:          # <provider>/<model>, or a bare model id for any provider
+    input: 2.00
+    output: 10.00
+    cache_read: 0.10                    # optional
+    cache_write: 2.50                   # optional
+```
+
+`input` and `output` are required; an entry with a rate that is not a number is ignored and logged. A subscription route (Claude or ChatGPT plan) still counts as included ($0), a cost the provider reports itself still wins, and Anthropic fast-mode requests keep the fast-mode rates.
+
 ## Tool-Use Enforcement
 
 Some models occasionally describe intended actions as text instead of making tool calls ("I would run the tests..." instead of actually calling the terminal). Tool-use enforcement injects system prompt guidance that steers the model back to actually calling tools.

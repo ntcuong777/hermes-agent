@@ -578,6 +578,44 @@ def _models_dev_pricing_entry(route: BillingRoute) -> Optional[PricingEntry]:
     )
 
 
+def _configured_pricing() -> dict:
+    """The ``pricing:`` block of the active profile's config.yaml, or ``{}``."""
+    try:
+        from hermes_cli.config import load_config_readonly
+
+        raw = (load_config_readonly() or {}).get("pricing")
+    except Exception:
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _configured_pricing_entry(route: BillingRoute, model_name: str) -> Optional[PricingEntry]:
+    """A price the person wrote in config: ``pricing.<provider>/<model>`` or ``pricing.<model>``,
+    USD per 1M tokens (``input``, ``output``, optional ``cache_read`` / ``cache_write``).
+
+    Read before the bundled table, so a new model or a changed price needs no code change. A
+    rate that is not a number makes the whole entry unused (and logged), never half-guessed.
+    """
+    table = _configured_pricing()
+    if not table:
+        return None
+    for key in (f"{route.provider}/{route.model}", route.model, model_name):
+        rates = table.get(key)
+        if not isinstance(rates, dict):
+            continue
+        values = {name: _to_decimal(rates.get(name)) for name in ("input", "output", "cache_read", "cache_write")}
+        given = {name for name in values if rates.get(name) is not None}
+        if values["input"] is None or values["output"] is None or any(values[n] is None for n in given):
+            logger.warning("pricing.%s: input and output must be numbers (USD per 1M tokens); ignored", key)
+            return None
+        return PricingEntry(
+            input_cost_per_million=values["input"], output_cost_per_million=values["output"],
+            cache_read_cost_per_million=values["cache_read"], cache_write_cost_per_million=values["cache_write"],
+            source="user_override", pricing_version=f"config:pricing.{key}",
+        )
+    return None
+
+
 def get_pricing_entry(
     model_name: str, provider: Optional[str] = None, base_url: Optional[str] = None,
     api_key: Optional[str] = None,
@@ -585,6 +623,9 @@ def get_pricing_entry(
     route = resolve_billing_route(model_name, provider=provider, base_url=base_url)
     if route.billing_mode == "subscription_included":
         return _INCLUDED_ENTRY
+    configured = _configured_pricing_entry(route, model_name)
+    if configured:
+        return configured
     if route.provider == "openrouter":
         return _openrouter_pricing_entry(route)
 
