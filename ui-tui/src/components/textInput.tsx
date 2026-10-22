@@ -186,13 +186,21 @@ export interface TextInsertResult {
  * letters (meta) are shortcuts, not typed text: Alt+S would otherwise insert "s"
  * on top of the stash action. A pasted payload is text even when it carries a
  * control byte, so `isPasted` wins.
+ *
+ * One rule for both readers of it: the burst-flush gate and the insert branch of the
+ * key handler. The insert branch kept its own copy of this test without the `meta`
+ * check, so the earlier fix changed only the gate and Alt+S still typed "s" (B26).
  */
+export function insertsComposerText(event: InputEvent): boolean {
+  return event.keypress.isPasted || (event.input.length > 0 && !event.isControlChord && !event.key.meta)
+}
+
 export function isTypedTextEvent(event: InputEvent): boolean {
   if (event.keypress.isPasted) {
     return PRINTABLE.test(event.input.replace(BRACKET_PASTE, ''))
   }
 
-  return !event.isControlChord && !event.key.meta && event.input.length > 0 && PRINTABLE.test(event.input)
+  return insertsComposerText(event) && PRINTABLE.test(event.input)
 }
 
 export function applyPrintableInsert(
@@ -1644,7 +1652,7 @@ export function TextInput({
         // Extended-key terminals (kitty CSI u / modifyOtherKeys) also hand the key's name
         // to `input`. With nothing left to delete it must not fall through and type it.
         return
-      } else if (event.keypress.isPasted || (inp.length > 0 && !event.isControlChord)) {
+      } else if (insertsComposerText(event)) {
         const bracketed = event.keypress.isPasted || inp.includes('[200~')
         const text = inp.replace(BRACKET_PASTE, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
 
