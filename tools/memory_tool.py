@@ -81,6 +81,22 @@ def _pin_matched_entries(store: MemoryStore, payload: dict[str, Any]) -> Optiona
     return None if result.get("success") else json.dumps(result, ensure_ascii=False)
 
 
+def _over_budget_now(store: MemoryStore, payload: dict[str, Any]) -> Optional[str]:
+    """JSON failure when this write cannot fit the character limit, else None. Runs BEFORE the gate:
+    the limit used to be checked only when the write was applied, so the person approved a write
+    that could not succeed ("Approved 0 memory write(s). Failed: ... exceed the limit") and the
+    model learned of it a turn later. A dry run of the store's own batch walk, so it fails exactly
+    where the real apply would. Only the budget failure is taken from it: a single remove may
+    empty the store, which the batch walk refuses."""
+    batch = payload.get("action") == "batch"
+    operations = payload.get("operations") if batch else [
+        {"action": payload.get("action"), "content": payload.get("content"), "old_text": payload.get("old_text")}]
+    result = store.resolve_batch_entries(payload.get("target") or "memory", operations or [])
+    if result.get("success") or FAILURE_CLASS.get() != "over_budget":
+        return None
+    return json.dumps(result, ensure_ascii=False)
+
+
 def _gate_or_stage(store: MemoryStore, summary: str, detail: str, payload: dict[str, Any]) -> Optional[str]:
     """JSON tool-result string when the write must NOT proceed (blocked or staged
     for approval), None to proceed. Fails open if the gate module can't load."""
@@ -88,6 +104,8 @@ def _gate_or_stage(store: MemoryStore, summary: str, detail: str, payload: dict[
         from tools import write_approval as wa
     except Exception:
         return None
+    if wa.write_approval_enabled(wa.MEMORY) and (over := _over_budget_now(store, payload)) is not None:
+        return over
     decision = wa.evaluate_gate(wa.MEMORY, inline_summary=summary, inline_detail=detail)
     if decision.allow:
         return None
