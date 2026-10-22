@@ -7,7 +7,20 @@ import type { WidgetInput } from '../sdk/types.js'
 
 import { $overlayState } from './overlayStore.js'
 
+export type StashScope = 'global' | 'session'
+
+/** Alt+S is the per-session stash, Alt+Shift+S the per-profile one (Pi's Alt+S / Alt+Shift+S).
+ *  Every encoding of Alt+Shift+S arrives as a capital S with shift set. */
+export const stashScopeOf = (key: Pick<WidgetInput['key'], 'shift'>, ch: string): StashScope =>
+  key.shift || ch === 'S' ? 'global' : 'session'
+
+/** The slash command for a scope: the server reads only a LEADING `--global`, and takes the
+ *  session from the call itself, so the TUI never sends a session id. */
+export const stashCommand = (scope: StashScope, rest: string): string =>
+  scope === 'global' ? `stash --global ${rest}` : `stash ${rest}`
+
 interface StashPickerState {
+  scope: StashScope
   entries: readonly string[]
   maximum: number
   selected: number
@@ -63,7 +76,8 @@ function StashPicker({ state, rows }: { state: StashPickerState; rows: number })
   return (
     <Box borderStyle="round" flexDirection="column">
       <Text bold>
-        Stash ({state.entries.length}/{state.maximum}) — ↑↓ Enter · 1–9 · x delete · Esc cancel
+        Stash · {state.scope === 'global' ? 'profile' : 'session'} ({state.entries.length}/{state.maximum}) — ↑↓ Enter ·
+        1–9 · x delete · Esc cancel
       </Text>
       {state.entries.slice(start, start + visible).map((text, offset) => (
         <Text inverse={start + offset === state.selected} key={start + offset} wrap="truncate-end">
@@ -104,7 +118,8 @@ function parseSnapshot(output: string): { entries: readonly string[]; max: numbe
 export function showStashPicker(
   output: string,
   apply: StashPickerState['apply'],
-  drop: StashPickerState['drop'] = () => {}
+  drop: StashPickerState['drop'] = () => {},
+  scope: StashScope = 'session'
 ): void {
   const { entries, max } = parseSnapshot(output)
 
@@ -112,6 +127,7 @@ export function showStashPicker(
     return
   }
   openWidget(stashPicker, {
+    scope,
     entries,
     maximum: max,
     selected: entries.length - 1,
@@ -127,7 +143,8 @@ export function showStashPicker(
 export function openStashes(
   output: string,
   apply: StashPickerState['apply'],
-  drop: StashPickerState['drop']
+  drop: StashPickerState['drop'],
+  scope: StashScope = 'session'
 ): 'applied' | 'empty' | 'picker' {
   const { entries } = parseSnapshot(output)
 
@@ -140,7 +157,7 @@ export function openStashes(
 
     return 'applied'
   }
-  showStashPicker(output, apply, drop)
+  showStashPicker(output, apply, drop, scope)
 
   return 'picker'
 }

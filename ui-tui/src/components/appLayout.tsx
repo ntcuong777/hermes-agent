@@ -9,6 +9,7 @@ import { useGateway } from '../app/gatewayContext.js'
 import type { AppLayoutProps } from '../app/interfaces.js'
 import { $isBlocked, $overlayState, patchOverlayState } from '../app/overlayStore.js'
 import { $petBox } from '../app/petFlashStore.js'
+import { $stashCounts } from '../app/stashCounts.js'
 import { $uiState } from '../app/uiStore.js'
 import { usePet } from '../app/usePet.js'
 import { $voicePartial } from '../app/voicePartialStore.js'
@@ -466,9 +467,9 @@ const ComposerPane = memo(function ComposerPane({
                 {/* Reserve the transcript scrollbar gutter too so typing never rewraps when the scrollbar column repaints. */}
                 <TextInput
                   accentColor={ui.theme.color.accent}
+                  caretRef={composer.caretRef}
                   color={ui.theme.color.text}
                   columns={inputColumns}
-                  caretRef={composer.caretRef}
                   cursorSnapshotRef={cursorSnapshotRef}
                   mouseApiRef={inputMouseRef}
                   onChange={composer.updateInput}
@@ -535,6 +536,7 @@ const StatusRulePane = memo(function StatusRulePane({
   status
 }: Pick<AppLayoutProps, 'composer' | 'status'> & { at: 'bottom' | 'top'; nativeMode: boolean }) {
   const ui = useStore($uiState)
+  const stashCounts = useStore($stashCounts)
 
   if (ui.statusBar === 'off' || (nativeMode ? at !== 'top' : ui.statusBar !== at)) {
     return null
@@ -561,6 +563,7 @@ const StatusRulePane = memo(function StatusRulePane({
         onSessionCountClick={() => patchOverlayState({ sessions: true })}
         sessionStartedAt={status.sessionStartedAt}
         sessionTitle={status.sessionTitle}
+        stashCounts={stashCounts}
         status={ui.status}
         statusBarFields={ui.statusBarFields}
         statusColor={status.statusColor}

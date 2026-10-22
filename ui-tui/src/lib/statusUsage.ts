@@ -39,7 +39,9 @@ export const quotaWindowName = (label: string): string => {
 }
 
 const usedPercent = (w: QuotaWindow): number | null =>
-  typeof w.used_percent === 'number' && Number.isFinite(w.used_percent) ? Math.max(0, Math.min(100, w.used_percent)) : null
+  typeof w.used_percent === 'number' && Number.isFinite(w.used_percent)
+    ? Math.max(0, Math.min(100, w.used_percent))
+    : null
 
 /** `5h 12% wk 40%` (percent used), '' when there is nothing to show. */
 export const quotaLabel = (quota: Usage['quota']): string =>
@@ -57,3 +59,11 @@ export const quotaSeverity = (quota: Usage['quota']): 'bad' | 'ok' | 'warn' => {
 
   return worst >= 90 ? 'bad' : worst >= 70 ? 'warn' : 'ok'
 }
+
+/** `📋N` for the session stash, `📋N+M` once the profile stash holds something too; '' when both are empty. */
+export const stashLabel = (counts: { global: number; session: number }): string =>
+  counts.session + counts.global === 0
+    ? ''
+    : counts.global > 0
+      ? `📋${counts.session}+${counts.global}`
+      : `📋${counts.session}`

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { applyStashSelection, openStashes, selectStash } from '../app/stashPicker.js'
+import { applyStashSelection, openStashes, selectStash, stashCommand, stashScopeOf } from '../app/stashPicker.js'
 import type { WidgetInput } from '../sdk/types.js'
 
 const input = (ch: string, key: Partial<WidgetInput['key']> = {}): WidgetInput => ({ ch, key }) as WidgetInput
@@ -67,5 +67,20 @@ describe('opening the stash', () => {
     const apply = vi.fn()
     expect(openStashes(snapshot('a', 'b'), apply, vi.fn())).toBe('picker')
     expect(apply).not.toHaveBeenCalled()
+  })
+})
+
+// Alt+S is the session stash, Alt+Shift+S the profile one (every encoding gives shift + capital S).
+describe('stash scope', () => {
+  it('Alt+Shift+S (capital S, shift) is the profile stash; Alt+S is the session stash', () => {
+    expect(stashScopeOf({ shift: true } as WidgetInput['key'], 'S')).toBe('global')
+    expect(stashScopeOf({ shift: false } as WidgetInput['key'], 's')).toBe('session')
+    expect(stashScopeOf({ shift: false } as WidgetInput['key'], 'S')).toBe('global')
+  })
+
+  it('puts the --global flag first, and only for the profile scope', () => {
+    expect(stashCommand('session', 'snapshot')).toBe('stash snapshot')
+    expect(stashCommand('global', 'snapshot')).toBe('stash --global snapshot')
+    expect(stashCommand('global', 'push-draft "x"')).toBe('stash --global push-draft "x"')
   })
 })

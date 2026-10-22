@@ -15,7 +15,7 @@ import { VERBS } from '../content/verbs.js'
 import { fmtDuration } from '../domain/messages.js'
 import { stickyPromptFromViewport } from '../domain/viewport.js'
 import { messages, t as tr } from '../i18n/runtime.js'
-import { costLabel, quotaLabel, quotaSeverity } from '../lib/statusUsage.js'
+import { costLabel, quotaLabel, quotaSeverity, stashLabel } from '../lib/statusUsage.js'
 import { buildSubagentTree, treeTotals, widthByDepth } from '../lib/subagentTree.js'
 import { useScrollbarSnapshot, useViewportSnapshot } from '../lib/viewportStore.js'
 import type { Theme } from '../theme.js'
@@ -542,6 +542,7 @@ export function StatusRule({
   compacting = false,
   status,
   statusBarFields = null,
+  stashCounts,
   statusColor,
   model,
   modelFast,
@@ -667,6 +668,8 @@ export function StatusRule({
   const quotaText = optIn('quota') ? quotaLabel(usage.quota) : ''
   const showCost = cols >= 60 && !!costText && fits(SEP + stringWidth(costText))
   const showQuota = cols >= 76 && !!quotaText && fits(SEP + stringWidth(`◔ ${quotaText}`))
+  const stashText = optIn('stash') && stashCounts ? stashLabel(stashCounts) : ''
+  const showStash = cols >= 60 && !!stashText && fits(SEP + stringWidth(stashText))
   const quotaSev = quotaSeverity(usage.quota)
   const quotaColor = quotaSev === 'bad' ? t.color.statusBad : quotaSev === 'warn' ? t.color.statusWarn : t.color.muted
   const showDuration = segs.duration && ok('duration') && !!sessionStartedAt && fits(SEP + MAX_DURATION_WIDTH)
@@ -812,6 +815,12 @@ export function StatusRule({
           <Text color={t.color.muted} wrap="truncate-end">
             {' │ '}
             <Text color={quotaColor}>◔ {quotaText}</Text>
+          </Text>
+        ) : null}
+        {showStash ? (
+          <Text color={t.color.muted} wrap="truncate-end">
+            {' │ '}
+            {stashText}
           </Text>
         ) : null}
         {showDuration ? (
@@ -1035,6 +1044,9 @@ interface StatusRuleProps {
   // display.status_bar.fields — segment visibility filter shared with the
   // classic CLI bar. null = defaults (everything shows).
   statusBarFields?: null | ReadonlySet<string>
+  // Drafts held in the session stash and the profile stash; shown only when `stash` is listed in
+  // display.status_bar.fields (opt-in, like cost and quota).
+  stashCounts?: { global: number; session: number }
   statusColor: string
   t: Theme
   turnStartedAt?: null | number

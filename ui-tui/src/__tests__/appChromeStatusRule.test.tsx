@@ -526,3 +526,41 @@ describe('StatusRule cost and quota read-outs', () => {
     expect(rendered).not.toContain('5h 12%')
   })
 })
+
+describe('stash count segment', () => {
+  const fields = new Set(['model', 'context_pct', 'stash'])
+
+  it('shows the session count, and +profile count once that stash is in use', () => {
+    const one = textContent(
+      StatusRule({ ...baseProps, cols: 120, statusBarFields: fields, stashCounts: { session: 2, global: 0 } })
+    )
+    const both = textContent(
+      StatusRule({ ...baseProps, cols: 120, statusBarFields: fields, stashCounts: { session: 2, global: 1 } })
+    )
+
+    expect(one).toContain('📋2')
+    expect(one).not.toContain('📋2+')
+    expect(both).toContain('📋2+1')
+  })
+
+  it('is opt-in: hidden unless display.status_bar.fields lists stash', () => {
+    const rendered = textContent(
+      StatusRule({
+        ...baseProps,
+        cols: 120,
+        statusBarFields: new Set(['model']),
+        stashCounts: { session: 2, global: 1 }
+      })
+    )
+
+    expect(rendered).not.toContain('📋')
+  })
+
+  it('self-hides when nothing is stashed', () => {
+    const rendered = textContent(
+      StatusRule({ ...baseProps, cols: 120, statusBarFields: fields, stashCounts: { session: 0, global: 0 } })
+    )
+
+    expect(rendered).not.toContain('📋')
+  })
+})

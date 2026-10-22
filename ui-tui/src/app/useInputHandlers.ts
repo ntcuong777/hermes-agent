@@ -37,10 +37,11 @@ import {
   SENSITIVE_PROMPTS
 } from './overlayStore.js'
 import { respondToServerRequest } from './serverRequestStore.js'
-import { applyStashSelection, openStashes } from './stashPicker.js'
+import { refreshStashCounts } from './stashCounts.js'
+import { applyStashSelection, openStashes, stashCommand, type StashScope, stashScopeOf } from './stashPicker.js'
 import { turnController } from './turnController.js'
 import { patchTurnState } from './turnStore.js'
-import { getUiState } from './uiStore.js'
+import { $uiState, getUiState } from './uiStore.js'
 
 const isCtrl = (key: { ctrl: boolean }, ch: string, target: string) => key.ctrl && ch.toLowerCase() === target
 
@@ -245,6 +246,20 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
   const precisionWheelRef = useRef(initPrecisionWheel())
 
   useEffect(() => () => clearTimeout(scrollIdleTimer.current ?? undefined), [])
+
+  // The status bar's stash counts follow the live session: read them when it changes (start, resume,
+  // switch). subscribe() fires once with the current value, so a session already open is read too.
+  useEffect(() => {
+    let last: null | string | undefined
+
+    return $uiState.subscribe(ui => {
+      if (ui.sid !== last) {
+        last = ui.sid
+
+        void refreshStashCounts((method, params) => gateway.rpc<SlashExecResponse>(method, params), ui.sid)
+      }
+    })
+  }, [gateway])
 
   const scrollTranscript = (delta: number) => {
     if (getUiState().busy) {
@@ -475,7 +490,10 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
   // presses before the first answer pushed the same draft twice (review S-V).
   const stashInFlightRef = useRef<null | string>(null)
 
-  const stashDraft = () => {
+  const stashDraft = (scope: StashScope) => {
+    const slashRpc = (method: 'slash.exec', params: { command: string; session_id: string }) =>
+      gateway.rpc<SlashExecResponse>(method, params)
+
     // The composer is more than the line being typed: `inputBuf` holds the lines already
     // accepted with a trailing `\`, and `tokensRef` holds attached images. Capturing only
     // `inputRef` and then clearing the rest lost every line but the last and dropped the
@@ -498,7 +516,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     if (draft.trim()) {
       // One save at a time per (session, draft): two Alt+S presses before the first
       // answer used to push the same draft twice (review S-V).
-      const inFlightKey = `${sid}\u0000${draft}`
+      const inFlightKey = `${sid}\u0000${scope}\u0000${draft}`
 
       if (stashInFlightRef.current === inFlightKey) {
         return
@@ -513,7 +531,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       // draft.
       return void gateway
         .rpc<SlashExecResponse>('slash.exec', {
-          command: `stash push-draft ${JSON.stringify(draft)}`,
+          command: stashCommand(scope, `push-draft ${JSON.stringify(draft)}`),
           session_id: sid
         })
         .then(r => {
@@ -523,6 +541,8 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
             if (d.notice?.trim()) {
               actions.sys(d.notice)
             }
+
+            void refreshStashCounts(slashRpc, sid)
 
             // Drop the composer only if it still holds what we stashed, and only
             // from the session we stashed it in; text typed while the RPC was in
@@ -553,7 +573,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     // person's back, the delete message ("stash (1 left)") already says it is there.
     const openList = (revision: number, afterDelete = false): void =>
       void gateway
-        .rpc<SlashExecResponse>('slash.exec', { command: 'stash snapshot', session_id: sid })
+        .rpc<SlashExecResponse>('slash.exec', { command: stashCommand(scope, 'snapshot'), session_id: sid })
         .then(r => {
           if (getUiState().sid !== sid || cRefs.revisionRef.current !== revision) {
             return
@@ -588,13 +608,15 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
               },
               acknowledge: async argument => {
                 const result = await gateway.rpc<SlashExecResponse>('slash.exec', {
-                  command: `stash applied ${argument}`,
+                  command: stashCommand(scope, `applied ${argument}`),
                   session_id: sid
                 })
 
                 if (result?.output) {
                   actions.sys(result.output)
                 }
+
+                void refreshStashCounts(slashRpc, sid)
               }
             }).catch(() => actions.sys('stash: draft restored; removal failed, entry still held'))
           }
@@ -603,7 +625,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
           const drop = (index: number, text: string) => {
             void gateway
               .rpc<SlashExecResponse>('slash.exec', {
-                command: `stash applied ${JSON.stringify({ index, text })}`,
+                command: stashCommand(scope, `applied ${JSON.stringify({ index, text })}`),
                 session_id: sid
               })
               .then(result => {
@@ -611,13 +633,14 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
                   actions.sys(result.output)
                 }
 
+                void refreshStashCounts(slashRpc, sid)
                 openList(cRefs.revisionRef.current, true)
               })
               .catch(() => actions.sys('stash: delete failed — entry still held'))
           }
 
-          if (openStashes(r.output, apply, drop) === 'empty') {
-            actions.sys('stash empty (0)')
+          if (openStashes(r.output, apply, drop, scope) === 'empty') {
+            actions.sys(`stash empty (0) — ${scope === 'global' ? 'profile' : 'session'}`)
           }
         })
         .catch(() => actions.sys('stash: picker failed — stored drafts kept'))
@@ -1005,8 +1028,9 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     // Alt+S stashes the draft / pops the last stash (see stashDraft above).
     // meta+letter follows the Alt+G precedent below: Option (meta) on macOS,
     // Alt (meta) elsewhere; !key.ctrl keeps Ctrl+Alt combos free.
+    // Alt+Shift+S is the per-profile stash (capital S, shift), Alt+S the per-session one.
     if (key.meta && !key.ctrl && ch.toLowerCase() === 's') {
-      return stashDraft()
+      return stashDraft(stashScopeOf(key, ch))
     }
 
     // Cmd/Ctrl+G, plus Alt+G fallback for VSCode/Cursor (they bind the

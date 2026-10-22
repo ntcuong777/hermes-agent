@@ -36,7 +36,7 @@ it('renders count and numbered drafts, then applies only selected draft', async 
   const { instance, text } = mountPicker()
 
   try {
-    await vi.waitFor(() => expect(text()).toContain('Stash (2/9)'), { timeout: 3000 })
+    await vi.waitFor(() => expect(text()).toContain('Stash · session (2/9)'), { timeout: 3000 })
     expect(text()).toContain('1. first draft')
     expect(text()).toContain('2. second draft')
     expect(apply).not.toHaveBeenCalled()
@@ -72,6 +72,20 @@ it('x deletes the selected draft through drop, not apply', async () => {
     await vi.waitFor(() => expect(drop).toHaveBeenCalledExactlyOnceWith(1, 'second draft'), { timeout: 3000 })
     expect(apply).not.toHaveBeenCalled()
     expect(getOverlayState().widget).toBeNull()
+  } finally {
+    instance.unmount()
+    instance.cleanup()
+    resetOverlayState()
+  }
+})
+
+it('names the scope in the picker title', async () => {
+  resetOverlayState()
+  showStashPicker('{"entries":["a","b"],"count":2,"max":9}', vi.fn(), vi.fn(), 'global')
+  const { instance, text } = mountPicker()
+
+  try {
+    await vi.waitFor(() => expect(text()).toContain('Stash · profile (2/9)'), { timeout: 3000 })
   } finally {
     instance.unmount()
     instance.cleanup()
