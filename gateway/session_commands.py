@@ -466,7 +466,9 @@ async def execute_command(connection, ref, params, *, dispatch=False):
                                    or authority._handle(ref).execution_state == 'idle'):
         await before()  # mid-run the busy dispatcher fires it once it accepts the command (``BUSY_ACCEPTED``)
     if runner_command is not None:
-        with _profile_runtime_scope(home), _session_workspace(authority.runner, live.source):
+        from gateway.plugin_command_choice import viewer_choices
+        with (_profile_runtime_scope(home), _session_workspace(authority.runner, live.source),
+              viewer_choices(live, ref.session_id)):
             output = await _run_runner_command(authority.runner, live, name, arg, *runner_command)
         # Composer directives must reach local clients, not become a printed Python dict.
         if isinstance(output, dict) and output.get('type') in {'prefill', 'stash-saved'}:

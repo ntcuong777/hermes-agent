@@ -318,6 +318,7 @@ def _refresh_live_sessions(home=None, *, preserve_prefix: bool = False,
     launch home). ``preserve_prefix``: append-only rebuild inside a live conversation. ``plugin_note``:
     ``(plugin_key, text)`` queued once per session for its next tool result or turn
     (``agent/plugin_live_notes.py``)."""
+    from agent.onboarding_session import carry_onboarding_toolset
     from hermes_constants import hermes_home_key
     want = hermes_home_key(home) if home is not None else None
     with _sessions_lock:
@@ -328,7 +329,7 @@ def _refresh_live_sessions(home=None, *, preserve_prefix: bool = False,
         agent = sess["agent"]
         try:
             with _session_profile_runtime_scope(sess):
-                enabled = _carry_onboarding_toolset(_load_enabled_toolsets(getattr(agent, "platform", None)), agent)
+                enabled = carry_onboarding_toolset(_load_enabled_toolsets(getattr(agent, "platform", None)), agent)
                 disabled = _load_disabled_toolsets()
                 refresh(agent, enabled_override=enabled, disabled_override=disabled,
                         quiet_mode=True, preserve_prefix=preserve_prefix)
@@ -496,7 +497,7 @@ def _plugin_command_handler(name: str):
         return None
 
 
-def _run_plugin_command(handler, arg: str, session=None) -> dict | str:
+def _run_plugin_command(handler, arg: str, session=None, sid: str = "") -> dict | str:
     """Run a plugin slash-command handler under the session's ``HERMES_SESSION_*`` binding.
 
     Plugin handlers read ``get_session_env()`` for the chat/session they serve; these RPCs run on
@@ -513,9 +514,12 @@ def _run_plugin_command(handler, arg: str, session=None) -> dict | str:
     tokens = _set_session_context(key, cwd=str(session.get("cwd") or "")) if session else []
     context = {"source": None, "session_key": key, "platform": _session_source(session),
                "session_id": getattr(session.get("agent"), "session_id", None) or key if session else ""}
+    # ctx.ask_choice: the ``clarify`` server request this backend's clarify tool sends.
+    choices = _tools_mod("hermes_cli.plugin_choices")
     try:
-        result = plugins.resolve_plugin_command_result(invoke(handler, arg, **context)) or ""
-        return result if isinstance(result, dict) else str(result)
+        with choices.bind_asker(choices.clarify_asker(lambda questions: _clarify_block(sid, questions))):
+            result = plugins.resolve_plugin_command_result(invoke(handler, arg, **context)) or ""
+            return result if isinstance(result, dict) else str(result)
     finally:
         _clear_session_context(tokens)
 
@@ -593,7 +597,7 @@ def _is_registry_command(base: str) -> bool:
 def _dispatch_plugin(rid, params, session, name, arg):
     if handler := _plugin_command_handler(name):
         with contextlib.suppress(Exception):
-            out = _run_plugin_command(handler, arg, session)
+            out = _run_plugin_command(handler, arg, session, params.get("session_id", ""))
             # Directive dict (e.g. /stash pop prefill) → pass through as-is; the TUI's
             # parseCommandDispatch reads it exactly like /undo's slash.exec response.
             if isinstance(out, dict) and isinstance(out.get("type"), str):
@@ -1068,7 +1072,7 @@ def _(rid, params: dict) -> dict:
             return dispatched
     if plugin_handler := _plugin_command_handler(base) if base else None:
         try:
-            out = _run_plugin_command(plugin_handler, arg, session)
+            out = _run_plugin_command(plugin_handler, arg, session, params.get("session_id", ""))
             # Directive dict (e.g. /stash pop prefill) → return as the response body so the
             # client's parseCommandDispatch handles it like /undo's {"type": "prefill", ...}.
             if isinstance(out, dict) and isinstance(out.get("type"), str):

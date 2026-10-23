@@ -13,12 +13,12 @@ import pytest
 
 from tools import delegate_roles
 from tools.delegate_roles import RoleProfile
+from tools.delegate_tool_routes import route_for_config
 from tools.delegate_tool import (
     DELEGATE_TASK_SCHEMA,
     _build_child_agent,
     _build_children,
     _build_dynamic_schema_overrides,
-    _resolve_delegation_credentials,
 )
 
 SCOUT = RoleProfile(
@@ -92,17 +92,16 @@ def build_one(parent, profile=None, **extra):
 
 
 def build_tasks(parent, tasks):
-    creds = _resolve_delegation_credentials({}, parent)
+    routes = [route_for_config({}, parent)] * len(tasks)
     with patch("run_agent.AIAgent") as agent:
         agent.side_effect = lambda **kw: MagicMock()
         children, err = _build_children(
             tasks,
             [None] * len(tasks),
-            creds,
+            routes,
             top_role="leaf",
             max_iterations=10,
             parent_agent=parent,
-            routing_cfg={},
             live_deleg_id=None,
             live_writers=[],
             task_images=None,

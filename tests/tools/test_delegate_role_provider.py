@@ -12,7 +12,8 @@ import pytest
 
 from tools import delegate_roles
 from tools.delegate_roles import RoleProfile
-from tools.delegate_tool import _build_child_agent, _build_children, _resolve_delegation_credentials
+from tools.delegate_tool import _build_child_agent, _build_children
+from tools.delegate_tool_routes import route_for_config
 
 CODEX_RUNTIME = {
     "provider": "openai-codex",
@@ -80,14 +81,14 @@ def test_an_unresolvable_role_provider_refuses_the_call_and_names_it():
     profile = RoleProfile(name="worker", toolsets=("file",), model="gpt-6-luna", provider="openai-codex")
     delegate_roles.register_role_provider("t", {"worker": profile}.get, lambda: {"worker": ""})
     parent = _parent()
-    creds = _resolve_delegation_credentials({}, parent)
+    routes = [route_for_config({}, parent)]
     boom = RuntimeError("no codex login")
     with patch("run_agent.AIAgent") as agent, patch(
         "hermes_cli.runtime_provider.resolve_runtime_provider", side_effect=boom
     ):
         children, err = _build_children(
-            [{"goal": "do it", "role": "worker"}], [None], creds, top_role="leaf", max_iterations=10,
-            parent_agent=parent, routing_cfg={}, live_deleg_id=None, live_writers=[], task_images=None,
+            [{"goal": "do it", "role": "worker"}], [None], routes, top_role="leaf", max_iterations=10,
+            parent_agent=parent, live_deleg_id=None, live_writers=[], task_images=None,
         )
     assert children == [] and "openai-codex" in err and "no codex login" in err
     agent.assert_not_called()
