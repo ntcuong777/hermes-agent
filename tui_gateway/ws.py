@@ -272,7 +272,8 @@ class WSTransport:
                     self._closed = True
                     _log.warning("ws send deadline exceeded (socket stalled, loop responsive) peer=%s deadline=%ss — closing",
                                  self._peer, _WS_SEND_DEADLINE_S)
-                    self._loop.create_task(self._close_socket(1011, "send deadline"))
+                    if self._claim_socket_close():
+                        self._loop.create_task(self._close_socket(1011, "send deadline"))
                     return
                 except UnicodeEncodeError as exc:
                     # A single illegal UTF-8 frame (lone surrogate) must not tear down the socket.
@@ -290,14 +291,21 @@ class WSTransport:
             self._token_flush_handle.cancel()
             self._token_flush_handle = None
 
+    def _claim_socket_close(self) -> bool:
+        """True for the first caller only: a stalled peer trips both the send deadline and the fanout
+        overflow, and the socket is closed with 1011 once."""
+        with self._token_lock:
+            if self._abort_requested:
+                return False
+            self._abort_requested = True
+            return True
+
     def abort(self) -> None:
         """Close from any thread and drop the socket with 1011 so the client reconnects and replays
         (fanout overflow). One-shot: N mirrored sessions overflowing on this socket schedule one close."""
         self._closed = True
-        with self._token_lock:
-            if self._abort_requested:
-                return
-            self._abort_requested = True
+        if not self._claim_socket_close():
+            return
         if self._on_loop():
             self._finish_abort()
             return
