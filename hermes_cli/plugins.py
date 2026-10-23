@@ -665,7 +665,7 @@ class PluginContext:
     def register_command(
         self, name: str, handler: Callable, description: str = "", args_hint: str = "",
         argument_mode: str | None = None,
-        subcommands: "dict | list | tuple | None" = None,
+        subcommands: dict | list | tuple | None = None,
         run_while_busy: bool = False,
     ) -> Optional[PluginRegistration]:
         """Register an in-session slash command (``/name``); handler ``fn(raw_args: str) -> str | None``

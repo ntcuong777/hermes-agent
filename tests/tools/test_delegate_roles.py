@@ -143,7 +143,7 @@ def test_a_provider_that_fails_refuses_instead_of_spawning_unscoped():
     def broken(name):
         raise RuntimeError("roster unreadable")
 
-    delegate_roles.register_role_provider("broken", broken, lambda: {})
+    delegate_roles.register_role_provider("broken", broken, dict)
     with pytest.raises(ValueError):
         delegate_roles.profile_for("scout")
 

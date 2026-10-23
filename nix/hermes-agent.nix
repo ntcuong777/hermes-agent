@@ -191,39 +191,42 @@ let
     ];
   };
 
-  agentInputsFile = writeText "hermes-agent-inputs.json" (builtins.toJSON {
-    project = "${../pyproject.toml}";
-    tui_scripts = "${tuiScripts}";
-    code = "${hermesVenv}/${sitePackagesPath}";
-    repo = "share/hermes-agent";
-    placement = "references";
-    target = "${if stdenv.hostPlatform.isDarwin then "darwin" else "linux"}-${
-      if stdenv.hostPlatform.isAarch64 then "arm64" else "x64"
-    }";
-    python = "${hermesVenv}/bin/python3";
-    site_packages = "${hermesVenv}/${sitePackagesPath}";
-    environment = toString hermesVenv;
-    pm_runtime = toString pmRuntime;
-    command_dir = "${hermesVenv}/bin";
-    resources = {
-      skills = toString bundledSkills;
-      optional-skills = toString bundledOptionalSkills;
-      plugins = toString bundledPlugins;
-      locales = toString bundledLocales;
-      optional-mcps = toString bundledOptionalMcps;
-    };
-    frontends = {
-      tui = "${hermesTui}/lib/hermes-tui";
-      web = toString hermesWeb;
-    };
-    ref = if dirty then null else rev;
-    stamp = toString installStampFile;
-    env = {
-      HERMES_NODE = lib.getExe hermesNpmLib.nodejs;
-    } // lib.optionalAttrs (rev != null && !dirty) {
-      HERMES_REVISION = rev;
-    };
-  });
+  agentInputsFile = writeText "hermes-agent-inputs.json" (
+    builtins.toJSON {
+      project = "${../pyproject.toml}";
+      tui_scripts = "${tuiScripts}";
+      code = "${hermesVenv}/${sitePackagesPath}";
+      repo = "share/hermes-agent";
+      placement = "references";
+      target = "${if stdenv.hostPlatform.isDarwin then "darwin" else "linux"}-${
+        if stdenv.hostPlatform.isAarch64 then "arm64" else "x64"
+      }";
+      python = "${hermesVenv}/bin/python3";
+      site_packages = "${hermesVenv}/${sitePackagesPath}";
+      environment = toString hermesVenv;
+      pm_runtime = toString pmRuntime;
+      command_dir = "${hermesVenv}/bin";
+      resources = {
+        skills = toString bundledSkills;
+        optional-skills = toString bundledOptionalSkills;
+        plugins = toString bundledPlugins;
+        locales = toString bundledLocales;
+        optional-mcps = toString bundledOptionalMcps;
+      };
+      frontends = {
+        tui = "${hermesTui}/lib/hermes-tui";
+        web = toString hermesWeb;
+      };
+      ref = if dirty then null else rev;
+      stamp = toString installStampFile;
+      env = {
+        HERMES_NODE = lib.getExe hermesNpmLib.nodejs;
+      }
+      // lib.optionalAttrs (rev != null && !dirty) {
+        HERMES_REVISION = rev;
+      };
+    }
+  );
 
   # Walk propagatedBuildInputs to include transitive Python deps in PYTHONPATH.
   # Without this, a plugin listing e.g. requests as a dep would fail at runtime

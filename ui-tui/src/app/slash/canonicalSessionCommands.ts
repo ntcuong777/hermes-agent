@@ -13,7 +13,7 @@ import { t } from '../../i18n/runtime.js'
 import { asRpcResult } from '../../lib/rpc.js'
 import { patchUiState } from '../uiStore.js'
 
-import { mutateCanonical, type MutationSnapshot, REASONING_EFFORTS } from './canonicalSessionControls.js'
+import { mutateCanonical, type MutationSnapshot } from './canonicalSessionControls.js'
 import type { SlashRunCtx } from './types.js'
 import { planUsageLines, usageTotalsSections } from './usagePanel.js'
 
