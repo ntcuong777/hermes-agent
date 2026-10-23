@@ -65,7 +65,8 @@ let
       sourceRoot = ".";
       nativeBuildInputs =
         lib.optionals (originRpath name) [ patchelf ]
-        ++ lib.optional (!originRpath name) autoPatchelfHook
+        # auto-patchelf opens the toolchain's dynamic linker as ELF; on macOS that is /usr/lib/dyld (Mach-O).
+        ++ lib.optional (stdenv.hostPlatform.isLinux && !originRpath name) autoPatchelfHook
         ++ lib.optional (lib.any (a: lib.hasSuffix ".zip" a.url) artifacts) unzip;
       # The upstream tarballs are glibc-linked (interpreter
       # /lib64/ld-linux-x86-64.so.2, which only exists on a host with nix-ld).
@@ -73,7 +74,7 @@ let
       # autoPatchelfHook rewrites the interpreter and RPATH at build time and
       # every consumer runs them on a plain NixOS host. ripgrep ships musl-
       # static and is left untouched.
-      buildInputs = [ stdenv.cc.cc.lib ];
+      buildInputs = lib.optional stdenv.hostPlatform.isLinux stdenv.cc.cc.lib;
       # Keep the RPATH written below byte for byte; the fixup shrinker cannot
       # tell that $ORIGIN/../lib is load-bearing.
       dontPatchELF = originRpath name;
