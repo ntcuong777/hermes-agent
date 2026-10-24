@@ -54,6 +54,10 @@ jobs:
           git config user.email "upstream-sync@users.noreply.github.com"
           git remote add upstream "$UPSTREAM_URL"
           git fetch --no-tags upstream main
+          # Tags carry the release identity: canary tags embed the stable core
+          # (v0.22.5+canary.<ts>), historical CalVer tags (v2026.9.x) are not stable
+          # versions by upstream's own STABLE_TAG_RE. Both fetches are read-only.
+          git fetch --no-tags upstream 'refs/tags/*:refs/tags/*'
 
           if git merge-base --is-ancestor upstream/main HEAD; then
             echo "state=current" >> "$GITHUB_OUTPUT"
@@ -62,6 +66,21 @@ jobs:
 
           git checkout -B "$SYNC_BRANCH"
           if git merge --no-edit -m "Merge upstream main into personal" upstream/main; then
+            # Stamp the release this merge carries, from the nearest semver-shaped tag
+            # reachable from the merge (major of 1-3 digits: the CalVer scheme can never
+            # match). The stable core is what lands: the canary suffix is dropped.
+            release="$(git describe --tags --abbrev=0 \
+              --match 'v[0-9].[0-9]*.[0-9]*' \
+              --match 'v[0-9][0-9].[0-9]*.[0-9]*' \
+              --match 'v[0-9][0-9][0-9].[0-9]*.[0-9]*' HEAD || true)"
+            if [ -n "$release" ]; then
+              base="${release#v}"; base="${base%%+*}"
+              if [ "$(cat hermes-upstream-release 2>/dev/null || true)" != "$base" ]; then
+                printf '%s\n' "$base" > hermes-upstream-release
+                git add hermes-upstream-release
+                git commit -m "chore: stamp upstream release $base"
+              fi
+            fi
             git push --force origin "$SYNC_BRANCH"
             echo "state=merged" >> "$GITHUB_OUTPUT"
           else
