@@ -73,10 +73,21 @@ def record_usage(agent, usage: Any) -> dict[str, Any]:
         )
 
     if counts is None:
+        # No usable usage at all (tool-less turns report none): the compressor has no real
+        # reading. The generic loop handles this in turn_usage; this runtime bypasses it, so
+        # say it here (the codex app-server precedent, agent/codex_runtime.py) or preflight
+        # compression defers on the rough estimate forever and a cursor_sdk session never
+        # auto-compacts. Provider overflow cannot rescue it either: worker failures reach
+        # Hermes as fixed codes, not API errors.
+        _note_usage_less(agent)
         _queue_token_counts(
             agent, "Cursor api-call persistence failed (session=%s): %s", counts=billing
         )
         return {}
+    if "prompt_tokens" not in counts:
+        # The report did not reconcile against its own total: only the certain figures book,
+        # and none of them adjudicates pressure — tell the compressor the same way.
+        _note_usage_less(agent)
     for key, value in counts.items():
         setattr(agent, f"session_{key}", getattr(agent, f"session_{key}", 0) + value)
     _update_compressor(agent, counts)
@@ -105,6 +116,23 @@ def record_usage(agent, usage: Any) -> dict[str, Any]:
             else {}
         ),
     }
+
+
+def _note_usage_less(agent) -> None:
+    """Tell the compressor this response cannot adjudicate context pressure."""
+    compressor = getattr(agent, "context_compressor", None)
+    if compressor is None:
+        return
+    if getattr(compressor, "awaiting_real_usage_after_compression", False):
+        try:
+            compressor.update_from_response({})
+        except Exception:
+            logger.debug("cursor usage latch clear failed", exc_info=True)
+    if callable(getattr(compressor, "note_usage_less_response", None)):
+        try:
+            compressor.note_usage_less_response()
+        except Exception:
+            logger.debug("cursor usage-less note failed", exc_info=True)
 
 
 def _update_compressor(agent, counts: dict[str, int]) -> None:
