@@ -124,6 +124,27 @@ describe('describeRpcError', () => {
     expect(text).not.toContain('launch_credentials_unavailable')
   })
 
+  it('names the changed-underneath CAS refusal and the retry for the mutation fences, never the wire reason', () => {
+    const text = describeRpcError(new JsonRpcGatewayError('revision_conflict', { data: { reason: 'revision_conflict' } }))
+
+    expect(text).toMatch(/changed/)
+    expect(text).toContain('again')
+    expect(text).not.toContain('revision_conflict')
+  })
+
+  it('keeps stale_generation raw: an interrupt that answers it settled, and must not be retried', () => {
+    expect(describeRpcError(new JsonRpcGatewayError('stale_generation', { data: { reason: 'stale_generation' } }))).toBe(
+      'stale_generation'
+    )
+  })
+
+  it('names the running reply for session_busy, never the wire reason', () => {
+    const text = describeRpcError(new JsonRpcGatewayError('session_busy', { data: { reason: 'session_busy' } }))
+
+    expect(text).toMatch(/running/)
+    expect(text).not.toContain('session_busy')
+  })
+
   it('records the raw wire text it replaced in the log sink', () => {
     const lines: string[] = []
     setRpcErrorLogSink(line => lines.push(line))

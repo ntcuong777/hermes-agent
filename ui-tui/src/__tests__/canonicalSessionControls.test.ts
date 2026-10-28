@@ -233,6 +233,57 @@ it('a /compress that removes nothing prints main\'s "No changes" report without 
   expect(request.mock.calls.filter(([method]) => method === 'session.resume')).toHaveLength(1)
 })
 
+it('the manual /compress shows the compacting status for its whole fenced run, then clears it', async () => {
+  // The summarization is a minutes-long RPC whose reply lands only when the commit did: without a
+  // status the surface reads as stalled, and the user's retry lands mid-window and loses the CAS.
+  const { ctx, request, slash } = harness()
+  let released = false
+  let release!: (value: any) => void
+  request.mockImplementation(async (method: string) => {
+    if (method === 'session.resume') {
+      return {
+        session_id: 'owner', revision: 8, execution_generation: released ? 5 : 4,
+        info: { ...info, execution_generation: released ? 5 : 4 }, messages: []
+      } as any
+    }
+
+    return new Promise(resolve => {
+      release = (value: any) => {
+        released = true
+        resolve(value)
+      }
+    })
+  })
+
+  slash('/compress')
+  await flush()
+  expect(getUiState().compacting).toBe(true)
+
+  release({ session_id: 'owner', operation: 'compress', execution_generation: 5 })
+  await flush()
+  await flush()
+  expect(getUiState().compacting).toBe(false)
+  expect(ctx.transcript.setHistoryItems).toHaveBeenCalled()
+})
+
+it('a refused /compress clears the compacting status and names what happened', async () => {
+  const { ctx, request, slash } = harness()
+  request.mockImplementation(async (method: string) => {
+    if (method === 'session.resume') {
+      return { session_id: 'owner', revision: 8, execution_generation: 4, info, messages: [] } as any
+    }
+
+    throw Object.assign(new Error('revision_conflict'), { data: { reason: 'revision_conflict' } })
+  })
+
+  slash('/compress')
+  await flush()
+  await flush()
+  expect(getUiState().compacting).toBe(false)
+  expect(ctx.transcript.sys).toHaveBeenCalled()
+  expect(ctx.transcript.sys.mock.calls.map(([line]) => line).join('\n')).not.toContain('revision_conflict')
+})
+
 it('a pick deferred by a running turn says it applies from the next turn', async () => {
   const { ctx, request, slash } = harness()
 
