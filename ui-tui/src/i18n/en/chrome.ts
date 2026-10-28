@@ -32,9 +32,9 @@ export const chromeEn = {
   },
   hints: {
     copySelection: 'copy selection',
-    ctrlCMac: 'clear draft / interrupt / exit',
+    ctrlCMac: 'interrupt / clear draft / exit',
     copySelectionForwarded: 'copy selection when forwarded by the terminal',
-    ctrlC: 'copy selection / clear draft / interrupt / exit',
+    ctrlC: 'copy selection / interrupt / clear draft / exit',
     exit: 'exit',
     openEditor: 'open $EDITOR (Alt+G fallback for VSCode/Cursor)',
     redraw: 'redraw / repaint',

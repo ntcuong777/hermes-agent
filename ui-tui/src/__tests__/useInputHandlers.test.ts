@@ -95,9 +95,9 @@ describe('shouldDetachEditedHistoryInput', () => {
   })
 })
 
-describe('resolveCtrlCComposerAction — draft wins over interrupt', () => {
-  it('clears a non-empty composer even while the agent is streaming', () => {
-    expect(resolveCtrlCComposerAction({ busy: true, hasDraft: true, hasSession: true })).toBe('clear')
+describe('resolveCtrlCComposerAction — a running turn wins over the draft', () => {
+  it('interrupts the turn mid-stream and leaves the draft untouched', () => {
+    expect(resolveCtrlCComposerAction({ busy: true, hasDraft: true, hasSession: true })).toBe('interrupt')
   })
 
   it('interrupts a running turn when the composer is empty', () => {

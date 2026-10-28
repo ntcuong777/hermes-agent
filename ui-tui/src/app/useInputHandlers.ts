@@ -91,21 +91,25 @@ export function handleIdleHotkeyExit(
 export type CtrlCComposerAction = 'clear' | 'interrupt' | 'exit'
 
 /**
- * Ctrl+C (and terminals that rewrite Cmd+C to it) is clear / interrupt / exit
- * in that order. A non-empty composer always wins — mid-stream, the chord
- * used to interrupt the turn even when the user was trying to dump a draft.
+ * Ctrl+C (and terminals that rewrite Cmd+C to it) is the stop-the-machine
+ * chord: a running turn wins over whatever is typed, and the draft survives
+ * the interrupt. Upstream (#0593293962) put a non-empty composer first —
+ * mid-stream the chord cleared the draft instead of interrupting, which read
+ * as an accidental wipe of both the draft and the run. Dumping a draft
+ * mid-stream keeps a chord: double-Esc (resolveDoubleEscAction) still
+ * resolves draft-first.
  */
 export function resolveCtrlCComposerAction(opts: {
   busy: boolean
   hasDraft: boolean
   hasSession: boolean
 }): CtrlCComposerAction {
-  if (opts.hasDraft) {
-    return 'clear'
-  }
-
   if (opts.busy && opts.hasSession) {
     return 'interrupt'
+  }
+
+  if (opts.hasDraft) {
+    return 'clear'
   }
 
   return 'exit'
@@ -115,9 +119,11 @@ export type DoubleEscAction = 'clear' | 'interrupt' | 'none'
 
 /**
  * Double-Esc (#62478): while a turn runs with no draft in the composer, the
- * second Esc interrupts it — the same path Ctrl+C and /stop use. A single Esc
+ * second Esc interrupts it — the same path /stop uses. A single Esc
  * never cancels work, and the idle composer keeps the existing discard-only
- * behaviour, so a draft always clears instead of interrupting.
+ * behaviour. Draft-first is this chord's contract (also mid-stream, where
+ * Ctrl+C interrupts first): it is how a draft gets dumped without touching
+ * the turn.
  */
 export function resolveDoubleEscAction(opts: {
   busy: boolean
