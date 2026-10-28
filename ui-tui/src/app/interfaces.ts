@@ -342,6 +342,11 @@ export interface UiState {
   // Context compaction in progress (idle/preflight/auto). Distinct from
   // `compact`, which is the /compact layout-density flag.
   compacting: boolean
+  // A canonical manual /compress awaiting its RPC. Separate from `compacting`
+  // because turn idle and auto-compaction events clear that one; a manual
+  // compress outlives both (the gateway runs its summarization outside the
+  // session gate, so turns can start and end while it is in flight).
+  manualCompacting: boolean
   destructiveSlashConfirm: boolean
   detailsMode: DetailsMode
   detailsModeCommandOverride: boolean

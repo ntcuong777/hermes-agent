@@ -1720,6 +1720,54 @@ describe('createGatewayEventHandler', () => {
     }
   })
 
+  it('keeps a structured interrupt refusal raw, where the refusal copy would contradict the interrupt', async () => {
+    vi.useFakeTimers()
+
+    try {
+      turnController.fullReset()
+      const appended: Msg[] = []
+      const ctx = buildCtx(appended)
+      let reject!: (error: Error) => void
+      ctx.gateway.gw.isCanonical = true
+      ctx.gateway.gw.request = vi.fn(
+        () =>
+          new Promise((_, fail) => {
+            reject = fail
+          })
+      )
+      const onEvent = createGatewayEventHandler(ctx)
+      const info = { model: 'test', tools: {}, skills: {}, execution_epoch: 'owner', execution_generation: 2 }
+      patchUiState({ sid: 'sess-1', info })
+
+      const emit = (type: string, payload = {}) =>
+        onEvent({ type, session_id: 'sess-1', payload: { ...info, ...payload } } as any)
+
+      emit('message.start')
+      emit('message.delta', { text: 'partial' })
+
+      const pending = turnController.interruptTurn(
+        {
+          appendMessage: ctx.transcript.appendMessage,
+          gw: ctx.gateway.gw,
+          sid: 'sess-1',
+          sys: ctx.system.sys
+        },
+        { keepBusy: true }
+      )
+
+      // The user is interrupting the running reply: "wait for it to finish, then
+      // try again" (the session_busy rewrite) would name exactly that reply.
+      reject(Object.assign(new Error('session_busy'), { data: { reason: 'session_busy' } }))
+      await pending
+
+      expect(ctx.system.sys).toHaveBeenCalledExactlyOnceWith('interrupt failed: session_busy')
+    } finally {
+      turnController.fullReset()
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
+  })
+
   it('applies canonical interrupt acknowledgement only to the still-active turn, letting completion win', async () => {
     vi.useFakeTimers()
 

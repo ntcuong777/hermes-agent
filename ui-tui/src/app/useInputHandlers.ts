@@ -88,7 +88,7 @@ export function handleIdleHotkeyExit(
   return actions.die()
 }
 
-export type CtrlCComposerAction = 'clear' | 'interrupt' | 'exit'
+export type CtrlCComposerAction = 'clear' | 'hold' | 'interrupt' | 'exit'
 
 /**
  * Ctrl+C (and terminals that rewrite Cmd+C to it) is the stop-the-machine
@@ -97,12 +97,14 @@ export type CtrlCComposerAction = 'clear' | 'interrupt' | 'exit'
  * mid-stream the chord cleared the draft instead of interrupting, which read
  * as an accidental wipe of both the draft and the run. Dumping a draft
  * mid-stream keeps a chord: double-Esc (resolveDoubleEscAction) still
- * resolves draft-first.
+ * resolves draft-first. With a manual /compress in flight there is nothing
+ * to interrupt and `hold` keeps the reflex chord from exiting the app.
  */
 export function resolveCtrlCComposerAction(opts: {
   busy: boolean
   hasDraft: boolean
   hasSession: boolean
+  compressPending?: boolean
 }): CtrlCComposerAction {
   if (opts.busy && opts.hasSession) {
     return 'interrupt'
@@ -110,6 +112,10 @@ export function resolveCtrlCComposerAction(opts: {
 
   if (opts.hasDraft) {
     return 'clear'
+  }
+
+  if (opts.compressPending) {
+    return 'hold'
   }
 
   return 'exit'
@@ -983,11 +989,16 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       const ctrlC = resolveCtrlCComposerAction({
         busy: live.busy,
         hasDraft: Boolean(cState.input || cState.inputBuf.length),
-        hasSession: Boolean(live.sid)
+        hasSession: Boolean(live.sid),
+        compressPending: live.manualCompacting
       })
 
       if (ctrlC === 'clear') {
         return cActions.clearIn()
+      }
+
+      if (ctrlC === 'hold') {
+        return actions.sys(t('canonical.controls.compressPending'))
       }
 
       if (ctrlC === 'interrupt' && live.sid) {

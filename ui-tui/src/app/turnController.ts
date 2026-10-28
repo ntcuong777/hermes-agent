@@ -398,7 +398,12 @@ class TurnController {
         }
       } catch (error) {
         if (isActiveTurn()) {
-          sys(t('canonical.submit.interruptFailed', rpcErrorMessage(error)))
+          // A structured refusal (stale_generation, session_busy) keeps its wire
+          // reason: the advice in describeRpcError's rewrites ("try again",
+          // "wait for it to finish") is control-mutation advice, and here the
+          // user is interrupting exactly the thing it names.
+          const refusal = (error as { data?: { reason?: unknown } } | null)?.data?.reason
+          sys(t('canonical.submit.interruptFailed', typeof refusal === 'string' ? refusal : rpcErrorMessage(error)))
         }
 
         return

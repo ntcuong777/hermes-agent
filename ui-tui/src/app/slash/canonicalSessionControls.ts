@@ -434,9 +434,11 @@ export async function runCanonicalSessionControl(
 ) {
   const gw = ctx.gateway.gw
   // The compress RPC answers only after its minutes-long summarization and the
-  // commit: the status bar's compaction verb (the one auto-compaction already
-  // shows) is the progress for that whole window, and the flag must drop on a
-  // refusal too or the surface reads stalled forever.
+  // commit: the status bar's compaction verb is the progress for that whole
+  // window, and the flag must drop on a refusal too or the surface reads
+  // stalled forever. `manualCompacting`, not `compacting`: turn idle and
+  // auto-compaction events clear that one, and the gateway runs the
+  // summarization outside the session gate, so turns can end mid-compress.
   const showsCompacting = operation === 'compress'
 
   try {
@@ -445,7 +447,7 @@ export async function runCanonicalSessionControl(
     }
 
     if (showsCompacting) {
-      patchUiState({ compacting: true })
+      patchUiState({ manualCompacting: true })
     }
 
     const mutation = await mutateCanonicalSession(gw, ctx.sid, operation, arg, ctx.stale, confirm)
@@ -483,7 +485,7 @@ export async function runCanonicalSessionControl(
     ctx.guardedErr(error)
   } finally {
     if (showsCompacting) {
-      patchUiState({ compacting: false })
+      patchUiState({ manualCompacting: false })
     }
   }
 }

@@ -296,6 +296,10 @@ export const sessionCommands: SlashCommand[] = [
         return runCanonicalSessionControl('compress', arg, ctx)
       }
 
+      // Same indicator as the canonical control: the legacy RPC also answers only
+      // after its summarization, and `manualCompacting` survives a turn ending
+      // mid-compress where `compacting` would be cleared by turn idle.
+      patchUiState({ manualCompacting: true })
       ctx.gateway
         .rpc<SessionCompressResponse>('session.compress', {
           session_id: ctx.sid,
@@ -357,6 +361,7 @@ export const sessionCommands: SlashCommand[] = [
           })
         )
         .catch(ctx.guardedErr)
+        .finally(() => patchUiState({ manualCompacting: false }))
     }
   },
 

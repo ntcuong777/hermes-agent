@@ -96,6 +96,7 @@
   "billing.stepUp.stillNeedsApproval",
   "billing.stepUp.title",
   "billing.stepUp.waitingForBrowser",
+  "canonical.controls.compressPending",
   "canonical.controls.compressed",
   "canonical.controls.compressedStale",
   "canonical.controls.identityUnavailable",

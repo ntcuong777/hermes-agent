@@ -236,6 +236,8 @@ it('a /compress that removes nothing prints main\'s "No changes" report without 
 it('the manual /compress shows the compacting status for its whole fenced run, then clears it', async () => {
   // The summarization is a minutes-long RPC whose reply lands only when the commit did: without a
   // status the surface reads as stalled, and the user's retry lands mid-window and loses the CAS.
+  // `manualCompacting`, not `compacting`: turn idle clears `compacting`, and the gateway runs the
+  // summarization outside the session gate, so a turn can end while this is still in flight.
   const { ctx, request, slash } = harness()
   let released = false
   let release!: (value: any) => void
@@ -257,12 +259,13 @@ it('the manual /compress shows the compacting status for its whole fenced run, t
 
   slash('/compress')
   await flush()
-  expect(getUiState().compacting).toBe(true)
+  expect(getUiState().manualCompacting).toBe(true)
+  expect(getUiState().compacting).toBe(false)
 
   release({ session_id: 'owner', operation: 'compress', execution_generation: 5 })
   await flush()
   await flush()
-  expect(getUiState().compacting).toBe(false)
+  expect(getUiState().manualCompacting).toBe(false)
   expect(ctx.transcript.setHistoryItems).toHaveBeenCalled()
 })
 
@@ -279,9 +282,31 @@ it('a refused /compress clears the compacting status and names what happened', a
   slash('/compress')
   await flush()
   await flush()
-  expect(getUiState().compacting).toBe(false)
+  expect(getUiState().manualCompacting).toBe(false)
   expect(ctx.transcript.sys).toHaveBeenCalled()
   expect(ctx.transcript.sys.mock.calls.map(([line]) => line).join('\n')).not.toContain('revision_conflict')
+})
+
+it('the legacy /compress keeps the same indicator for its summarization window', async () => {
+  const { ctx, request, slash } = harness()
+
+  const gw = ctx.gateway.gw as { isCanonical: boolean }
+  gw.isCanonical = false
+  let release!: (value: any) => void
+  request.mockImplementation(
+    () =>
+      new Promise(resolve => {
+        release = resolve
+      })
+  )
+  slash('/compress')
+  await flush()
+  expect(getUiState().manualCompacting).toBe(true)
+
+  release({ removed: 3 })
+  await flush()
+  expect(getUiState().manualCompacting).toBe(false)
+  expect(request.mock.calls.some(([method]) => method === 'session.compress')).toBe(true)
 })
 
 it('a pick deferred by a running turn says it applies from the next turn', async () => {

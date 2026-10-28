@@ -121,11 +121,6 @@ export const versionSkewMessage = (): string => t('userMessages.rpc.versionSkew'
 const SESSION_NOT_FOUND_RE = /session not found/i
 const NOT_CONNECTED_RE = /^gateway not (?:connected|running)\b/
 const TIMED_OUT_RE = /^request timed out after (\d+)s/
-// The runtime store's CAS refusal (`hermes_state_runtime.py`): the session moved
-// between the control's read and its commit, so nothing was written. `stale_generation`
-// stays raw: an interrupt that answers it means the turn already settled, where
-// "try again" would be the wrong advice.
-const CAS_REFUSAL_REASON = 'revision_conflict'
 
 type RpcErrorRow = [
   matcher: (code: number | undefined, text: string) => RegExpExecArray | boolean | null,
@@ -142,7 +137,11 @@ const RPC_ERROR_ROWS: RpcErrorRow[] = [
   ],
   [(_code, text) => NOT_CONNECTED_RE.test(text), () => t('userMessages.rpc.notConnected')],
   [(_code, text) => text.trim() === 'launch_credentials_unavailable', () => t('userMessages.rpc.launchCredentialsChanged')],
-  [(_code, text) => text.trim() === CAS_REFUSAL_REASON, () => t('userMessages.rpc.sessionChanged')],
+  // The runtime store's CAS refusal (hermes_state_runtime.py): the session moved between
+  // the control's read and its commit, so nothing was written. `stale_generation` stays
+  // raw on purpose: an interrupt answering it means the turn already settled, where
+  // "try again" is wrong advice (turnController keeps structured refusal reasons raw).
+  [(_code, text) => text.trim() === 'revision_conflict', () => t('userMessages.rpc.sessionChanged')],
   [(_code, text) => text.trim() === 'session_busy', () => t('userMessages.rpc.sessionBusy')],
   [(_code, text) => TIMED_OUT_RE.exec(text), m => t('userMessages.rpc.timedOut', m?.[1] ?? '?')]
 ]
