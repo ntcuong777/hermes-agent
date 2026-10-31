@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import { clipboardImageCommands, type ClipboardImageRunner, readClipboardImagePng } from '../lib/clipboard.js'
 
-const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
+// A minimally valid PNG: signature + body + the IEND chunk tail (type + fixed CRC) the
+// validator requires — signature-only fixtures are rejected on purpose now.
+const PNG = Buffer.concat([
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  Buffer.from('body'),
+  Buffer.from([0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82])
+])
 
 describe('clipboardImageCommands', () => {
   it('macOS is osascript PNGf alone', () => {
@@ -48,8 +54,11 @@ describe('readClipboardImagePng', () => {
     expect(calls).toBe(2)
   })
 
-  it('garbage output and total failure are null', async () => {
+  it('garbage, signature-only truncation, and total failure are null', async () => {
     expect(await withRunner(async () => Buffer.from('not a png'))()).toBeNull()
+    expect(
+      await withRunner(async () => Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]))()
+    ).toBeNull()
     expect(await withRunner(async () => {
       throw new Error('no tool')
     })()).toBeNull()

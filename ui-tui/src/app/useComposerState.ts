@@ -285,20 +285,32 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
    * paste as zero text, so we speculatively ask the gateway and stay silent if
    * there was nothing there. An explicit `/paste` reports the miss.
    */
-  const localClipboardImagePath = useCallback(async (): Promise<string | null> => {
-    const png = await readClipboardImagePng().catch(() => null)
+  const localClipboardImagePath = useCallback(
+    async (onError: (message: string) => void): Promise<string | null> => {
+      const png = await readClipboardImagePng().catch(() => null)
 
-    if (!png) {
-      return null
-    }
+      if (!png) {
+        return null
+      }
 
-    const dir = join(homedir(), '.hermes', 'cache', 'paste-images')
-    mkdirSync(dir, { recursive: true })
-    const path = join(dir, `clip_${Date.now()}.png`)
-    writeFileSync(path, png, { mode: 0o600 })
+      try {
+        const root = process.env.HERMES_HOME ?? join(homedir(), '.hermes')
+        const dir = join(root, 'cache', 'paste-images')
+        mkdirSync(dir, { recursive: true, mode: 0o700 })
+        const path = join(dir, `clip_${Date.now()}.png`)
+        writeFileSync(path, png, { mode: 0o600 })
 
-    return path
-  }, [])
+        return path
+      } catch (error) {
+        // A full disk or an unwritable home must say so, not vanish (the old code only
+        // guaranteed a message for gateway-side failures).
+        onError(`could not stage the clipboard image: ${(error as Error).message}`)
+
+        return null
+      }
+    },
+    []
+  )
 
   const pasteClipboardImage = useCallback(
     async (value: string, cursor: number, quiet: boolean): Promise<ComposerPasteResult | null> => {
@@ -332,7 +344,9 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
           // The gateway's extraction can fail where the TUI itself sits in the GUI session (a
           // launchd/systemd-managed gateway has no pasteboard context): read the image here and
           // stage the file ourselves before reporting a miss.
-          const path = await localClipboardImagePath()
+          const path = await localClipboardImagePath(message => {
+            sys(message)
+          })
 
           if (!path) {
             return primary
@@ -556,7 +570,13 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
   )
 
   // One slot: a newer stale edit replaces an older one.
-  const editorStash = useRef<null | { destination: SubmissionDestination; draft: { buf: string[]; line: string } }>(
+  const editorStash = useRef<
+    null | {
+      destination: SubmissionDestination
+      draft: { buf: string[]; line: string }
+      token?: ComposerToken
+    }
+  >(
     null
   )
 
@@ -572,7 +592,22 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
     editorStash.current = null
     setInputBuf(stash.draft.buf)
     setInput(stash.draft.line)
-  }, [input, inputBuf, setInput, setInputBuf, sid])
+
+    if (stash.token) {
+      const token = stash.token
+      setComposerTokens(prev => trimTokens([...prev, token]))
+      void gw
+        .request<{ path?: string }>('paste.collapse', { text: token.text ?? '' })
+        .then(r => {
+          const path = r?.path
+
+          if (path) {
+            setComposerTokens(prev => prev.map(tk => (tk === token ? { ...tk, path } : tk)))
+          }
+        })
+        .catch(() => {})
+    }
+  }, [gw, input, inputBuf, setComposerTokens, setInput, setInputBuf, sid])
 
   const openEditor = useCallback(async () => {
     const destination = captureDestination()
@@ -603,10 +638,24 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
       const draft = draftFromEditorText(saved)
 
       // The composer moved on while the editor was open: applying the draft would overwrite it.
-      // Park it; the effect below restores it (still unsent) once its destination is current and
-      // the composer is empty.
+      // Park the PRE-EDIT composer (still collapsed labels) — never the expanded blob the editor
+      // held, or restoring would dump the full paste raw into the composer. The edit itself is
+      // lost on a moved destination; the editor file's dir is removed below either way.
       if (!(isCurrentDestination(destination) && revision === composerRevision.current)) {
-        editorStash.current = { destination, draft }
+        // Park the EDIT, collapsed when it passes the thresholds (label + token, restored
+        // together below) — never the expanded blob, or restoring would dump the paste raw.
+        const parked = saved.replace(/\s+$/, '')
+        const parkedLines = parked.split('\n').length
+
+        if (parked.length > 0 && shouldCollapsePaste(parked, parkedLines)) {
+          editorStash.current = {
+            destination,
+            draft: { buf: [], line: pasteTokenLabel(parked, parkedLines) },
+            token: { kind: 'paste', label: pasteTokenLabel(parked, parkedLines), text: parked }
+          }
+        } else {
+          editorStash.current = { destination, draft }
+        }
 
         return
       }
@@ -619,18 +668,38 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
       if (text.length > 0 && shouldCollapsePaste(text, lines)) {
         const label = pasteTokenLabel(text, lines)
 
+        const before = tokensRef.current
+
         const expanded = new Set(
-          tokensRef.current
-            .filter(tk => tk.kind === 'paste' && joined.includes(tk.label ?? '\u0000'))
-            .map(tk => tk.label)
+          before.filter(tk => tk.kind === 'paste' && joined.includes(tk.label ?? '\u0000')).map(tk => tk.label)
         )
 
         const token: ComposerToken = { kind: 'paste', label, text }
-        setComposerTokens(prev =>
-          trimTokens([...prev.filter(tk => !(tk.kind === 'paste' && expanded.has(tk.label))), token])
-        )
+
+        const kept = trimTokens([
+          ...before.filter(tk => !(tk.kind === 'paste' && expanded.has(tk.label))),
+          token
+        ])
+
+        if (!kept.includes(token)) {
+          // Past the token store's 4 MB ceiling the label would reference nothing: keep the raw
+          // draft instead (unusable as a paste token, but nothing is silently lost).
+          sys('paste too large to collapse; kept as plain text')
+          setInputBuf(draft.buf)
+          setInput(draft.line)
+
+          return
+        }
+
+        // Image tokens survive the collapse only if their labels stay in the composer text —
+        // otherwise submission silently drops the attachments (attachments.ts matches by label).
+        const imageLabels = before
+          .filter(tk => tk.kind === 'image' && joined.includes(tk.label ?? '\u0000'))
+          .map(tk => tk.label)
+
+        setComposerTokens(kept)
         setInputBuf([])
-        setInput(label)
+        setInput([label, ...imageLabels].join('\n'))
         void gw
           .request<{ path?: string }>('paste.collapse', { text })
           .then(r => {
@@ -652,7 +721,7 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
     } finally {
       rmSync(dir, { force: true, recursive: true })
     }
-  }, [gw, input, inputBuf, setInput, setInputBuf, setComposerTokens])
+  }, [gw, input, inputBuf, setInput, setInputBuf, setComposerTokens, sys])
 
   const actions = useMemo(
     () => ({

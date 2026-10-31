@@ -7,8 +7,14 @@ const CLIPBOARD_MAX_BUFFER = 4 * 1024 * 1024
 // ── Clipboard image read (macOS + Linux; parity with hermes_cli/clipboard.py) ────────────────────────
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+// IEND chunk: type + the fixed CRC any spec-valid PNG ends with (so a truncated stream or
+// magic-prefixed garbage is rejected, not staged).
+const PNG_IEND_TAIL = Buffer.from([0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82])
 
-const isPng = (data: Buffer): boolean => data.subarray(0, 8).equals(PNG_SIGNATURE)
+const isPng = (data: Buffer): boolean =>
+  data.length >= PNG_SIGNATURE.length + PNG_IEND_TAIL.length &&
+  data.subarray(0, 8).equals(PNG_SIGNATURE) &&
+  data.subarray(data.length - PNG_IEND_TAIL.length).equals(PNG_IEND_TAIL)
 
 export type ClipboardImageRunner = (
   cmd: string,
@@ -34,6 +40,12 @@ export function clipboardImageCommands(
 ): Array<[string, string[]]> {
   if (platform === 'darwin') {
     return [['osascript', ['-e', 'the clipboard as «class PNGf»']]]
+  }
+
+  // Windows clipboard images stay the gateway's job (its PowerShell path); an empty chain makes
+  // this TUI fallback a silent no-op there.
+  if (platform === 'win32') {
+    return []
   }
 
   const wayland = env.XDG_SESSION_TYPE === 'wayland' || Boolean(env.WAYLAND_DISPLAY)
