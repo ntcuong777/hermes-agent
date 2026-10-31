@@ -1050,3 +1050,36 @@ class TestBackgroundReviewDeleteGate:
             reset_current_write_origin(token)
         assert result["success"] is True
         assert "rewritten by refine" in store._entries_for("memory")
+
+
+# =========================================================================
+# Snapshot cap below the store cap: the file grows, the prompt stays bounded
+# =========================================================================
+
+class TestSnapshotCap:
+    @pytest.fixture
+    def dir_(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("tools.memory_tool.get_memory_dir", lambda: tmp_path)
+        return tmp_path
+
+    def test_a_snapshot_cap_truncates_whole_entries_and_names_the_rest(self, dir_):
+        store = MemoryStore(10000, memory_snapshot_char_limit=60)
+        store.add("memory", "first entry short")
+        store.add("memory", "second entry that is quite a bit longer than the cap allows")
+        store.add("memory", "third entry")
+        store.load_from_disk()
+        block = store.format_for_system_prompt("memory")
+        assert "first entry short" in block
+        assert "second entry" not in block
+        assert "2 more entries in the store" in block
+        # all three stay live and on disk: the cap bounds the prompt, not the file
+        assert len(store.memory_entries) == 3
+
+    def test_without_a_snapshot_cap_the_whole_store_renders_as_before(self, dir_):
+        store = MemoryStore(10000)
+        store.add("memory", "one")
+        store.add("memory", "two " * 30)
+        store.load_from_disk()
+        block = store.format_for_system_prompt("memory")
+        assert "one" in block and ("two " * 30).strip() in block
+        assert "more entries in the store" not in block

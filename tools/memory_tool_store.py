@@ -186,10 +186,17 @@ class MemoryStore:
     _MAX_CONSOLIDATION_FAILURES_PER_TURN = 3
 
     def __init__(self, memory_char_limit: int = 2200, user_char_limit: int = 1375, *,
-                 memory_enabled: bool = True, user_profile_enabled: bool = True):
+                 memory_enabled: bool = True, user_profile_enabled: bool = True,
+                 memory_snapshot_char_limit: "int | None" = None,
+                 user_snapshot_char_limit: "int | None" = None):
         self.memory_entries: list[str] = []
         self.user_entries: list[str] = []
         self.memory_char_limit, self.user_char_limit = memory_char_limit, user_char_limit
+        # Snapshot caps bound the system-prompt block only; None = the store cap (the whole store
+        # renders, the historical behaviour). Set below the store cap so the FILE can grow while the
+        # prompt stays cheap — a recall provider (memory plugin) surfaces the rest per turn.
+        self.memory_snapshot_char_limit = memory_snapshot_char_limit
+        self.user_snapshot_char_limit = user_snapshot_char_limit
         self.memory_enabled, self.user_profile_enabled = memory_enabled, user_profile_enabled
         self._system_prompt_snapshot: dict[str, str] = {"memory": "", "user": ""}
         self._consolidation_failures = 0  # per turn; reset by reset_consolidation_failures()
@@ -666,13 +673,36 @@ class MemoryStore:
                 **extra,
                 "note": "Write saved. This update is complete — do not repeat it."}
 
+    def _snapshot_char_limit(self, target: str) -> int:
+        limit = self.user_snapshot_char_limit if target == "user" else self.memory_snapshot_char_limit
+        return limit if limit is not None else self._char_limit(target)
+
     def _render_block(self, target: str, entries: list[str]) -> str:
-        """System prompt block: header + usage indicator + entries ("" when empty)."""
+        """System prompt block: header + usage indicator + entries ("" when empty).
+
+        Whole entries until the snapshot cap, then one line naming how many more the store holds;
+        the usage indicator keeps counting the whole store, so the room figure stays honest."""
         if not entries:
             return ""
-        content, sep = ENTRY_DELIMITER.join(entries), "═" * 46
+        full = ENTRY_DELIMITER.join(entries)
+        sep = "═" * 46
         title = MEMORY_BLOCK_HEADERS["user" if target == "user" else "memory"]
-        return f"{sep}\n{title} [{self._usage_pct(target, len(content))}]\n{sep}\n{content}"
+        cap = self._snapshot_char_limit(target)
+        shown, used = [], 0
+        for entry in entries:
+            cost = len(entry) + (len(ENTRY_DELIMITER) if shown else 0)
+            if shown and used + cost > cap:
+                break
+            shown.append(entry)
+            used += cost
+        content = ENTRY_DELIMITER.join(shown)
+        hidden = len(entries) - len(shown)
+        if hidden:
+            content += (
+                f"{ENTRY_DELIMITER}… ({hidden} more entries in the store; a recall provider "
+                "surfaces them when a turn matches)"
+            )
+        return f"{sep}\n{title} [{self._usage_pct(target, len(full))}]\n{sep}\n{content}"
 
     @staticmethod
     def _read_raw_checked(path: Path) -> tuple[str, bool]:

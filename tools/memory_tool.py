@@ -44,6 +44,11 @@ from tools.memory_tool_store import (
     ENTRY_DELIMITER, FAILURE_CLASS, MEMORY_BLOCK_HEADERS, PATCH_DROP_HINT, MemoryStore, _scan_memory_content)
 
 
+def _opt_int(value):
+    """``None`` passes through (a snapshot cap left unset falls back to the store cap); else an int."""
+    return None if value is None else int(value)
+
+
 def load_on_disk_store() -> MemoryStore:
     """Fresh on-disk MemoryStore with configured limits/flags for contexts with no live
     agent (gateway, Desktop, ``/memory``) so approvals enforce the SAME caps as
@@ -54,7 +59,9 @@ def load_on_disk_store() -> MemoryStore:
         mem_cfg = get_builtin_memory_config(config)
         memory_enabled, user_profile_enabled = get_builtin_memory_store_flags(config)
         store = MemoryStore(int(mem_cfg.get("memory_char_limit", 2200)), int(mem_cfg.get("user_char_limit", 1375)),
-                            memory_enabled=memory_enabled, user_profile_enabled=user_profile_enabled)
+                            memory_enabled=memory_enabled, user_profile_enabled=user_profile_enabled,
+                            memory_snapshot_char_limit=_opt_int(mem_cfg.get("memory_snapshot_char_limit")),
+                            user_snapshot_char_limit=_opt_int(mem_cfg.get("user_snapshot_char_limit")))
     except Exception:
         store = MemoryStore()  # config optional — fall back to defaults rather than break /memory
     store.load_from_disk()
