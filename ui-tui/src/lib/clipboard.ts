@@ -4,6 +4,74 @@ import { promisify } from 'node:util'
 const execFileAsync = promisify(execFile)
 const CLIPBOARD_MAX_BUFFER = 4 * 1024 * 1024
 
+// ── Clipboard image read (macOS + Linux; parity with hermes_cli/clipboard.py) ────────────────────────
+
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+
+const isPng = (data: Buffer): boolean => data.subarray(0, 8).equals(PNG_SIGNATURE)
+
+export type ClipboardImageRunner = (
+  cmd: string,
+  args: string[],
+  opts: { maxBuffer: number; timeout: number }
+) => Promise<Buffer>
+
+const defaultImageRunner: ClipboardImageRunner = (cmd, args, opts) =>
+  new Promise((resolve, reject) => {
+    execFile(cmd, args, { ...opts, encoding: 'buffer' }, (err, stdout) => {
+      if (err) {
+        reject(err)
+      } else {
+        resolve(stdout as Buffer)
+      }
+    })
+  })
+
+/** The per-platform commands that may hold a clipboard PNG, first-wins order. */
+export function clipboardImageCommands(
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv
+): Array<[string, string[]]> {
+  if (platform === 'darwin') {
+    return [['osascript', ['-e', 'the clipboard as «class PNGf»']]]
+  }
+
+  const wayland = env.XDG_SESSION_TYPE === 'wayland' || Boolean(env.WAYLAND_DISPLAY)
+  const wl: [string, string[]] = ['wl-paste', ['--type', 'image/png']]
+  const xclip: [string, string[]] = ['xclip', ['-selection', 'clipboard', '-t', 'image/png', '-o']]
+
+  return wayland ? [wl, xclip] : [xclip, wl]
+}
+
+/**
+ * The clipboard image as PNG bytes, or null when no command produced one (no tool, no image,
+ * or not a PNG). Runs in the TUI's own process — a GUI-session terminal has pasteboard access
+ * a launchd-managed gateway may lack, which is the fallback this exists for.
+ */
+export async function readClipboardImagePng(
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+  run: ClipboardImageRunner = defaultImageRunner
+): Promise<Buffer | null> {
+  for (const [cmd, args] of clipboardImageCommands(platform, env)) {
+    try {
+      const raw = await run(cmd, args, { maxBuffer: CLIPBOARD_MAX_BUFFER * 2, timeout: 4000 })
+
+      // osascript appends a newline to the PNGf dump: strip one trailing LF before validating.
+      const out =
+        raw.length > 0 && raw[raw.length - 1] === 0x0a ? raw.subarray(0, raw.length - 1) : raw
+
+      if (isPng(out)) {
+        return out
+      }
+    } catch {
+      // No tool, no image, or a timeout: try the next command.
+    }
+  }
+
+  return null
+}
+
 // PowerShell read: base64-encode the clipboard content to avoid ANSI codepage
 // corruption (same problem as the write path — see comment at line 94).
 const POWERSHELL_READ_ARGS = [

@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { useStdin, withInkSuspended } from '@hermes/ink'
@@ -14,12 +14,12 @@ import { useCompletion } from '../hooks/useCompletion.js'
 import { useInputHistory } from '../hooks/useInputHistory.js'
 import { useQueue } from '../hooks/useQueue.js'
 import { t } from '../i18n/runtime.js'
-import { isUsableClipboardText, readClipboardText } from '../lib/clipboard.js'
+import { isUsableClipboardText, readClipboardImagePng, readClipboardText } from '../lib/clipboard.js'
 import { draftFromEditorText, resolveEditor } from '../lib/editor.js'
 import { stageClipboardImage, stageImagePath } from '../lib/imageAttachments.js'
 import { readOsc52Clipboard } from '../lib/osc52.js'
 import { isRemoteShellSession } from '../lib/terminalSetup.js'
-import { pasteTokenLabel, stripTrailingPasteNewlines } from '../lib/text.js'
+import { expandPasteTokens, pasteTokenLabel, stripTrailingPasteNewlines } from '../lib/text.js'
 
 import type {
   ComposerPasteResult,
@@ -285,6 +285,21 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
    * paste as zero text, so we speculatively ask the gateway and stay silent if
    * there was nothing there. An explicit `/paste` reports the miss.
    */
+  const localClipboardImagePath = useCallback(async (): Promise<string | null> => {
+    const png = await readClipboardImagePng().catch(() => null)
+
+    if (!png) {
+      return null
+    }
+
+    const dir = join(homedir(), '.hermes', 'cache', 'paste-images')
+    mkdirSync(dir, { recursive: true })
+    const path = join(dir, `clip_${Date.now()}.png`)
+    writeFileSync(path, png, { mode: 0o600 })
+
+    return path
+  }, [])
+
   const pasteClipboardImage = useCallback(
     async (value: string, cursor: number, quiet: boolean): Promise<ComposerPasteResult | null> => {
       const destination = captureDestination()
@@ -295,35 +310,59 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
         return null
       }
 
-      return resolveAttachment<ClipboardPasteResponse & { path?: string; mime?: string }>(
-        destination,
-        revision,
-        (gw.isCanonical
+      type ClipboardImageReply = ClipboardPasteResponse & { path?: string; mime?: string }
+
+      const request = (
+        gw.isCanonical
           ? stageClipboardImage(gw, destination).then(image => (image ? { ...image, attached: true } : null))
-          : gw.request<ClipboardPasteResponse & { path?: string; mime?: string }>('clipboard.paste', {
-              session_id: sid
-            })
-        ).catch((error: Error) => {
+          : gw.request<ClipboardImageReply>('clipboard.paste', { session_id: sid })
+      )
+        .catch((error: Error) => {
           if (!quiet) {
             sys(t('canonical.queue.clipboardImageFailed', error.message))
           }
 
           return null
-        }),
-        r => {
-          if (r?.attached) {
-            return attachImageToken(r, value, cursor)
+        })
+        .then(async (primary: ClipboardImageReply | null): Promise<ClipboardImageReply | null> => {
+          if (primary?.attached) {
+            return primary
           }
 
-          if (!quiet) {
-            sys(r?.message || 'No image found in clipboard')
+          // The gateway's extraction can fail where the TUI itself sits in the GUI session (a
+          // launchd/systemd-managed gateway has no pasteboard context): read the image here and
+          // stage the file ourselves before reporting a miss.
+          const path = await localClipboardImagePath()
+
+          if (!path) {
+            return primary
           }
 
-          return null
+          const staged = await (gw.isCanonical
+            ? stageImagePath(path, gw, destination)
+            : destination.sid
+              ? gw.request<ClipboardImageReply>('image.attach', { path, session_id: destination.sid })
+              : Promise.resolve(null)
+          ).catch(() => null)
+
+          const stagedImage = staged as ImageAttachResponse | null
+
+          return stagedImage?.name ? { ...stagedImage, attached: true, path } : primary
+        })
+
+      return resolveAttachment<ClipboardImageReply>(destination, revision, request, r => {
+        if (r?.attached) {
+          return attachImageToken(r as ImageAttachResponse, value, cursor)
         }
-      )
+
+        if (!quiet) {
+          sys(r?.message || 'No image found in clipboard')
+        }
+
+        return null
+      })
     },
-    [attachImageToken, gw, resolveAttachment, sys]
+    [attachImageToken, gw, localClipboardImagePath, resolveAttachment, sys]
   )
 
   const handleResolvedPaste = useCallback(
@@ -520,6 +559,7 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
   const editorStash = useRef<null | { destination: SubmissionDestination; draft: { buf: string[]; line: string } }>(
     null
   )
+
   const sid = useStore($uiSessionId)
 
   useEffect(() => {
@@ -541,7 +581,10 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
     const file = join(dir, 'prompt.md')
     const [cmd, ...args] = resolveEditor()
 
-    writeFileSync(file, [...inputBuf, input].join('\n'))
+    // A collapsed paste shows only its label in the composer: expand every paste token so the
+    // editor always sees — and edits — the full pasted text.
+    const joined = [...inputBuf, input].join('\n')
+    writeFileSync(file, expandPasteTokens(joined, tokensRef.current))
 
     let exitCode: null | number = null
 
@@ -556,7 +599,8 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
 
       // Leave what the editor saved as an unsent draft: the person reads it again and presses
       // Enter themselves. (Submitting here made a save in the editor send the prompt.)
-      const draft = draftFromEditorText(readFileSync(file, 'utf8'))
+      const saved = readFileSync(file, 'utf8')
+      const draft = draftFromEditorText(saved)
 
       // The composer moved on while the editor was open: applying the draft would overwrite it.
       // Park it; the effect below restores it (still unsent) once its destination is current and
@@ -567,12 +611,48 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
         return
       }
 
+      // A draft past a collapse threshold (an expanded paste, or a big edit) collapses back to
+      // ONE paste token: the composer stays small and the saved text never dumps into it raw.
+      const text = saved.replace(/\s+$/, '')
+      const lines = text.split('\n').length
+
+      if (text.length > 0 && shouldCollapsePaste(text, lines)) {
+        const label = pasteTokenLabel(text, lines)
+
+        const expanded = new Set(
+          tokensRef.current
+            .filter(tk => tk.kind === 'paste' && joined.includes(tk.label ?? '\u0000'))
+            .map(tk => tk.label)
+        )
+
+        const token: ComposerToken = { kind: 'paste', label, text }
+        setComposerTokens(prev =>
+          trimTokens([...prev.filter(tk => !(tk.kind === 'paste' && expanded.has(tk.label))), token])
+        )
+        setInputBuf([])
+        setInput(label)
+        void gw
+          .request<{ path?: string }>('paste.collapse', { text })
+          .then(r => {
+            const path = r?.path
+
+            if (!path || !isCurrentDestination(destination)) {
+              return
+            }
+
+            setComposerTokens(prev => prev.map(tk => (tk === token ? { ...tk, path } : tk)))
+          })
+          .catch(() => {})
+
+        return
+      }
+
       setInputBuf(draft.buf)
       setInput(draft.line)
     } finally {
       rmSync(dir, { force: true, recursive: true })
     }
-  }, [input, inputBuf, setInput, setInputBuf])
+  }, [gw, input, inputBuf, setInput, setInputBuf, setComposerTokens])
 
   const actions = useMemo(
     () => ({

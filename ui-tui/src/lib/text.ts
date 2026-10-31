@@ -423,5 +423,22 @@ export const flat = (r: Record<string, string[]>) => Object.values(r).flat()
 
 export const pick = <T>(a: T[]) => a[Math.floor(Math.random() * a.length)]!
 
+/**
+ * Replace every paste-token label in *text* with the full text it collapsed, so an editor (or
+ * anything else) sees what the person actually pasted. Tokens without text (trimmed) keep
+ * their label — the staged file still stands behind it.
+ */
+export const expandPasteTokens = (
+  text: string,
+  tokens: ReadonlyArray<{ kind: string; label?: string; text?: string }>
+): string =>
+  tokens.reduce(
+    (acc, token) =>
+      token.kind === 'paste' && token.label && token.text && acc.includes(token.label)
+        ? acc.split(token.label).join(token.text)
+        : acc,
+    text
+  )
+
 export const isPasteBackedText = (text: string) =>
   /\[\[paste:\d+(?:[^\n]*?)\]\]|\[paste #\d+ (?:attached|excerpt)(?:[^\n]*?)\]/.test(text)
