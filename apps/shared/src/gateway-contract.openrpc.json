@@ -11787,6 +11787,11 @@
             "default": false,
             "title": "Declines Not Shown",
             "type": "boolean"
+          },
+          "canonical_clarify_batch": {
+            "default": false,
+            "title": "Canonical Clarify Batch",
+            "type": "boolean"
           }
         },
         "required": [
@@ -40275,6 +40280,18 @@
             ],
             "default": null,
             "title": "Error"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error Code"
           },
           "free_tier_route": {
             "anyOf": [
