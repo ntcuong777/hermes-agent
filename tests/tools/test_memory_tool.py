@@ -1100,7 +1100,7 @@ class TestSnapshotCap:
     def test_the_cap_boundary_is_exact_an_entry_costing_the_cap_stays(self, dir_):
         store = MemoryStore(10000, memory_snapshot_char_limit=23)
         # len("0123456789") == 10, delimiter len == 3: two entries cost exactly 10+3+10 == 23,
-        # so a cap of 23 keeps both; the third (cost 12 more) tips past and is named.
+        # so a cap of 23 keeps both; the third (cost 13 more) tips past and is named.
         store.memory_entries = ["0123456789", "abcdefghij", "third one!"]
         store._system_prompt_snapshot["memory"] = store._render_block(
             "memory", store.memory_entries
