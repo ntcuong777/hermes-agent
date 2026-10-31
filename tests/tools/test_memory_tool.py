@@ -1083,3 +1083,28 @@ class TestSnapshotCap:
         block = store.format_for_system_prompt("memory")
         assert "one" in block and ("two " * 30).strip() in block
         assert "more entries in the store" not in block
+
+    def test_no_snapshot_cap_means_no_truncation_even_over_the_file_cap(self, dir_, monkeypatch):
+        # Legacy byte-identity: an EXTERNAL over-write (add would refuse past the file cap)
+        # still renders whole when no snapshot cap is configured — the old ride-in-the-prompt rule.
+        (dir_ / "MEMORY.md").write_text(
+            "first entry of some length" + "\n§\n" + "second entry of some length",
+            encoding="utf-8",
+        )
+        store = MemoryStore(40)
+        store.load_from_disk()
+        block = store.format_for_system_prompt("memory")
+        assert "first entry of some length" in block and "second entry of some length" in block
+        assert "more entries in the store" not in block
+
+    def test_the_cap_boundary_is_exact_an_entry_costing_the_cap_stays(self, dir_):
+        store = MemoryStore(10000, memory_snapshot_char_limit=23)
+        # len("0123456789") == 10, delimiter len == 3: two entries cost exactly 10+3+10 == 23,
+        # so a cap of 23 keeps both; the third (cost 12 more) tips past and is named.
+        store.memory_entries = ["0123456789", "abcdefghij", "third one!"]
+        store._system_prompt_snapshot["memory"] = store._render_block(
+            "memory", store.memory_entries
+        )
+        block = store.format_for_system_prompt("memory")
+        assert "0123456789" in block and "abcdefghij" in block
+        assert "third one!" not in block and "1 more entries" in block

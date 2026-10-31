@@ -673,28 +673,31 @@ class MemoryStore:
                 **extra,
                 "note": "Write saved. This update is complete — do not repeat it."}
 
-    def _snapshot_char_limit(self, target: str) -> int:
-        limit = self.user_snapshot_char_limit if target == "user" else self.memory_snapshot_char_limit
-        return limit if limit is not None else self._char_limit(target)
-
     def _render_block(self, target: str, entries: list[str]) -> str:
         """System prompt block: header + usage indicator + entries ("" when empty).
 
         Whole entries until the snapshot cap, then one line naming how many more the store holds;
-        the usage indicator keeps counting the whole store, so the room figure stays honest."""
+        the usage indicator keeps counting the whole store, so the room figure stays honest. The
+        cap is approximate by design: a single entry larger than the whole cap still renders
+        (whole entry or none), and the header and hidden-count line are not counted. With no
+        snapshot limit configured the block is NOT truncated, even for a store over its file cap
+        (the legacy behaviour — external over-writes were allowed to ride in the prompt)."""
         if not entries:
             return ""
         full = ENTRY_DELIMITER.join(entries)
         sep = "═" * 46
         title = MEMORY_BLOCK_HEADERS["user" if target == "user" else "memory"]
-        cap = self._snapshot_char_limit(target)
-        shown, used = [], 0
-        for entry in entries:
-            cost = len(entry) + (len(ENTRY_DELIMITER) if shown else 0)
-            if shown and used + cost > cap:
-                break
-            shown.append(entry)
-            used += cost
+        limit = self.user_snapshot_char_limit if target == "user" else self.memory_snapshot_char_limit
+        shown, used = entries, len(full)
+        if limit is not None:
+            kept, used = [], 0
+            for entry in entries:
+                cost = len(entry) + (len(ENTRY_DELIMITER) if kept else 0)
+                if kept and used + cost > limit:
+                    break
+                kept.append(entry)
+                used += cost
+            shown = kept
         content = ENTRY_DELIMITER.join(shown)
         hidden = len(entries) - len(shown)
         if hidden:
