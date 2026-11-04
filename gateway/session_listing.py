@@ -1,5 +1,5 @@
 """Read-only native picker history; enumeration never adopts a transcript."""
-from hermes_state_local_migration import validate_legacy_row
+from hermes_state_local_migration import client_history_row, validate_legacy_row
 from hermes_state_mutation_binding import authorize_history
 from hermes_state_runtime import RuntimeStoreError
 
@@ -47,7 +47,7 @@ def stored_picker_sessions(authority, actor, *, limit, include_hidden=False, wor
         for row in rows:
             if workspace is not None and (workspace_key(row) or '').rstrip('/') != workspace.rstrip('/'):
                 continue
-            local = row['source'] in _LOCAL_SOURCES
+            local = row['source'] in _LOCAL_SOURCES or client_history_row(row)
             if not local and _messaging_platform(row['source']) is None:
                 continue  # neither a local nor a messaging label (acp, unknown, ...): nothing this picker resumes
             sid = db.get_compression_tip(row['id']) or row['id']
