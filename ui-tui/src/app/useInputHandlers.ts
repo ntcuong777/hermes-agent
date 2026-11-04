@@ -588,6 +588,10 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
         .rpc<SlashExecResponse>('slash.exec', { command: stashCommand(scope, 'snapshot'), session_id: sid })
         .then(r => {
           if (getUiState().sid !== sid || cRefs.revisionRef.current !== revision) {
+            // Silent skips read as "the stash did nothing": say what happened
+            // and that the entries are still held.
+            actions.sys('stash: drafts kept — the composer changed while the list loaded')
+
             return
           }
 

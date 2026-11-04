@@ -2,6 +2,7 @@ import { skillInvocationText } from '@hermes/shared'
 import { mergeUsage, parseCommandDispatch, parseSlashCommand, randomUuid } from '@hermes/shared'
 import { type MutableRefObject, useCallback, useRef } from 'react'
 
+import { requestComposerPrefill } from '@/app/chat/composer/focus'
 import { mergeOlderTranscriptPage } from '@/app/chat/transcript-backfill'
 import { prepareDefaultNewSession } from '@/app/session/new-session-route'
 import { invalidateContextBreakdown } from '@/app/shell/hooks/use-context-breakdown'
@@ -26,7 +27,7 @@ import { applyReasoningSlashResult, reasoningSlashParams } from '@/lib/reasoning
 import { setSessionYolo } from '@/lib/yolo-session'
 import { openCommandPalettePage } from '@/store/command-palette'
 import { markCompressDeferred } from '@/store/compaction'
-import { $composerAttachments, setComposerDraft } from '@/store/composer'
+import { $composerAttachments } from '@/store/composer'
 import { applyGoalStatusText } from '@/store/goals'
 import { dismissNotification, notify, notifyError } from '@/store/notifications'
 import { setPetScale } from '@/store/pet-gallery'
@@ -453,7 +454,7 @@ export function useSlashCommand(deps: SlashCommandDeps) {
           // the composer for editing instead of submitting it immediately.
           if (dispatch.type === 'prefill') {
             if (message) {
-              setComposerDraft(message)
+              requestComposerPrefill([sessionId, storedSessionId ?? ''].filter(Boolean), message)
             }
 
             return
@@ -1452,7 +1453,7 @@ export function useSlashCommand(deps: SlashCommandDeps) {
           // messages) — so without this restore, any payload after a degenerate
           // slash (`/ text`, `/` + newline) is lost forever. Hand it back.
           if (command.replace(/^\/+/, '').trim()) {
-            setComposerDraft(command)
+            requestComposerPrefill([], command)
           }
 
           const sessionId = await ensureSessionId(sessionHint)

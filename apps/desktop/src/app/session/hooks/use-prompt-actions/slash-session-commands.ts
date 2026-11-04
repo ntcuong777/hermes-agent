@@ -1,9 +1,9 @@
 import type { MutableRefObject } from 'react'
 
+import { requestComposerPrefill } from '@/app/chat/composer/focus'
 import type { ClientSessionState, SessionRedirectResponse } from '@/app/types'
 import { runtimeTranslations } from '@/i18n/runtime'
 import type { ChatMessage } from '@/lib/chat-messages'
-import { setComposerDraft } from '@/store/composer'
 import { enqueueQueuedPrompt, getQueuedPrompts, serverOwnsComposerQueue } from '@/store/composer-queue'
 import { $sessions, resolveComposerSessionKey } from '@/store/session'
 import { $sessionStates } from '@/store/session-states'
@@ -295,7 +295,7 @@ export function sessionCommandHandlers<C extends { arg: string }>(env: SessionCo
         const text = typeof rewound.content === 'string' ? rewound.content : (retryText(rewound.content) ?? '')
 
         if (text.trim() && activeSessionIdRef.current === out.sessionId) {
-          setComposerDraft(text)
+          requestComposerPrefill([out.sessionId], text)
         }
 
         out.render(rewound.count === 1 ? copy().undidOne('1') : copy().undidOther(String(rewound.count)))

@@ -526,6 +526,23 @@ export const requestComposerSetDraft = (ids: string[], text: string, opts?: { ac
   return promise ? promise.then(reply => reply?.ok === true) : Promise.resolve(false)
 }
 
+/** Prefill a composer with a backend draft (slash `prefill` directives — /undo's
+ *  backed-up message, /stash pop's stored draft): the session's own surface
+ *  first, then the active composer when no id-addressed surface answered (the
+ *  composer a command was submitted from is the active one). Fire-and-forget —
+ *  the visible notice already says what was prefilled. */
+export const requestComposerPrefill = (ids: string[], text: string): void => {
+  if (!text.trim()) {
+    return
+  }
+
+  void requestComposerSetDraft(ids, text).then(ok => {
+    if (!ok) {
+      void requestComposerSetDraft([], text, { active: true })
+    }
+  })
+}
+
 /** Subscribe one mounted composer to draft read/write requests. `getIds` is
  *  consulted per request (the surface's session identity changes as the user
  *  navigates); `isActive` reports whether the focus bus currently routes to

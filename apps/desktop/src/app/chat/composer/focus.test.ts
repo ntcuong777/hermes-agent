@@ -19,6 +19,7 @@ import {
   requestComposerGetDraft,
   requestComposerInsert,
   requestComposerInsertAcked,
+  requestComposerPrefill,
   requestComposerSetDraft,
   requestModelMenuToggle
 } from './focus'
@@ -436,6 +437,22 @@ describe('composer draft requests', () => {
     mountDraft('sess-a', 'x')
 
     expect(await requestComposerSetDraft(['sess-a'], '   ')).toBe(false)
+  })
+
+  it('prefills the addressed session, then falls back to the active composer', async () => {
+    const addressed = mountDraft('sess-a', 'x')
+    requestComposerPrefill(['sess-a'], 'stashed draft')
+    await new Promise(resolve => window.setTimeout(resolve, 80))
+    expect(addressed.wrote).toBe('stashed draft')
+
+    // No id-addressed surface answers (a fresh session, an unknown id): the
+    // composer the command was submitted from is the active one.
+    markActiveComposer('main')
+    mountSurface('main')
+    const active = mountDraft('sess-live', '', true)
+    requestComposerPrefill(['nobody'], 'undo text')
+    await new Promise(resolve => window.setTimeout(resolve, 80))
+    expect(active.wrote).toBe('undo text')
   })
 })
 
