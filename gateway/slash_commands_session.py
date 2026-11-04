@@ -702,11 +702,24 @@ class GatewaySessionCommandsMixin:
             return _agg_note
         if request.preview:
             return _compress_preview_reply(history, request.partial, request.keep_last, request.focus_topic, _agg_note)
+        await self._send_compress_started_ack(event)
         try:
             return await self._run_manual_compression(source, session_entry, history, request)
         except Exception as e:
             logger.warning("Manual compress failed: %s", e)
             return t("gateway.compress.failed", error=e)
+
+    async def _send_compress_started_ack(self, event: MessageEvent) -> None:
+        """One best-effort line before the summariser runs. Manual /compress answers only when the
+        whole compress finishes — minutes on a big session — and until then the surface shows
+        nothing at all, which reads as Hermes not responding (#explainer no-reply reports)."""
+        try:
+            adapter = self._delivery_adapter_for(event.source)
+            if adapter is not None:
+                await adapter.send(event.source.chat_id, t("gateway.compress.started"),
+                                   reply_to=event.message_id)
+        except Exception:
+            logger.debug("compress start ack undeliverable", exc_info=True)
 
     async def _run_manual_compression(self, source, session_entry, history: list, request) -> str:
         """Build a temporary agent, run the shared compress core, persist, and describe the outcome."""

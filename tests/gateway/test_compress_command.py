@@ -424,6 +424,59 @@ async def test_compress_command_multiplexed_runs_under_profile_secret_scope(tmp_
 
 
 @pytest.mark.asyncio
+async def test_compress_command_sends_started_ack_before_compressing():
+    """Manual /compress answers only when the whole compress finishes — minutes on a big
+    session — and with no intermediate line the surface shows nothing at all, which reads
+    as Hermes not responding. The handler must send one ack line BEFORE the summariser
+    runs; a delivery failure must never fail the compress itself."""
+    history = _make_history()
+    runner = _make_runner(history)
+
+    agent_instance = MagicMock()
+    agent_instance.shutdown_memory_provider = MagicMock()
+    agent_instance.close = MagicMock()
+    agent_instance._cached_system_prompt = ""
+    agent_instance.tools = None
+    agent_instance.context_compressor.has_content_to_compress.return_value = True
+    agent_instance.context_compressor._last_compress_aborted = False
+    agent_instance.context_compressor._last_summary_fallback_used = False
+    agent_instance.context_compressor._last_summary_dropped_count = 0
+    agent_instance.context_compressor._last_summary_error = None
+    agent_instance.context_compressor._last_aux_model_failure_model = None
+    agent_instance.context_compressor._last_aux_model_failure_error = None
+    agent_instance.session_id = "sess-1"
+    compressed = [history[0], {"role": "assistant", "content": "compressed summary"}, history[-1]]
+    agent_instance._compress_context.return_value = (compressed, "")
+    agent_instance._compression_skipped_due_to_lock = False
+
+    sent: list[str] = []
+
+    adapter = MagicMock()
+    adapter.send = AsyncMock(side_effect=lambda _chat, text, **_kw: sent.append(text))
+    runner._delivery_adapter_for = MagicMock(return_value=adapter)
+
+    async def _run_compress():
+        with (
+            patch.object(runner, "_resolve_session_agent_runtime",
+                         return_value=("test-model", {"api_key": "test-key"})),
+            patch.object(runner, "_build_manual_compression_agent", AsyncMock(return_value=agent_instance)),
+            patch("agent.model_metadata.estimate_request_tokens_rough", return_value=100),
+        ):
+            return await runner._handle_compress_command(_make_event())
+
+    result = await _run_compress()
+
+    assert "Compressed:" in result
+    assert sent and "Compressing" in sent[0], f"no started ack before the result: {sent!r}"
+
+    # An undeliverable ack must not fail the compress.
+    sent.clear()
+    adapter.send = AsyncMock(side_effect=RuntimeError("chat unreachable"))
+    result = await _run_compress()
+    assert "Compressed:" in result
+
+
+@pytest.mark.asyncio
 async def test_compress_command_cleanup_does_not_block_event_loop():
     """Manual /compress must not run agent teardown on the gateway event loop.
 

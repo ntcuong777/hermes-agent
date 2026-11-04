@@ -147,6 +147,7 @@ gateway:
     nav_next: "next → `/commands {page}`"
     out_of_range: "_(Requested page {requested} was out of range, showing page {page}.)_"
   compress:
+    started: "🗜️ Compressing — a large history can take a couple of minutes. I'll reply here when it's done."
     not_enough: "Not enough conversation to compress (need at least 4 messages)."
     no_provider: "No provider configured -- cannot compress."
     nothing_to_do: "Nothing to compress yet (the transcript is still all protected context)."
