@@ -475,6 +475,17 @@ async def test_compress_command_sends_started_ack_before_compressing():
     result = await _run_compress()
     assert "Compressed:" in result
 
+    # A local slash.exec (Desktop/TUI) has no delivering adapter; its ack rides the
+    # command sink instead, and the adapter is not touched.
+    sent.clear()
+    from gateway.session_command_sink import capture
+
+    with capture() as sink:
+        result = await _run_compress()
+    assert "Compressed:" in result
+    assert sent == []
+    assert any("Compressing" in notice for notice in sink.notices), sink.notices
+
 
 @pytest.mark.asyncio
 async def test_compress_command_cleanup_does_not_block_event_loop():

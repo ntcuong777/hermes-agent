@@ -702,9 +702,8 @@ class GatewaySessionCommandsMixin:
             return _agg_note
         if request.preview:
             return _compress_preview_reply(history, request.partial, request.keep_last, request.focus_topic, _agg_note)
-        await self._send_compress_started_ack(event)
         try:
-            return await self._run_manual_compression(source, session_entry, history, request)
+            return await self._run_manual_compression(source, session_entry, history, request, event=event)
         except Exception as e:
             logger.warning("Manual compress failed: %s", e)
             return t("gateway.compress.failed", error=e)
@@ -712,7 +711,17 @@ class GatewaySessionCommandsMixin:
     async def _send_compress_started_ack(self, event: MessageEvent) -> None:
         """One best-effort line before the summariser runs. Manual /compress answers only when the
         whole compress finishes — minutes on a big session — and until then the surface shows
-        nothing at all, which reads as Hermes not responding (#explainer no-reply reports)."""
+        nothing at all, which reads as Hermes not responding (#explainer no-reply reports).
+
+        A local slash.exec (Desktop/TUI) has no delivering adapter — ``LocalSessionAdapter.send``
+        posts nothing — so the ack rides the active command sink, like every other idle-command
+        ack (``_send_command_ack``); the adapter path serves the messaging surfaces."""
+        from gateway.session_command_sink import active_sink
+
+        sink = active_sink()
+        if sink is not None:
+            sink.notices.append(t("gateway.compress.started"))
+            return
         try:
             adapter = self._delivery_adapter_for(event.source)
             if adapter is not None:
@@ -721,7 +730,8 @@ class GatewaySessionCommandsMixin:
         except Exception:
             logger.debug("compress start ack undeliverable", exc_info=True)
 
-    async def _run_manual_compression(self, source, session_entry, history: list, request) -> str:
+    async def _run_manual_compression(self, source, session_entry, history: list, request, *,
+                                      event: MessageEvent | None = None) -> str:
         """Build a temporary agent, run the shared compress core, persist, and describe the outcome."""
         from agent.conversation_compression import finalize_context_engine_compression_notification
         from agent.conversation_compression_manual import compress_now, render_compress_result
@@ -738,6 +748,11 @@ class GatewaySessionCommandsMixin:
             return await self._compress_codex_app_server_session(session_key, session_entry.session_id)
         if not runtime_kwargs.get("api_key"):
             return t("gateway.compress.no_provider")
+        # Past every instant-return gate: a compress that will actually run is starting, so the
+        # surface gets its one "this takes a while" line (the reviewer nit — never a contradictory
+        # pair with no_provider/codex_nothing).
+        if event is not None:
+            await self._send_compress_started_ack(event)
         # FULL transcript (tool results included), like auto-compress: user/assistant-only starves
         # tool-result pruning and can trip the protect-first/last early-return.
         msgs = [m for m in history if m.get("role") in {"user", "assistant", "tool"}]

@@ -7,12 +7,11 @@ import { en } from '@/i18n/en'
 import { textPart } from '@/lib/chat-messages'
 import { createClientSessionState } from '@/lib/chat-runtime'
 import { resolveDesktopCommand } from '@/lib/desktop-slash-commands'
-import { $composerDraft, setComposerDraft } from '@/store/composer'
 import { $queuedPromptsBySession } from '@/store/composer-queue'
 import { $connection } from '@/store/session'
 import { dropSessionState, publishSessionState } from '@/store/session-states'
 
-import { actRender, Harness, type HarnessHandle, RUNTIME_SESSION_ID } from './index-test-utils'
+import { actRender, capturePrefill, Harness, type HarnessHandle, releasePrefillCapturers, RUNTIME_SESSION_ID } from './index-test-utils'
 import { clearSingleFlightSessionResumeState } from './single-flight-resume'
 import { truncateRewoundMessages } from './slash-session-commands'
 
@@ -102,10 +101,10 @@ beforeEach(() => {
   clearSingleFlightSessionResumeState()
   window.localStorage.removeItem('hermes.desktop.composerQueue.v1')
   $queuedPromptsBySession.set({})
-  setComposerDraft('')
 })
 
 afterEach(() => {
+  releasePrefillCapturers()
   cleanup()
   $connection.set(null)
   dropSessionState(RUNTIME_SESSION_ID)
@@ -144,6 +143,7 @@ describe('/undo on a canonical session', () => {
     })
 
     const handle = await mount(requestGateway)
+    const prefill = capturePrefill([RUNTIME_SESSION_ID])
     await handle.submitText('/undo')
 
     expect(requestGateway.mock.calls.filter(([name]) => name === 'session.rewind').map(([, params]) => params)).toEqual(
@@ -153,7 +153,7 @@ describe('/undo on a canonical session', () => {
       ]
     )
     expect(callsOf(requestGateway, 'slash.exec')).toEqual([])
-    expect($composerDraft.get()).toBe('second question')
+    expect(prefill).toEqual(['second question'])
     expect(renderedText(handle)).toContain(copy.undidOther('2'))
   })
 
@@ -198,14 +198,14 @@ describe('/undo on a canonical session', () => {
     })
 
     publishSessionState(RUNTIME_SESSION_ID, { ...createClientSessionState(RUNTIME_SESSION_ID), busy: true })
-    setComposerDraft('half-typed follow-up')
     const handle = await mount(requestGateway)
+    const prefill = capturePrefill([RUNTIME_SESSION_ID])
     await handle.submitText('/undo')
 
     expect(renderedText(handle)).toContain('Stop the current reply first')
     expect(renderedText(handle)).toContain('then run /undo')
     expect(renderedText(handle)).not.toContain('error: session_busy')
-    expect($composerDraft.get()).toBe('half-typed follow-up')
+    expect(prefill).toEqual([])
     expect(callsOf(requestGateway, 'session.interrupt')).toEqual([])
     expect(callsOf(requestGateway, 'prompt.submit')).toEqual([])
     expect(queuedTexts()).toEqual([])
@@ -468,10 +468,11 @@ describe('a repeat after a lost rewind reply on a canonical session', () => {
     await handle!.submitText('/undo')
     expect(renderedText(handle!)).toContain('Hermes gateway connection lost')
 
+    const prefill = capturePrefill([RUNTIME_SESSION_ID])
     await handle!.submitText('/undo')
 
     expect(owner.active()).toEqual(['first question', 'first answer', 'second question', 'second answer'])
-    expect($composerDraft.get()).toBe('third question')
+    expect(prefill).toEqual(['third question'])
     expect(renderedText(handle!)).toContain(copy.undidOther('2'))
     // The view drops the rewound rows the owner named, not the turn this repeat's snapshot pointed at.
     expect(renderedText(handle!)).toContain('second answer')
@@ -511,10 +512,11 @@ describe('a repeat after a lost rewind reply on a canonical session', () => {
     const handle = await mount(owner.requestGateway)
 
     await handle.submitText('/undo 2')
+    const prefill = capturePrefill([RUNTIME_SESSION_ID])
     await handle.submitText('/undo 2')
 
     expect(owner.active()).toEqual(['first question', 'first answer'])
-    expect($composerDraft.get()).toBe('second question')
+    expect(prefill).toEqual(['second question'])
     expect(renderedText(handle)).toContain(copy.undidOther('4'))
   })
 

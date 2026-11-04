@@ -9,7 +9,7 @@ import { en } from '@/i18n/en'
 import { textPart } from '@/lib/chat-messages'
 import { createClientSessionState } from '@/lib/chat-runtime'
 import { $compactingSessions, setSessionCompacting } from '@/store/compaction'
-import { $composerAttachments, $composerDraft, type ComposerAttachment, setComposerDraft } from '@/store/composer'
+import { $composerAttachments, type ComposerAttachment } from '@/store/composer'
 import { $queuedPromptsBySession, getQueuedPrompts } from '@/store/composer-queue'
 import { $confirmRequest, settleConfirm } from '@/store/confirm'
 import { requestGatewayForAgent } from '@/store/gateway'
@@ -32,7 +32,7 @@ import {
 import { dropSessionState, publishSessionState } from '@/store/session-states'
 import { $wakeWord, resetWakeWordState } from '@/store/wake-word'
 
-import { actRender, Harness, type HarnessHandle, RUNTIME_SESSION_ID, sessionInfo } from './index-test-utils'
+import { actRender, capturePrefill, Harness, type HarnessHandle, releasePrefillCapturers, RUNTIME_SESSION_ID, sessionInfo } from './index-test-utils'
 import { clearStoredJournal, storedJournal } from './prepared-submissions-test-utils'
 import { clearSingleFlightSessionResumeState } from './single-flight-resume'
 import { SESSION_COMPRESS_TIMEOUT_MS } from './slash'
@@ -1514,6 +1514,7 @@ describe('usePromptActions exec fallback error reporting', () => {
 
 describe('usePromptActions slash.exec dispatch payloads', () => {
   afterEach(() => {
+    releasePrefillCapturers()
     cleanup()
     $busy.set(false)
     vi.restoreAllMocks()
@@ -2138,8 +2139,6 @@ describe('usePromptActions slash.exec dispatch payloads', () => {
   })
 
   it('restores a degenerate slash payload to the composer instead of losing it', async () => {
-    setComposerDraft('')
-
     const requestGateway = vi.fn(async () => ({}) as never)
 
     let handle: HarnessHandle | null = null
@@ -2149,10 +2148,12 @@ describe('usePromptActions slash.exec dispatch payloads', () => {
 
     // `/ text` parses to an empty command name on every surface (CLI parity).
     // The composer draft was already cleared on submit and slash input never
-    // enters the Up-arrow history ring, so the payload must be handed back.
+    // enters the Up-arrow history ring, so the payload must be handed back. No
+    // session identity exists yet, so the restore targets the active composer.
+    const prefill = capturePrefill([], true)
     await handle!.submitText('/ pasted context that must not vanish')
 
-    expect($composerDraft.get()).toBe('/ pasted context that must not vanish')
+    expect(prefill).toEqual(['/ pasted context that must not vanish'])
     expect(requestGateway).not.toHaveBeenCalledWith('slash.exec', expect.anything())
   })
 })

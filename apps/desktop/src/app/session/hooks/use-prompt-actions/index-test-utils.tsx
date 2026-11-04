@@ -4,6 +4,7 @@ import { act, render } from '@testing-library/react'
 import type { MutableRefObject } from 'react'
 import { useEffect, useRef } from 'react'
 
+import { onComposerDraftRequests } from '@/app/chat/composer/focus'
 import type { ClientSessionState } from '@/app/types'
 import { createClientSessionState } from '@/lib/chat-runtime'
 import type { SessionInfo } from '@/types/hermes'
@@ -22,6 +23,39 @@ import { usePromptActions } from '.'
 // the stored sessions table and 404s on a runtime id. session.title accepts
 // the runtime id directly.
 export const RUNTIME_SESSION_ID = 'rt-abc123'
+
+// Prefill assertions ride the draft bus (`onComposerDraftRequests`): the handlers under test
+// deliver a prefill with `requestComposerPrefill`, which never writes `$composerDraft` — that
+// store has no mounted reader. The Harness mounts no composer, so a test mounts a capturer for
+// the session (or the active composer, for a payload with no session identity) and asserts the
+// captured writes. Capturers register here and every afterEach releases them, so a leaked one
+// cannot answer the next test's event.
+const prefillCapturers: (() => void)[] = []
+
+export function capturePrefill(ids: string[], active = false): string[] {
+  const written: string[] = []
+  prefillCapturers.push(
+    onComposerDraftRequests(
+      { getIds: () => ids, isActive: () => active },
+      {
+        read: () => '',
+        write: text => {
+          written.push(text)
+
+          return true
+        }
+      }
+    )
+  )
+
+  return written
+}
+
+export function releasePrefillCapturers() {
+  for (const off of prefillCapturers.splice(0)) {
+    off()
+  }
+}
 
 /** Harness props spell "use the fixture runtime id" as undefined (null stays null). */
 const orRuntimeDefault = (id: null | string | undefined): null | string => (id === undefined ? RUNTIME_SESSION_ID : id)
