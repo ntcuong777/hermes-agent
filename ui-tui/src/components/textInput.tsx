@@ -2,7 +2,7 @@ import type { InputEvent, Key } from '@hermes/ink'
 import * as Ink from '@hermes/ink'
 import { type MutableRefObject, useEffect, useMemo, useRef, useState } from 'react'
 
-import { setInputSelection } from '../app/inputSelectionStore.js'
+import { setInputSelection, takeInputCursor } from '../app/inputSelectionStore.js'
 import { highlightMask, highlightsStable } from '../domain/composerHighlights.js'
 import { readClipboardText, writeClipboardText } from '../lib/clipboard.js'
 import { cursorLayout, offsetFromPosition } from '../lib/inputMetrics.js'
@@ -985,9 +985,11 @@ export function TextInput({
     }
 
     pendingParentValue.current = null
-    // The parent may say where the caret goes for this value (a completion spliced in mid-prompt); else the end.
-    const asked = caretRef?.current?.value === value ? caretRef.current.cursor : value.length
-    const at = Math.max(0, Math.min(value.length, asked))
+    // Where the caret goes for this value: a cursor the owner placed (a paste opened or folded), else one the
+    // parent asked for (a completion spliced in mid-prompt), else the end. The placed one is consumed either way.
+    const placed = takeInputCursor(value)
+    const asked = caretRef?.current?.value === value ? caretRef.current.cursor : undefined
+    const at = Math.max(0, Math.min(value.length, placed ?? asked ?? value.length))
     setCur(at)
     setSel(null)
     curRef.current = at
@@ -1070,6 +1072,7 @@ export function TextInput({
           commit(vRef.current.slice(0, current.start) + vRef.current.slice(current.end), current.start)
         })
       },
+      cursor: curRef.current,
       end: selected?.end ?? curRef.current,
       start: selected?.start ?? curRef.current,
       value: vRef.current
@@ -1951,7 +1954,7 @@ export const shouldPassThroughToGlobalHandler = (
   (key.ctrl && input === 'c') ||
   (key.ctrl && input === 'x') ||
   (key.ctrl && input === 'o') ||
-  (key.ctrl && (input === 'r' || input === 't')) ||
+  (key.ctrl && (input === 'p' || input === 'r' || input === 't')) ||
   key.tab ||
   (key.shift && key.tab) ||
   key.pageUp ||
