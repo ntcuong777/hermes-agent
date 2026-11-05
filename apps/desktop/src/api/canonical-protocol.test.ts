@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest'
 
-import { CanonicalDesktopProtocol } from './canonical-protocol'
+import { CanonicalDesktopProtocol, canonicalPromptParams } from './canonical-protocol'
 
 test('sibling routes survive every rebuilt control and compression follow-up', async () => {
   const protocol = new CanonicalDesktopProtocol()
@@ -273,4 +273,13 @@ test('mints v4 create, submit and mutation ids where crypto.randomUUID is absent
   } finally {
     vi.unstubAllGlobals()
   }
+})
+
+test('an approval card keeps its MCP tool-call context on live events and replayed snapshots', () => {
+  const mcp = { server: 'srv', tool: 'write', tool_description: 'writes', arguments: '{}' }
+  const prompt = { prompt_id: 'p', command: 'c', description: 'd', choices: ['once', 'deny'], mcp }
+
+  expect(canonicalPromptParams('approval', 's', prompt)).toMatchObject({ request_id: 'p', mcp })
+  // No MCP context stays absent, never an invented empty object.
+  expect(canonicalPromptParams('approval', 's', { prompt_id: 'p' }).mcp).toBeUndefined()
 })
