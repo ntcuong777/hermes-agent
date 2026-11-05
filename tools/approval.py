@@ -21,7 +21,7 @@ from typing import Optional
 
 from utils import env_var_enabled, is_truthy_value
 from agent.i18n import t
-from tools import approval_context
+from tools import approval_context, approval_idle
 from tools.approval_context import (
     _get_session_platform, _is_cron_approval_context,
     _is_gateway_approval_context, _is_interactive_cli, _is_single_query_approval_context,
@@ -136,8 +136,15 @@ def unregister_gateway_notify(session_key: str) -> None:
     they don't hang forever (agent run finished or interrupted)."""
     with _lock:
         _gateway_notify_cbs.pop(session_key, None)
-        for entry in _gateway_queues.pop(session_key, []):
-            entry.event.set()
+        queue = _gateway_queues.pop(session_key, [])
+        # An out-of-turn (idle) ask belongs to a background child, not to the turn that just ended: it
+        # keeps waiting for its answer (tools/approval_idle.py).
+        waiting = [entry for entry in queue if entry.data.get("idle")]
+        if waiting:
+            _gateway_queues[session_key] = waiting
+        for entry in queue:
+            if entry not in waiting:
+                entry.event.set()
 
 
 def resolve_gateway_approval(session_key: str, choice: str,
@@ -883,6 +890,11 @@ def _human_decision(spec: _GateSpec, *, command: str, description: str,
         display_command = redact_approval_display(command)
         display_description = redact_approval_display(description)
         notify_cb = _gateway_notify_cb(session_key)
+        idle_lane = False
+        if notify_cb is None and approval_idle.idle_ask_allowed():
+            # Opt-in only (a background subagent's ask after its parent's turn ended).
+            notify_cb = approval_idle.idle_notify_for(session_key)
+            idle_lane = notify_cb is not None
         if notify_cb is not None:
             # Smart DENY overrides are one-operation decisions, so the UI must not offer a
             # permanent or session scope.
@@ -894,6 +906,8 @@ def _human_decision(spec: _GateSpec, *, command: str, description: str,
             }
             if smart_denied:
                 data["smart_denied"] = True
+            if idle_lane:
+                data["idle"] = True
             decision = _await_gateway_decision(session_key, notify_cb, data, surface="gateway")
             if decision.get("notify_failed"):
                 return _denied(spec.notify_failed, pattern_key=pattern_key,

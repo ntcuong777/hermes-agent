@@ -14,6 +14,9 @@ class PendingControls:
         self.events = events
         self.pending = {}
         self.remote_responders = {}
+        # Prompt ids of out-of-turn asks (a background subagent's, tools/approval_idle.py): not bound to a
+        # running turn, so they outlive a generation change and answer without a running claim.
+        self.idle = set()
 
     def register(self, session_id, route, generation, data, *, timeout_s=None):
         from gateway.run import _redact_approval_command
@@ -38,6 +41,8 @@ class PendingControls:
             if timeout_s is not None:
                 prompt['timeout_s'] = timeout_s
             self.pending[prompt_id] = (route, prompt)
+            if data.get('idle') is True:
+                self.idle.add(prompt_id)
             self.events.publish(session_id, prompt, event_type='approval.request')
 
     def register_clarify(self, session_id, generation, entry, *, timeout_s=None):
@@ -59,8 +64,17 @@ class PendingControls:
                 active = (prompt_id in self.remote_responders or
                           (not route.event.is_set() if prompt['kind'] == 'clarify' else
                            any(p['request_id'] == prompt_id for p in list_gateway_approvals(route))))
+                idle = prompt_id in self.idle
+                if idle and active:
+                    # Follows the session forward: a turn starting re-stamps and re-shows the card (a
+                    # viewer holding an older generation is told); an idle read leaves it as it is.
+                    if generation is not None and generation > prompt['execution_generation']:
+                        prompt['execution_generation'] = generation
+                        self.events.publish(session_id, prompt, event_type='approval.request')
+                    continue
                 if prompt['execution_generation'] != generation or not active:
                     del self.pending[prompt_id]
+                    self.idle.discard(prompt_id)
                     self.remote_responders.pop(prompt_id, None)
                     self.events.publish(session_id, {'prompt_id': prompt_id,
                         'execution_generation': prompt['execution_generation']}, event_type=prompt['kind'] + '.settled')
@@ -68,6 +82,9 @@ class PendingControls:
 
     def respond(self, session_id, generation, prompt_id, response, *, kind="approval"):
         with self.events.lock:
+            held = self.pending.get(prompt_id)
+            if prompt_id in self.idle and held is not None and held[1]['execution_generation'] != generation:
+                raise RuntimeStoreError('stale_generation')  # an idle card answers only at its own stamp
             self.snapshot(session_id, generation)
             entry = self.pending.get(prompt_id)
             if entry is None:
@@ -84,6 +101,7 @@ class PendingControls:
                 self.remote_responders[prompt_id](kind, prompt_id, response[field])
                 del self.remote_responders[prompt_id]
                 del self.pending[prompt_id]
+                self.idle.discard(prompt_id)
                 self.events.publish(session_id, {'prompt_id': prompt_id, 'execution_generation': generation},
                                     event_type=kind + '.settled')
                 return {'status': 'resolved', 'prompt_id': prompt_id}

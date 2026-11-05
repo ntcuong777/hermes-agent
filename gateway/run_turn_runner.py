@@ -972,6 +972,19 @@ class TurnRunner(GatewayTurnProgressMixin, GatewaySessionAgentMixin):
             logger.warning("Native image attachment failed, falling back to text: %s", exc)
         return ctx.message
 
+    def _register_idle_approval_lane(self, session_key: str) -> None:
+        """Leave the session an out-of-turn approval lane that outlives this turn (tools/approval_idle.py),
+        so a background subagent's ask still reaches the attached viewers once the turn is over. Replaced
+        by each turn; nothing else (tools, cron, hooks) reaches it unless it opts in with ``idle_ask()``."""
+        if self._approval_owner is None:
+            return
+        from gateway import local_viewer_events
+        from gateway.session_idle_approval import IdleApprovalNotifier
+        from tools.approval_idle import register_idle_notify
+        authority, owner_id, _generation = self._approval_owner
+        register_idle_notify(session_key, IdleApprovalNotifier(
+            authority, owner_id, session_key, timeout_s=local_viewer_events.prompt_timeout_s(self, "approval")))
+
     def _run_conversation_with_approval(self, agent, agent_history, observed_group_context,
                                         persist_user_message_override, persist_user_timestamp_override):
         """Run the turn with the per-session gateway approval callback registered: dangerous-command
@@ -983,6 +996,7 @@ class TurnRunner(GatewayTurnProgressMixin, GatewaySessionAgentMixin):
         session_key = ctx.session_key or ""
         token = set_current_session_key(session_key)
         register_gateway_notify(session_key, self._approval_notify_sync)
+        self._register_idle_approval_lane(session_key)
         try:
             api_message = _wrap_current_message_with_observed_context(self._native_image_run_message(), observed_group_context)
             kwargs = {"conversation_history": agent_history, "task_id": ctx.session_id}

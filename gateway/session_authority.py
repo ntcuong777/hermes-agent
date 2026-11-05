@@ -1051,6 +1051,22 @@ class SessionAuthority:
             self.check_approval_generation(session_id, generation)
             live.controls.register(session_id, route, generation, data, timeout_s=timeout_s)
 
+    def register_idle_approval(self, session_id, route, data, *, timeout_s=None):
+        """Show an out-of-turn ask (a background subagent's, tools/approval_idle.py) to the session's viewers.
+        Stamped with the session's latest generation; it is not bound to a running claim, so it survives the
+        turn boundary (see PendingControls). Raises when the session is gone or nobody is attached, which
+        the ask turns into a refusal rather than a prompt nobody sees."""
+        live = self.sessions[session_id]
+        with live.event_stream.lock:
+            if not live.subscribers:
+                raise RuntimeStoreError("no_viewer")
+            generation = self._handle(SessionRef(self.profile_id, session_id)).execution_generation
+            live.controls.register(session_id, route, generation, {**data, "idle": True}, timeout_s=timeout_s)
+
+    def has_viewer(self, session_id):
+        live = self.sessions.get(session_id)
+        return bool(live is not None and live.subscribers)
+
     def register_clarify(self, session_id, generation, entry, *, timeout_s=None):
         live = self.sessions[session_id]
         with live.event_stream.lock:
@@ -1068,9 +1084,11 @@ class SessionAuthority:
                 raise RuntimeStoreError("permission_denied")
             if type(generation) is not int:
                 raise RuntimeStoreError("stale_generation")
-            self.check_approval_generation(ref.session_id, generation)
             if not isinstance(prompt_id, str) or not prompt_id:
                 raise RuntimeStoreError("invalid_params")
+            # An out-of-turn card has no running claim to match; controls.respond holds it to its own stamp.
+            if prompt_id not in live.controls.idle:
+                self.check_approval_generation(ref.session_id, generation)
             return live.controls.respond(ref.session_id, generation, prompt_id, response, kind=kind)
 
     async def _claim_next(self, ref, live):
