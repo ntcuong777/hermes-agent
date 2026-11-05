@@ -42,7 +42,7 @@ def _settle(platform, transformed):
     token = execution_result.set(captured)
     try:
         turn = TurnRunner(_gateway_runner(), ctx)
-        turn._approval_owner = (SimpleNamespace(sessions={"sid": SimpleNamespace(tool_progress_mode=None)},
+        turn._approval_owner = (SimpleNamespace(sessions={"sid": SimpleNamespace(tool_progress_mode=None, controls=SimpleNamespace(snapshot=lambda *a: ()))},
                                                 profile_id="p", adopt_agent=lambda *a: None), "sid", 1)
         turn.run_sync()
     finally:

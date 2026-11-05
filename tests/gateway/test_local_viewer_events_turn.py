@@ -324,7 +324,7 @@ def test_completion_payload_forwards_billing_failure_and_response_flags():
                     'warning': 'History changed during this turn'}
 
     runner = _gateway_runner()
-    live = SimpleNamespace(tool_progress_mode=None)
+    live = SimpleNamespace(tool_progress_mode=None, controls=SimpleNamespace(snapshot=lambda *a: ()))
     authority = SimpleNamespace(sessions={'sid': live}, profile_id='p', adopt_agent=lambda *a: None)
     ctx = TurnContext(
         source=SessionSource(platform=Platform.LOCAL, chat_id='sid', user_id='u'),

@@ -41,7 +41,7 @@ def _authority_turn(platform, failure, identity=None):
     token = execution_result.set(captured)
     try:
         turn = TurnRunner(_gateway_runner(), ctx)
-        turn._approval_owner = (SimpleNamespace(sessions={'sid': SimpleNamespace(tool_progress_mode=None)},
+        turn._approval_owner = (SimpleNamespace(sessions={'sid': SimpleNamespace(tool_progress_mode=None, controls=SimpleNamespace(snapshot=lambda *a: ()))},
                                                 profile_id='p', adopt_agent=lambda *a: None), 'sid', 1)
         delivered = turn.run_sync()
     finally:

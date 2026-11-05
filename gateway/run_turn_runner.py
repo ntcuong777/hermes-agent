@@ -981,9 +981,12 @@ class TurnRunner(GatewayTurnProgressMixin, GatewaySessionAgentMixin):
         from gateway import local_viewer_events
         from gateway.session_idle_approval import IdleApprovalNotifier
         from tools.approval_idle import register_idle_notify
-        authority, owner_id, _generation = self._approval_owner
+        authority, owner_id, generation = self._approval_owner
         register_idle_notify(session_key, IdleApprovalNotifier(
             authority, owner_id, session_key, timeout_s=local_viewer_events.prompt_timeout_s(self, "approval")))
+        # An idle card waiting from before this turn moves onto the turn's generation now, and is shown
+        # again: Desktop only answers a card stamped with the session's current generation.
+        authority.sessions[owner_id].controls.snapshot(owner_id, generation)
 
     def _run_conversation_with_approval(self, agent, agent_history, observed_group_context,
                                         persist_user_message_override, persist_user_timestamp_override):

@@ -116,7 +116,7 @@ def test_an_empty_reply_still_carries_the_turns_reasoning_to_local_viewers():
     token = execution_result.set(captured)
     try:
         turn = TurnRunner(_gateway_runner(), ctx)
-        authority = SimpleNamespace(sessions={'sid': SimpleNamespace(tool_progress_mode=None)}, profile_id='p',
+        authority = SimpleNamespace(sessions={'sid': SimpleNamespace(tool_progress_mode=None, controls=SimpleNamespace(snapshot=lambda *a: ()))}, profile_id='p',
                                     adopt_agent=lambda *a: None)
         turn._approval_owner = (authority, 'sid', 1)
         delivered = turn.run_sync()
