@@ -13,6 +13,7 @@ import {
   clearApprovalRequest,
   clearSecretRequest,
   clearSudoRequest,
+  parseApprovalMcp,
   receiveApprovalRequest,
   replayPendingApproval,
   sessionApprovalRequests,
@@ -47,6 +48,34 @@ describe('approval prompt store', () => {
     // … but surfaces once the user switches to the session that raised it.
     $activeSessionId.set('s2')
     expect($approvalRequest.get()?.sessionId).toBe('s2')
+  })
+
+  it('parses the structured MCP context; missing server or tool drops it', () => {
+    expect(
+      parseApprovalMcp({ server: 'linear', tool: 'create_issue', tool_description: ' Create ', arguments: '{}' })
+    ).toEqual({ server: 'linear', tool: 'create_issue', toolDescription: 'Create', arguments: '{}' })
+    expect(parseApprovalMcp({ server: 'linear' })).toBeUndefined()
+    expect(parseApprovalMcp({ tool: 'create_issue', tool_description: 'd' })).toBeUndefined()
+    expect(parseApprovalMcp(null)).toBeUndefined()
+  })
+
+  it('keeps a parked MCP context on the card and through a pending replay', async () => {
+    const mcp = { server: 'linear', tool: 'create_issue', toolDescription: 'Create an issue', arguments: '{}' }
+    setApprovalRequest({ command: 'call', description: 'd', mcp, requestId: 'r1', sessionId: 's1' })
+    expect($approvalRequest.get()?.mcp).toEqual(mcp)
+
+    // The `approval.pending` restore path feeds the same parser.
+    const gateway = {
+      request: async () => ({
+        approvals: [
+          { request_id: 'r2', command: 'call', description: 'd', mcp: { server: 's', tool: 't', arguments: '[]' } }
+        ]
+      })
+    }
+
+    await replayPendingApproval(gateway as never, 's1')
+    const queued = sessionApprovalRequests('s1').get().find(item => item.requestId === 'r2')
+    expect(queued?.mcp).toEqual({ server: 's', tool: 't', toolDescription: null, arguments: '[]' })
   })
 
   it('clears the active session prompt', () => {

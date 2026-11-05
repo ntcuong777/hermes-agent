@@ -296,7 +296,7 @@ def _remembered_consent(session_key: str, choice, remember_key: str | None, unre
 def request_elicitation_consent(message: str, description: str, *,
                                 timeout_seconds: int | None = None,
                                 surface: str = "mcp-elicitation", title: str = "Confirm this action?",
-                                remember_key: str | None = None) -> str:
+                                remember_key: str | None = None, context: dict | None = None) -> str:
     """Route an MCP elicitation request to the surface owning the active session:
     gateway sessions through ``_await_gateway_decision``, CLI/TUI through
     ``prompt_dangerous_approval``. Always fails closed: a missing notify_cb in a
@@ -306,7 +306,11 @@ def request_elicitation_consent(message: str, description: str, *,
 
     Without *remember_key* the consent covers one call, so every surface offers only
     once/deny. With it, the session and always choices are offered and recorded under
-    that approval key; the caller checks ``tools.approval.is_approved`` before asking."""
+    that approval key; the caller checks ``tools.approval.is_approved`` before asking.
+
+    *context* rides the gateway approval payload as ``mcp`` so surfaces can render a
+    structured MCP tool-call card (server, tool, tool description, redacted arguments)
+    instead of parsing *message*; the CLI branch ignores it (fixed panel callback)."""
     from tools import approval as _a
     try:
         session_key = _ctx.get_current_session_key()
@@ -335,11 +339,13 @@ def request_elicitation_consent(message: str, description: str, *,
                            "notify_cb is registered — failing closed", session_key)
             return "decline"
         try:
-            decision = _gw._await_gateway_decision(
-                session_key, notify_cb, {"command": message, "description": description,
-                                         "pattern_key": "mcp_elicitation",
-                                         "pattern_keys": ["mcp_elicitation"],
-                                         "allow_session": scoped, "allow_permanent": scoped}, surface=surface)
+            data = {"command": message, "description": description,
+                    "pattern_key": "mcp_elicitation",
+                    "pattern_keys": ["mcp_elicitation"],
+                    "allow_session": scoped, "allow_permanent": scoped}
+            if context:
+                data["mcp"] = context
+            decision = _gw._await_gateway_decision(session_key, notify_cb, data, surface=surface)
         except Exception as exc:
             logger.error("Elicitation gateway dispatch failed: %s", exc, exc_info=True)
             return "decline"

@@ -9,6 +9,10 @@ export const overlaysEn = {
       // "above" was never true: the tool row above is a one-line preview. execute_code names a file with the whole
       // script on this panel's first line (tools/approval.py, P21).
       moreLines: (count: number) => `… +${count} more line${count === 1 ? '' : 's'} (press v for the full text)`,
+      // MCP tool-call approvals carry structured context (server/tool/args); the panel titles
+      // itself with the call instead of the generic dangerous-command header.
+      mcpTitle: (server: string, tool: string) => `MCP ${server}/${tool}`,
+      arguments: 'Arguments:',
       once: 'Allow once',
       session: 'Allow this session',
       always: 'Always allow',

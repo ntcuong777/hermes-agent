@@ -74,8 +74,11 @@ def _trust_granted(server_name: str, tool_name: str) -> bool:
 
 
 # Keeps the whole trust-gate card inside Discord's 2,000-character message cap (the tightest button
-# surface), so the truncation marker is never cut off by the adapter's own fit.
+# surface), so the truncation marker is never cut off by the adapter's own fit. The structured MCP
+# context copy (rendered by scrollable surfaces: TUI/Desktop approval cards) gets more room.
 _TRUST_GATE_ARGUMENTS_MAX_CHARS = 1_200
+_MCP_CONTEXT_ARGUMENTS_MAX_CHARS = 4_000
+_MCP_TOOL_DESCRIPTION_MAX_CHARS = 400
 _TRUST_GATE_ARGUMENTS_TRUNCATION_MARKER = "\n... [arguments truncated]"
 
 
@@ -96,28 +99,62 @@ def _mask_secret_fields(value: Any) -> Any:
     return value
 
 
-def _format_trust_gate_arguments(args: dict) -> str:
-    """Redacted, bounded JSON of the call's arguments for the approval card. Plain text, no
-    fence: every surface already renders the prompt inside a code block."""
+def _escape_display_controls(text: str) -> str:
+    """Bidi overrides, invisible format characters and the C1/DEL controls JSON leaves raw could
+    make the card show something other than what the server receives; render them as escapes."""
     import unicodedata
+    return "".join(ch.encode("unicode_escape").decode()
+                   if ch != "\n" and unicodedata.category(ch) in ("Cc", "Cf") else ch for ch in text)
+
+
+def _sanitize_tool_description(description: Any) -> str:
+    """Bounded, sanitized tool description for the approval card's MCP context. Server-supplied
+    text on a display boundary, same treatment as the call arguments: tags stripped, controls
+    escaped, secrets redacted (force: even with security.redact_secrets off)."""
     from agent.redact import redact_sensitive_text
 
+    text = _escape_display_controls(strip_unicode_tags(str(description or "").strip()))
+    return redact_sensitive_text(text, force=True)[:_MCP_TOOL_DESCRIPTION_MAX_CHARS]
+
+
+def _format_trust_gate_arguments(args: dict, max_chars: Optional[int] = None) -> str:
+    """Redacted, bounded JSON of the call's arguments for the approval card. Plain text, no
+    fence: every surface already renders the prompt inside a code block."""
+    from agent.redact import redact_sensitive_text
+
+    limit = max_chars or _TRUST_GATE_ARGUMENTS_MAX_CHARS
     rendered = json.dumps(_mask_secret_fields(args), ensure_ascii=False, indent=2, default=str)
     # Scan and redact only a window well past the cap: a multi-megabyte payload (a file write) would
     # otherwise hold the prompt back for seconds.
-    window = 4 * _TRUST_GATE_ARGUMENTS_MAX_CHARS
+    window = 4 * limit
     cut, rendered = len(rendered) > window, rendered[:window]
-    # Bidi overrides, invisible format characters and the C1/DEL controls JSON leaves raw could make the
-    # card show something other than what the server receives; render them as escapes.
-    rendered = "".join(ch.encode("unicode_escape").decode()
-                       if ch != "\n" and unicodedata.category(ch) in ("Cc", "Cf") else ch for ch in rendered)
+    rendered = _escape_display_controls(rendered)
     # force: the approval prompt is a display boundary even with security.redact_secrets off. The CLI
     # prints it as-is. Redact before truncating so a cut cannot split a secret past its pattern.
     rendered = redact_sensitive_text(rendered, force=True)
-    if cut or len(rendered) > _TRUST_GATE_ARGUMENTS_MAX_CHARS:
-        keep = _TRUST_GATE_ARGUMENTS_MAX_CHARS - len(_TRUST_GATE_ARGUMENTS_TRUNCATION_MARKER)
+    if cut or len(rendered) > limit:
+        keep = limit - len(_TRUST_GATE_ARGUMENTS_TRUNCATION_MARKER)
         rendered = rendered[:keep].rstrip() + _TRUST_GATE_ARGUMENTS_TRUNCATION_MARKER
     return rendered
+
+
+def _tool_description_for(server_name: str, tool_name: str) -> str:
+    """The sanitized discovery-time description for one tool ('' when unknown); feeds the
+    approval card's MCP context."""
+    from tools.mcp_tool_scope import _resolve_server_key
+    return _core._tool_descriptions.get(_resolve_server_key(server_name), {}).get(tool_name, "")
+
+
+def _approval_mcp_context(server_name: str, tool_name: str, args: Optional[dict]) -> dict:
+    """Structured detail for an MCP approval card — server, tool, what the tool does, and the
+    call's redacted arguments — so surfaces render a proper tool-call card instead of parsing
+    the prompt text. Empty pieces are omitted, not sent null."""
+    context: dict = {"server": server_name, "tool": tool_name}
+    if description := _tool_description_for(server_name, tool_name):
+        context["tool_description"] = description
+    if args:
+        context["arguments"] = _format_trust_gate_arguments(args, max_chars=_MCP_CONTEXT_ARGUMENTS_MAX_CHARS)
+    return context
 
 
 def _trust_gate_check(server_name: str, tool_name: str, booked: Optional[list] = None,
@@ -163,6 +200,7 @@ def _ask_for_call(server_name: str, tool_name: str, charge, booked: Optional[lis
                 return None
             over = True
     extra = charge.lines(spent) if charge is not None else []
+    mcp_context = _approval_mcp_context(server_name, tool_name, args)
     if gated:
         head = f"MCP tool '{tool_name}' on UNTRUSTED server '{server_name}' wants to run."
         tail = "This tool is write-capable (no readOnlyHint=true annotation) and may modify external state."
@@ -180,6 +218,8 @@ def _ask_for_call(server_name: str, tool_name: str, charge, booked: Optional[lis
     else:
         message = " ".join([f"MCP tool '{tool_name}' on server '{server_name}' would take this chat past its "
                             f"spend limit.", *extra])
+        if args:  # the spend-limit answer is per call: the user must see exactly what they are paying for
+            message += f"\n\nArguments:\n{_format_trust_gate_arguments(args)}"
         description = (f"Server '{server_name}' declares a spend limit per chat. Approve to run '{tool_name}' "
                        f"once (every further paid call in this chat asks again), or deny to block it.")
         title = f"MCP server '{server_name}' spend limit"
@@ -187,7 +227,7 @@ def _ask_for_call(server_name: str, tool_name: str, charge, booked: Optional[lis
     try:  # lazy: tools.approval routes the prompt to whichever surface owns the session
         from tools.approval_prompt import request_elicitation_consent
         answer = request_elicitation_consent(message, description, surface=f"mcp-trust/{server_name}", title=title,
-                                            remember_key=remember_key)
+                                            remember_key=remember_key, context=mcp_context)
     except Exception as exc:
         logger.error("MCP trust gate: approval check failed for %s.%s: %s", server_name, tool_name, exc, exc_info=True)
         if over and charge is not None:

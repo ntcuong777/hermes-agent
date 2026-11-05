@@ -1754,6 +1754,10 @@ class FeishuAdapter(BasePlatformAdapter):
     _EA_HEADER = ""
     _EA_CMD_BUDGET = 3000
 
+    def _ea_mcp_header(self, server: str, tool: str) -> str:
+        # As _EA_HEADER: the interactive card carries the title, so the text core starts at the fence.
+        return ""
+
     # Resolved per call (not at class-body time) so the active language applies.
     @property
     def _EA_REASON_LABEL(self) -> str:

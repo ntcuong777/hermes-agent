@@ -85,6 +85,9 @@ def _record_tool_trust_metadata(server_name: str, config: dict, tools: list[Any]
         _record_cost_policy(server_name, config, key)
         hints = _core._tool_read_only_hints.setdefault(key, {})
         hints.update({t.name: _annotation_read_only_hint(t) for t in tools if getattr(t, "name", None)})
+        descriptions = _core._tool_descriptions.setdefault(key, {})
+        descriptions.update({t.name: _handlers._sanitize_tool_description(getattr(t, "description", None))
+                             for t in tools if getattr(t, "name", None)})
 
 
 def _warn_unknown_cost_keys(server_name: str, key, tool_names: list[str]) -> None:

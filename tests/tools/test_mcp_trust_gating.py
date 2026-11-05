@@ -75,7 +75,8 @@ def fake_session():
 def _clean_trust_state():
     """Isolate the module-level trust metadata between tests."""
     with patch.dict(mcp_tool._server_trust_levels, {}, clear=True), \
-         patch.dict(mcp_tool._tool_read_only_hints, {}, clear=True):
+         patch.dict(mcp_tool._tool_read_only_hints, {}, clear=True), \
+         patch.dict(mcp_tool._tool_descriptions, {}, clear=True):
         yield
 
 
@@ -141,6 +142,50 @@ class TestTrustGateAtCallTime:
         assert len(message) < 2_000
         fake_session.call_tool.assert_not_awaited()
 
+
+    def test_approval_carries_structured_mcp_context(self, fake_session, monkeypatch):
+        """The approval payload carries server/tool/tool-description/arguments as structure, so
+        surfaces render a tool-call card instead of parsing the message; the context copy gets
+        the wider (4k) arguments bound and never leaks secrets."""
+        import agent.redact
+        monkeypatch.setattr(agent.redact, "_REDACT_ENABLED", False)
+        _set_trust("srv", "untrusted")
+        mcp_tool._tool_descriptions.setdefault("srv", {})["deploy"] = "Deploy the service to production"
+        handler = _mcp_handlers._make_tool_handler("srv", "deploy", 30.0)
+        args = {"env": "prod", "api_key": "sk-supersecretcredential123456"}
+
+        with patch(
+            "tools.approval_prompt.request_elicitation_consent",
+            return_value="decline",
+        ) as consent:
+            handler(args)
+
+        context = consent.call_args.kwargs["context"]
+        assert context["server"] == "srv"
+        assert context["tool"] == "deploy"
+        assert context["tool_description"] == "Deploy the service to production"
+        assert '"env": "prod"' in context["arguments"]
+        assert "sk-supersecretcredential123456" not in context["arguments"]
+        # The message's embedded copy stays messaging-cap sized; the structured copy is roomier.
+        assert "truncated" in _mcp_handlers._format_trust_gate_arguments({"blob": "x" * 5_000})
+        assert len(_mcp_handlers._format_trust_gate_arguments({"blob": "x" * 5_000})) <= 1_200
+        assert len(_mcp_handlers._format_trust_gate_arguments(
+            {"blob": "x" * 5_000}, max_chars=_mcp_handlers._MCP_CONTEXT_ARGUMENTS_MAX_CHARS)) == 4_000
+
+    def test_registration_captures_sanitized_tool_descriptions(self):
+        """Discovery records a bounded, sanitized description per tool: control characters are
+        escaped and secret-shaped text redacted before it can reach an approval card."""
+        _mcp_registration._record_tool_trust_metadata(
+            "srv", {"trust": "untrusted"},
+            [SimpleNamespace(name="deploy", description="Deploy it\u202e now",
+                             annotations=None),
+             SimpleNamespace(name="probe", description="sk-supersecretcredential123456",
+                             annotations=None)])
+        recorded = mcp_tool._tool_descriptions["srv"]
+        assert recorded["deploy"].startswith("Deploy it")
+        assert "\u202e" not in recorded["deploy"]
+        assert "sk-supersecretcredential123456" not in recorded["probe"]
+        assert len(recorded["deploy"]) <= _mcp_handlers._MCP_TOOL_DESCRIPTION_MAX_CHARS
 
     def test_denied_approval_blocks_rpc(self, fake_session):
         """'decline' blocks the call — the RPC must never fire."""

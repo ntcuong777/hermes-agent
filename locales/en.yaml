@@ -619,6 +619,7 @@ gateway:
     unknown_value: "unknown"
   exec_approval:
     header: "Hermes wants to run a command that needs your OK"
+    mcp_header: "MCP server '{server}' wants to run tool '{tool}'"
     reason_label: "Why it was flagged"
     default_reason: "dangerous command"
     smart_deny_line: "Smart DENY: owner override applies to this one operation only."

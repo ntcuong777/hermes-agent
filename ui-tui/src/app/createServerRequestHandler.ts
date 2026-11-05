@@ -1,7 +1,7 @@
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 
 import { t } from '../i18n/runtime.js'
-import type { ClarifyQuestion } from '../types.js'
+import type { ApprovalMcpContext, ClarifyQuestion } from '../types.js'
 
 import { patchOverlayState } from './overlayStore.js'
 import { rememberServerRequest } from './serverRequestStore.js'
@@ -15,6 +15,26 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '')
 
 const strList = (v: unknown): null | string[] =>
   Array.isArray(v) && v.length > 0 ? v.filter((c): c is string => typeof c === 'string') : null
+
+/** Structured MCP context off an approval frame; null unless it names both server and tool. */
+export function approvalMcpContext(v: unknown): ApprovalMcpContext | undefined {
+  if (!v || typeof v !== 'object') {
+    return undefined
+  }
+
+  const raw = v as Record<string, unknown>
+  const server = str(raw.server).trim()
+  const tool = str(raw.tool).trim()
+
+  return server && tool
+    ? {
+        server,
+        tool,
+        tool_description: str(raw.tool_description).trim() || null,
+        arguments: str(raw.arguments).trim() || null
+      }
+    : undefined
+}
 
 /**
  * The Ink TUI's answer to the backend's server→client requests
@@ -81,6 +101,7 @@ export function createServerRequestHandler(ctx: ServerRequestHandlerContext): (r
             choices: strList(p.choices) ?? undefined,
             command: str(p.command),
             description: str(p.description) || t('session.request.dangerousCommand'),
+            mcp: approvalMcpContext(p.mcp),
             requestId: request.id,
             smartDenied: p.smart_denied === true
           }

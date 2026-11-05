@@ -70,6 +70,24 @@ def test_consent_descriptions_are_sanitized_on_tui_and_api_egress():
         assert "\u202e" not in payload["description"] and _TAIL in payload["description"][:200]
 
 
+def test_mcp_context_is_redacted_on_every_approval_egress():
+    """The structured MCP context (server/tool/description/arguments) crosses the same display
+    boundaries as the command: every egress re-redacts its text, secrets and hidden characters."""
+    from gateway.platforms.api_server import _approval_request_event
+    from tui_gateway.server import _approval_request_payload
+
+    data = {"command": "call", "mcp": {
+        "server": "srv", "tool": "deploy",
+        "tool_description": "Deploy\u202e now",
+        "arguments": '{\n  "token": "sk-supersecretcredential123456"\n}'}}
+    for payload in (_approval_request_payload(data), _approval_request_event("run1", data)):
+        mcp = payload["mcp"]
+        assert mcp["server"] == "srv" and mcp["tool"] == "deploy"
+        assert "\u202e" not in mcp["tool_description"]
+        assert "sk-supersecretcredential123456" not in mcp["arguments"]
+        assert '"token"' in mcp["arguments"]
+
+
 def test_first_render_surfaces_get_the_display_copy_while_values_stay_raw(monkeypatch):
     import json
     from types import SimpleNamespace

@@ -9,6 +9,7 @@ from pydantic import RootModel
 from .base import JsonValue, Params, Result
 from .common import ProfileParams, TranscriptMessage
 from .connectors_operation import ConnectionRequestPayload
+from .server_requests import ApprovalMcpContext
 from .sessions import OpenRequestEntry, TodoState
 from .canonical import AdmissionStatus, CanonicalSessionRef, PromptResponseResult, SessionInventoryFields
 from .registry import canonical_method
@@ -102,6 +103,9 @@ class CanonicalPendingPrompt(Result):
     choices: list[str]
     command: str | None = None
     description: str | None = None
+    # Structured MCP tool-call context on an approval (same shape as the legacy approval
+    # server request's ``mcp``); absent on command and clarify prompts.
+    mcp: ApprovalMcpContext | None = None
     edit: dict[str, JsonValue] | None = None
     question: str | None = None
     multi_select: bool | None = None

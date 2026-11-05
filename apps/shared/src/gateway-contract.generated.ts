@@ -5081,10 +5081,18 @@ export interface CanonicalPendingPrompt {
   choices: string[]
   command?: string | null
   description?: string | null
+  mcp?: ApprovalMcpContext | null
   edit?: Record<string, unknown> | null
   question?: string | null
   multi_select?: boolean | null
   timeout_s?: number | null
+}
+/** Structured MCP tool-call detail (``tools/mcp_tool_handlers.py::_approval_mcp_context``): renders a proper tool-call card instead of command chrome. Already redacted server-side. */
+export interface ApprovalMcpContext {
+  server: string
+  tool: string
+  tool_description?: string | null
+  arguments?: string | null
 }
 export interface CanonicalSnapshotInfo {
   provider?: string | null
@@ -5483,6 +5491,7 @@ export interface ApprovalRequestParams {
   allow_session?: boolean | null
   smart_denied?: boolean | null
   tool_name?: string | null
+  mcp?: ApprovalMcpContext | null
   gateway_session_id?: string | null
   [key: string]: unknown
 }

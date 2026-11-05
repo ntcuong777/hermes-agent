@@ -31,6 +31,9 @@ export interface CanonicalApprovalPrompt extends CanonicalSharedPrompt {
   choices?: string[]
   command?: string
   description?: string
+  /** Structured MCP tool-call context (server/tool/tool_description/arguments), when the
+   *  approval is one; mirrors the generated contract's `ApprovalMcpContext`. */
+  mcp?: null | Record<string, unknown>
   smart_denied?: boolean
 }
 

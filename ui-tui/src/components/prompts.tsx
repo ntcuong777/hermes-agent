@@ -140,6 +140,14 @@ export function approvalSplit(description: string): { detail: string[]; title: s
   return { detail, title }
 }
 
+/** An MCP tool-call approval's body: why it was flagged, what the tool does, then the call's
+ *  arguments — instead of the command text (which duplicates the same arguments, truncated). */
+export function approvalMcpBody(mcp: NonNullable<ApprovalReq['mcp']>, description: string, argsLabel: string): string[] {
+  const lead = [description, mcp.tool_description ?? ''].filter(part => part.trim().length > 0)
+
+  return [...lead, ...(mcp.arguments ? [argsLabel, ...mcp.arguments.split('\n')] : [])]
+}
+
 export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptProps) {
   const T = useT()
   const [sel, setSel] = useState(0)
@@ -171,8 +179,15 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
   const innerWidth = Math.max(20, cols - 8)
 
   const { detail, title } = approvalSplit(req.description)
+  // MCP tool calls title themselves with server/tool and show the structured context (tool
+  // description + fuller arguments) instead of the command text's truncated copy of it.
+  const mcpTitle = req.mcp ? T.prompt.approval.mcpTitle(req.mcp.server, req.mcp.tool) : title
 
-  const rawLines = [...detail, ...req.command.split('\n')].flatMap(line =>
+  const bodyLines = req.mcp
+    ? approvalMcpBody(req.mcp, req.description, T.prompt.approval.arguments)
+    : [...detail, ...req.command.split('\n')]
+
+  const rawLines = bodyLines.flatMap(line =>
     wrapAnsi(line, innerWidth, { hard: true, trim: false }).split('\n')
   )
 
@@ -185,7 +200,7 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
   return (
     <Box borderColor={t.color.warn} borderStyle="double" flexDirection="column" paddingX={1}>
       <Text bold color={t.color.warn}>
-        {T.prompt.approval.title} · {title}
+        {T.prompt.approval.title} · {mcpTitle}
       </Text>
 
       <Box flexDirection="column" paddingLeft={1}>

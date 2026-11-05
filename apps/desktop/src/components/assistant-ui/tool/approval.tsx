@@ -283,6 +283,7 @@ const ApprovalCard: FC<ApprovalCardProps> = ({ request, total, position, stack }
   const allowAlways = choices ? choices.includes('always') : allowPermanent
   const hasMoreOptions = allowSession || allowAlways
   const hasCommand = request.command.trim().length > 0
+  const mcp = request.mcp
   // A plugin `approve` rule escalates through the same gate with a synthetic
   // display target (`<tool> (plugin approval rule)`) while the real command /
   // change lives in `description` — the user approves a label they cannot act
@@ -335,18 +336,48 @@ const ApprovalCard: FC<ApprovalCardProps> = ({ request, total, position, stack }
       ref={cardRef}
     >
       <div className="flex items-center gap-2 px-2.5 pt-2 text-xs text-(--ui-text-secondary)">
-        <Codicon name="terminal" size="0.875rem" />
-        <span>{showsDescription ? copy.commandDetails : copy.command}</span>
+        <Codicon name={mcp ? 'server' : 'terminal'} size="0.875rem" />
+        <span>{mcp ? copy.mcpToolCall : showsDescription ? copy.commandDetails : copy.command}</span>
+        {mcp && (
+          <span className="truncate font-medium text-(--ui-text-primary)">
+            {mcp.server} · {mcp.tool}
+          </span>
+        )}
         {total > 1 && (
           <span className="ml-auto text-[0.6875rem] tabular-nums text-(--ui-text-tertiary)">
             {position} / {total}
           </span>
         )}
       </div>
-      {details.length > 0 && (
-        <pre className="m-0 max-h-40 overflow-auto whitespace-pre-wrap break-words px-2.5 py-2 font-mono text-xs leading-relaxed text-(--ui-text-primary)">
-          {details}
-        </pre>
+      {mcp ? (
+        <>
+          {mcp.toolDescription && (
+            <p className="px-2.5 pt-1.5 text-xs leading-relaxed text-(--ui-text-secondary)">
+              {mcp.toolDescription}
+            </p>
+          )}
+          {mcp.arguments && (
+            <>
+              <div className="px-2.5 pt-1.5 text-[0.6875rem] uppercase tracking-wide text-(--ui-text-tertiary)">
+                {copy.mcpArguments}
+              </div>
+              <pre className="m-0 max-h-40 overflow-auto whitespace-pre-wrap break-words px-2.5 py-1.5 font-mono text-xs leading-relaxed text-(--ui-text-primary)">
+                {mcp.arguments}
+              </pre>
+            </>
+          )}
+          {!mcp.arguments && details.length > 0 && (
+            <pre className="m-0 max-h-40 overflow-auto whitespace-pre-wrap break-words px-2.5 py-2 font-mono text-xs leading-relaxed text-(--ui-text-primary)">
+              {details}
+            </pre>
+          )}
+        </>
+      ) : (
+        details.length > 0 && (
+          <pre className="m-0 max-h-40 overflow-auto whitespace-pre-wrap break-words px-2.5 py-2 font-mono text-xs leading-relaxed text-(--ui-text-primary)">
+            {details}
+          </pre>
+        )
       )}
       <div className="flex items-center justify-end gap-1.5 px-2 pb-2 pt-1" data-slot="tool-approval-actions">
         <Button data-approval-deny="" disabled={busy} onClick={() => void respond('deny')} size="sm" variant="text">

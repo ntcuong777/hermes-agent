@@ -170,6 +170,16 @@ class ApprovalChoice(WireEnum):
     deny = "deny"
 
 
+class ApprovalMcpContext(Params):
+    """Structured MCP tool-call detail (``tools/mcp_tool_handlers.py::_approval_mcp_context``):
+    renders a proper tool-call card instead of command chrome. Already redacted server-side."""
+
+    server: str
+    tool: str
+    tool_description: str | None = None
+    arguments: str | None = None
+
+
 class ApprovalRequestParams(ServerRequestParams):
     """``tui_gateway/server.py::_approval_request_payload`` — the command is redacted server-side."""
 
@@ -181,6 +191,7 @@ class ApprovalRequestParams(ServerRequestParams):
     allow_session: bool | None = None
     smart_denied: bool | None = None
     tool_name: str | None = None
+    mcp: ApprovalMcpContext | None = None
     session_id_hint: str | None = Field(default=None, alias="gateway_session_id")
     # The approval queue entry carries tool-specific context the card may render; the closed set
     # of keys is owned by tools/approval.py, so it stays open here.

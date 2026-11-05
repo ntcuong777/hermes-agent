@@ -95,6 +95,9 @@ def _approval_request_event(run_id: str, approval_data: Optional[dict[str, Any]]
     from gateway.run import _redact_approval_command
     event = dict(approval_data or {})  # consent prompts (MCP, vault) carry server/model text in the description
     event.update({k: _redact_approval_command(event[k]) for k in ("command", "description") if k in event})
+    if isinstance(event.get("mcp"), dict):  # same display boundary: redact the MCP context's text
+        event["mcp"] = {k: (_redact_approval_command(v) if isinstance(v, str) else v)
+                        for k, v in event["mcp"].items()}
     event.update(_run_event(run_id, "approval.request", **fields, choices=_approval_event_choices(
         smart_denied=bool(event.get("smart_denied")),
         allow_session=event.get("allow_session") is not False,

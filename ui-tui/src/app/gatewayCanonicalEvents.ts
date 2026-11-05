@@ -1,6 +1,7 @@
 import type { AnyGatewayEvent } from '../gatewayTypes.js'
 import type { SessionInfo } from '../types.js'
 
+import { approvalMcpContext } from './createServerRequestHandler.js'
 import { patchOverlayState } from './overlayStore.js'
 import { patchUiState } from './uiStore.js'
 
@@ -148,6 +149,7 @@ export function openCanonicalApproval(
       choices: shared.choices,
       command: String(shared.command ?? ''),
       description: String(shared.description ?? 'dangerous command'),
+      mcp: approvalMcpContext(shared.mcp),
       requestId: shared.prompt_id,
       sharedControl,
       smartDenied: shared.smart_denied === true

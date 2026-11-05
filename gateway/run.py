@@ -591,15 +591,21 @@ def _redact_approval_command(cmd: str | None) -> str:
 
 def _format_exec_approval_fallback(
     command: str, description: str, command_prefix: str, *, allow_permanent: bool = True,
-    allow_session: bool = True, smart_denied: bool = False) -> str:
+    allow_session: bool = True, smart_denied: bool = False, mcp: dict | None = None) -> str:
     """Render the text fallback from approval capabilities, not platform names. Same words as
     the button card (``BasePlatformAdapter._format_exec_approval``), plus the typed ``/approve``
     steps a surface without buttons needs."""
     from gateway.platforms.base_exec_approval import (
-        approval_timeout_seconds, ea_header_text, ea_reason_label_text, format_approval_deadline_line)
-    cmd_preview = BasePlatformAdapter._truncate_preview(command, BasePlatformAdapter._EA_CMD_BUDGET)  # as on a card
-    heading = (t("gateway.exec_approval.smart_deny_heading") if smart_denied
-               else f"⚠️ **{ea_header_text()}**")
+        approval_timeout_seconds, ea_header_text, ea_mcp_block, ea_mcp_header_text,
+        ea_reason_label_text, format_approval_deadline_line)
+    body = ea_mcp_block(mcp, command) if mcp else command
+    cmd_preview = BasePlatformAdapter._truncate_preview(body, BasePlatformAdapter._EA_CMD_BUDGET)  # as on a card
+    if smart_denied:
+        heading = t("gateway.exec_approval.smart_deny_heading")
+    elif mcp:
+        heading = f"⚠️ **{ea_mcp_header_text(str(mcp.get('server') or ''), str(mcp.get('tool') or ''))}**"
+    else:
+        heading = f"⚠️ **{ea_header_text()}**"
 
     choices = [t("gateway.exec_approval.text_choice_once", prefix=command_prefix)]
     if not smart_denied and allow_session:

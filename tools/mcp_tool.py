@@ -525,6 +525,9 @@ _CIRCUIT_BREAKER_THRESHOLD, _CIRCUIT_BREAKER_COOLDOWN_SEC = 3, 60.0
 # ``_tool_read_only_hints`` by the connection key (the server's own tool annotations).
 _server_trust_levels: dict[Any, str] = {}
 _tool_read_only_hints: dict[Any, dict[str, bool]] = {}
+# Bounded, sanitized per-tool description from discovery, keyed like ``_tool_read_only_hints``
+# (the connection's own metadata): display-only, feeds the approval card's MCP context.
+_tool_descriptions: dict[Any, dict[str, str]] = {}
 # Declared per-tool costs + per-chat spend limit (``tools.mcp_tool_costs.CostPolicy``), keyed like
 # ``_server_trust_levels``: the consuming profile's policy. Absent = no costs, behaviour unchanged.
 _server_cost_policies: dict[Any, Any] = {}

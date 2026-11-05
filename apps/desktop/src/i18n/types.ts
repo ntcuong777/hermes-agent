@@ -4034,6 +4034,8 @@ export interface Translations extends NoticeTranslations {
       run: string
       command: string
       commandDetails: string
+      mcpToolCall: string
+      mcpArguments: string
       moreOptions: string
       allowSession: string
       alwaysAllowMenu: string

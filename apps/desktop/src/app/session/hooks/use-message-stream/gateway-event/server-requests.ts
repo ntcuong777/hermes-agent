@@ -24,6 +24,7 @@ import type { ScopedServerRequest } from '@/store/gateway'
 import { dispatchNativeNotification } from '@/store/native-notifications'
 import type { PreviewOwner } from '@/store/preview-ownership'
 import {
+  parseApprovalMcp,
   receiveApprovalRequest,
   setSecretRequest,
   setSudoRequest,
@@ -398,6 +399,7 @@ const approval: Handler = ctx => {
       : undefined,
     command,
     description,
+    mcp: parseApprovalMcp(p.mcp),
     // The approval queue's own id — `approval.pending` / `approval.received` / `approval.respond` key on it.
     requestId: str(p.request_id) || undefined,
     serverRequestId: request.id,

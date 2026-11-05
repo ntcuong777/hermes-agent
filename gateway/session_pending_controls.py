@@ -29,6 +29,9 @@ class PendingControls:
                       'command': _redact_approval_command(data.get('command', '')),
                       'description': _redact_approval_command(data.get('description', '')),
                       'choices': choices}
+            if isinstance(data.get('mcp'), dict):  # structured MCP tool-call context for the approval card
+                prompt['mcp'] = {k: (_redact_approval_command(v) if isinstance(v, str) else v)
+                                 for k, v in data['mcp'].items()}
             if 'edit' in data:
                 prompt['edit'] = deepcopy(data['edit'])
                 prompt['choices'] = ['once', 'deny']

@@ -32,6 +32,18 @@ def ea_header_text() -> str:
     return t("gateway.exec_approval.header")
 
 
+def ea_mcp_header_text(server: str, tool: str) -> str:
+    """Localized MCP tool-call headline (bare; adapters add their own markup around it)."""
+    return t("gateway.exec_approval.mcp_header", server=server, tool=tool)
+
+
+def ea_mcp_block(mcp: dict, command: str) -> str:
+    """Fenced body for an MCP tool-call approval: what the tool does, then the prompt text
+    (notices + redacted arguments) the message already carries."""
+    parts = [str(mcp.get("tool_description") or "").strip(), str(command or "").strip()]
+    return "\n\n".join(p for p in parts if p)
+
+
 def ea_reason_label_text() -> str:
     """Localized ``EA_REASON_LABEL_TEXT``."""
     return t("gateway.exec_approval.reason_label")

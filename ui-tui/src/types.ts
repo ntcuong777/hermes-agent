@@ -97,6 +97,15 @@ export interface DelegationStatus {
   paused: boolean
 }
 
+/** Structured MCP tool-call context on an approval (contract `ApprovalMcpContext`): the card
+ *  renders a tool-call panel instead of command chrome. */
+export interface ApprovalMcpContext {
+  server: string
+  tool: string
+  tool_description?: string | null
+  arguments?: string | null
+}
+
 export interface ApprovalReq {
   sharedControl?: SharedControl
   // false when the backend won't honor a permanent allow → hide "Always allow".
@@ -104,6 +113,7 @@ export interface ApprovalReq {
   choices?: string[]
   command: string
   description: string
+  mcp?: ApprovalMcpContext
   /** Server→client request id; the answer is the response frame for it. */
   requestId: string
   smartDenied?: boolean

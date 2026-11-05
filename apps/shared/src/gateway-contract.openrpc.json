@@ -5315,6 +5315,50 @@
         "title": "ApprovalChoice",
         "type": "string"
       },
+      "ApprovalMcpContext": {
+        "additionalProperties": false,
+        "description": "Structured MCP tool-call detail (``tools/mcp_tool_handlers.py::_approval_mcp_context``):\nrenders a proper tool-call card instead of command chrome. Already redacted server-side.",
+        "properties": {
+          "server": {
+            "title": "Server",
+            "type": "string"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          },
+          "tool_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tool Description"
+          },
+          "arguments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Arguments"
+          }
+        },
+        "required": [
+          "server",
+          "tool"
+        ],
+        "title": "ApprovalMcpContext",
+        "type": "object"
+      },
       "ApprovalPendingParams": {
         "additionalProperties": false,
         "properties": {
@@ -5479,6 +5523,17 @@
             ],
             "default": null,
             "title": "Tool Name"
+          },
+          "mcp": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalMcpContext"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "gateway_session_id": {
             "anyOf": [
@@ -9102,6 +9157,17 @@
             ],
             "default": null,
             "title": "Description"
+          },
+          "mcp": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalMcpContext"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "edit": {
             "anyOf": [

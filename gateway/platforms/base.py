@@ -435,7 +435,8 @@ from gateway.platforms.helpers import fence_state_after, typing_metadata_for_tur
 from gateway.platforms.base_post_delivery import run_post_delivery_callback
 from gateway.platforms.base_exec_approval import (
     approval_timeout_seconds, ea_action_labels, ea_default_reason_text, ea_header_text,
-    ea_reason_label_text, ea_smart_deny_line_text, format_approval_deadline_line)
+    ea_mcp_block, ea_mcp_header_text, ea_reason_label_text, ea_smart_deny_line_text,
+    format_approval_deadline_line)
 from gateway.platforms.base_streaming_tts import (
     AudioFormat, StreamingTTSHandle, streaming_tts_should_skip_whole_file, streaming_tts_turn_key)
 from gateway.platforms.event import MessageEvent, MessageType, ProcessingOutcome
@@ -1586,6 +1587,9 @@ class ExecApprovalPrompt:
     smart_denied: bool
     metadata: Optional[dict[str, Any]] = None
     request_id: Optional[str] = None  # the ``tools.approval`` request this card answers (and only that one)
+    # Structured MCP tool-call context (server/tool/tool_description/arguments); ``text`` already
+    # renders it, so this is for adapters that build a richer native card.
+    mcp: Optional[dict[str, Any]] = None
 
     @property
     def choices(self) -> list[str]:
@@ -2704,6 +2708,11 @@ class BasePlatformAdapter(ABC):
     def _EA_HEADER(self) -> str:
         return f"⚠️ {ea_header_text()}\n\n"
 
+    def _ea_mcp_header(self, server: str, tool: str) -> str:
+        """MCP tool-call headline — the twin of ``_EA_HEADER`` for approvals carrying MCP context.
+        Adapters that wrap ``_EA_HEADER`` in platform markup override this for the same markup."""
+        return f"⚠️ {ea_mcp_header_text(server, tool)}\n\n"
+
     @property
     def _EA_REASON_LABEL(self) -> str:
         return f"{ea_reason_label_text()}: "
@@ -2739,17 +2748,27 @@ class BasePlatformAdapter(ABC):
         return self._EA_DEADLINE_PREFIX + self._ea_escape(format_approval_deadline_line(approval_timeout_seconds()))
 
     def _format_exec_approval(
-        self, command: str, description: Optional[str] = None, smart_denied: bool = False) -> str:
+        self, command: str, description: Optional[str] = None, smart_denied: bool = False,
+        mcp: Optional[dict[str, Any]] = None) -> str:
         """Shared exec-approval prompt text: header + fenced (truncated) command + why it was
         flagged + the deadline line, plus the smart-deny line. Buttons/trailing instructions stay
-        platform-local. ``description=None`` renders the localized default reason."""
+        platform-local. ``description=None`` renders the localized default reason. ``mcp`` (the
+        structured MCP tool-call context) swaps the header for the server/tool headline and leads
+        the fenced body with the tool description."""
         if description is None:
             description = ea_default_reason_text()
         if self._EA_REASON_BUDGET:
             description = self._ea_fit(str(description or ""), self._EA_REASON_BUDGET)
-        cmd_preview = self._ea_fit(
-            str(command or ""), self._exec_approval_cmd_budget(description, smart_denied))
-        text = (f"{self._EA_HEADER}"
+        header, body, budget = self._EA_HEADER, str(command or ""), self._exec_approval_cmd_budget(
+            description, smart_denied)
+        if mcp:
+            header = self._ea_mcp_header(str(mcp.get("server") or ""), str(mcp.get("tool") or ""))
+            body = ea_mcp_block(mcp, command)
+            # The budget above measured _EA_HEADER's fixed frame; the MCP headline differs in
+            # length, and a cap-edge card would overflow its platform cap without the delta.
+            budget = max(0, budget - (len(header) - len(self._EA_HEADER)))
+        cmd_preview = self._ea_fit(body, budget)
+        text = (f"{header}"
                 f"{self._EA_CODE_OPEN}{self._ea_escape(cmd_preview)}{self._EA_CODE_CLOSE}"
                 f"{self._EA_REASON_LABEL}{self._ea_escape(description)}"
                 f"{self._ea_deadline_line()}")
@@ -2786,15 +2805,17 @@ class BasePlatformAdapter(ABC):
         self, chat_id: str, command: str, session_key: str, description: Optional[str] = None,
         metadata: Optional[dict[str, Any]] = None, allow_permanent: bool = True, allow_session: bool = True,
         smart_denied: bool = False, request_id: Optional[str] = None,
+        mcp: Optional[dict[str, Any]] = None,
     ) -> SendResult:
         """Interactive exec-approval prompt; a press resolves via ``tools.approval.resolve_gateway_approval``.
-        Text and choice set are shared; adapters render them natively in ``_send_exec_approval_prompt``."""
+        Text and choice set are shared; adapters render them natively in ``_send_exec_approval_prompt``.
+        ``mcp`` carries structured MCP tool-call context for the server/tool headline."""
         if description is None:
             description = ea_default_reason_text()
         prompt = ExecApprovalPrompt(
             chat_id=chat_id, session_key=session_key, metadata=metadata, command=str(command or ""),
-            description=description, smart_denied=smart_denied, request_id=request_id,
-            text=self._format_exec_approval(command, description, smart_denied),
+            description=description, smart_denied=smart_denied, request_id=request_id, mcp=mcp,
+            text=self._format_exec_approval(command, description, smart_denied, mcp=mcp),
             actions=self._exec_approval_actions(
                 allow_permanent=allow_permanent, allow_session=allow_session, smart_denied=smart_denied))
         return await self._send_exec_approval_prompt(prompt)
