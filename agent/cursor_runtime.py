@@ -444,11 +444,26 @@ class _Turn:
                 "isError": is_error,
             }
         )
-        return (
-            None
-            if sent
-            else _Outcome("error", "worker closed before the tool result was delivered")
-        )
+        return None if sent else _Outcome("error", self._closed_reason())
+
+    def _closed_reason(self) -> str:
+        """Why the pipe is gone. A worker whose SDK run broke writes its own ``failed`` line and exits while
+        Hermes is still inside the tool call, so that line is already queued; surface its fixed-vocabulary
+        reason instead of only saying the pipe closed. Reads to EOF (bounded), so the line is never missed."""
+        deadline = time.monotonic() + _CANCEL_GRACE_SECONDS
+        while time.monotonic() < deadline:
+            try:
+                message = self.worker.inbox.get(timeout=_POLL_SECONDS)
+            except queue.Empty:
+                continue
+            if message is None:
+                break
+            if message.get("type") == "failed" and message.get("turnId") in (
+                self.turn_id,
+                None,
+            ):
+                return _failure_text(message.get("code"))
+        return "worker closed before the tool result was delivered"
 
     def _cancel(self) -> _Outcome:
         """Ask the worker to stop and give it a bounded moment to acknowledge; close() force-kills."""
