@@ -1,4 +1,7 @@
 import { execFile, spawn } from 'node:child_process'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
@@ -22,6 +25,9 @@ export type ClipboardImageRunner = (
   opts: { maxBuffer: number; timeout: number }
 ) => Promise<Buffer>
 
+/** Reads back the file the macOS AppleScript wrote the pasteboard PNG into. */
+export type ClipboardFileReader = (path: string) => Promise<Buffer>
+
 const defaultImageRunner: ClipboardImageRunner = (cmd, args, opts) =>
   new Promise((resolve, reject) => {
     execFile(cmd, args, { ...opts, encoding: 'buffer' }, (err, stdout) => {
@@ -33,18 +39,28 @@ const defaultImageRunner: ClipboardImageRunner = (cmd, args, opts) =>
     })
   })
 
-/** The per-platform commands that may hold a clipboard PNG, first-wins order. */
+/** osascript's stdout only ever carries the «data PNGf…» hex TEXT of a pasteboard image,
+ * never the bytes — so the script writes them to a file we read back instead (the same
+ * shape as the Python side's `_macos_osascript`). */
+const macosClipboardPngScript = (dest: string) => `try
+  set imgData to the clipboard as «class PNGf»
+  set f to open for access POSIX file "${dest}" with write permission
+  write imgData to f
+  close access f
+on error
+  return "fail"
+end try`
+
+/** The per-platform commands that may hold a clipboard PNG, first-wins order. Empty on
+ * macOS (file-based extraction, see `macosClipboardPngScript`) and Windows (the gateway's
+ * PowerShell path owns it there). */
 export function clipboardImageCommands(
   platform: NodeJS.Platform,
   env: NodeJS.ProcessEnv
 ): Array<[string, string[]]> {
-  if (platform === 'darwin') {
-    return [['osascript', ['-e', 'the clipboard as «class PNGf»']]]
-  }
-
   // Windows clipboard images stay the gateway's job (its PowerShell path); an empty chain makes
   // this TUI fallback a silent no-op there.
-  if (platform === 'win32') {
+  if (platform !== 'linux') {
     return []
   }
 
@@ -63,13 +79,39 @@ export function clipboardImageCommands(
 export async function readClipboardImagePng(
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
-  run: ClipboardImageRunner = defaultImageRunner
+  run: ClipboardImageRunner = defaultImageRunner,
+  readFileBuffer: ClipboardFileReader = readFile
 ): Promise<Buffer | null> {
+  if (platform === 'darwin') {
+    const dir = await mkdtemp(join(tmpdir(), 'hermes-clip-'))
+
+    try {
+      const out = await run('osascript', ['-e', macosClipboardPngScript(join(dir, 'clipboard.png'))], {
+        maxBuffer: 1024,
+        timeout: 4000
+      })
+
+      if (!out.toString('utf8').includes('fail')) {
+        const png = await readFileBuffer(join(dir, 'clipboard.png'))
+
+        if (isPng(png)) {
+          return png
+        }
+      }
+    } catch {
+      // No pasteboard image or osascript unavailable.
+    } finally {
+      await rm(dir, { force: true, recursive: true })
+    }
+
+    return null
+  }
+
   for (const [cmd, args] of clipboardImageCommands(platform, env)) {
     try {
       const raw = await run(cmd, args, { maxBuffer: CLIPBOARD_MAX_BUFFER * 2, timeout: 4000 })
 
-      // osascript appends a newline to the PNGf dump: strip one trailing LF before validating.
+      // A dump tool may append a newline: strip one trailing LF before validating.
       const out =
         raw.length > 0 && raw[raw.length - 1] === 0x0a ? raw.subarray(0, raw.length - 1) : raw
 
