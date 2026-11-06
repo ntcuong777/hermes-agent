@@ -484,6 +484,7 @@ _FAILURE_TEXT = {
     "unknown-model": "The selected model is not in your Cursor catalog.",
     "unsupported-effort": "The selected model does not offer that reasoning effort; pick another level or unset it.",
     "catalog-unavailable": "The Cursor model catalog could not be read, so the model was not verified.",
+    "auth-rejected": "The Cursor API key was rejected (401/403) — re-enter it: /model, pick Cursor, paste the key.",
     "native-tool": "The Cursor model attempted a native tool, which this runtime forbids; the turn was stopped.",
     "sdk-error": "The Cursor SDK failed to run the turn.",
     "bad-environment": "The Cursor worker environment was incomplete.",

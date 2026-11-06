@@ -49,6 +49,7 @@ def test_an_explicit_effort_is_sent_and_an_unset_one_is_absent(tmp_path, monkeyp
     ("unknown-model", "catalog"),
     ("unsupported-effort", "reasoning effort"),
     ("catalog-unavailable", "catalog"),
+    ("auth-rejected", "api key"),
     ("native-tool", "native"),
 ])
 def test_worker_failure_codes_become_plain_safe_messages(tmp_path, monkeypatch, code, needle):
