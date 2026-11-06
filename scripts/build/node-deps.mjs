@@ -102,7 +102,16 @@ export function prepareNodeDependencies({ source, workspaces, env = process.env,
       throw new Error(`Unknown or missing locked workspace: ${workspace}`)
     }
     return workspace
-  }))].sort()
+  }))]
+  // pnpm 12 filtered installs skip a direct optionalDependency whose peer-suffixed
+  // lockfile variant is shared with an importer outside the filter: apps/desktop's
+  // get-windows resolves to the same variant tests-js declares, so a desktop
+  // without tests-js selected cannot link it and the desktop build fails on the
+  // missing macOS helper. Co-select the importer that pins the shared variant.
+  if (selected.includes('apps/desktop') && projects.includes('tests-js')) {
+    selected.push('tests-js')
+  }
+  selected.sort()
   const prepareElectron = electron && selected.includes('apps/desktop')
     && Boolean(JSON.parse(readFileSync(join(source, 'apps/desktop/package.json'), 'utf8')).devDependencies?.electron)
   const pnpm = pnpmCommand({ env })

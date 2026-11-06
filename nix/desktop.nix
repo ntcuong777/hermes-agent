@@ -82,6 +82,11 @@ let
     dirs = [
       "apps/desktop"
       "apps/shared"
+      # get-windows (desktop optionalDependency) and tests-js declare the SAME
+      # peer-suffixed lockfile variant; a filtered install that omits the
+      # tests-js importer cannot link it and the desktop build fails on the
+      # missing macOS helper. Co-select it so the variant resolves.
+      "tests-js"
       "scripts/build/desktop.mjs"
       "scripts/build/freshness.mjs"
       "scripts/build/frontend-common.mjs"
@@ -91,6 +96,14 @@ let
       "scripts/release-content-types.json"
     ];
     pname = "hermes-desktop-renderer";
+
+    # The default filter covers the first dir and its workspace deps; get-windows'
+    # shared variant additionally needs the tests-js importer selected (see dirs).
+    pnpmWorkspaces = [
+      "{./apps/desktop}..."
+      "{./apps/shared}..."
+      "{./tests-js}..."
+    ];
 
     # node-gyp's build interpreter.
     nativeBuildInputs = [ python3 ];
