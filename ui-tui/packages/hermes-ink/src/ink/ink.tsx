@@ -742,13 +742,20 @@ export default class Ink {
     // ctrl+shift+<letter> from ctrl+<letter>. Pop-before-push keeps the
     // Kitty stack balanced (a well-behaved editor restores our entry, so
     // without the pop we'd accumulate depth on each editor round-trip).
+    // The trailing ?25h restores the cursor-visibility baseline the suspend
+    // broke: the ?25l above hides it for the repaint burst, and nothing on
+    // the render path ever re-shows it (the park branch only MOVES the
+    // cursor). Without this, the first keystroke after an $EDITOR round-trip
+    // left the composer's caret invisible until some unrelated effect
+    // cycled the TextInput's hide-hardware-cursor effect.
     this.options.stdout.write(
       '\x1b[?1004h' +
         (supportsExtendedKeys()
           ? DISABLE_KITTY_KEYBOARD +
             (skipKittyKeyboardProtocol() ? '' : ENABLE_KITTY_KEYBOARD) +
             ENABLE_MODIFY_OTHER_KEYS
-          : '')
+          : '') +
+        '\x1b[?25h'
     )
   }
   onRender() {
