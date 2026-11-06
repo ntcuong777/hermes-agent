@@ -635,9 +635,9 @@ export function ModelPicker({
         </Text>
 
         {keyError ? (
-          <Text color={t.color.label} wrap="truncate-end">
-            {C.error(keyError)}
-          </Text>
+          // No truncate-end here: long errors (e.g. the code-skew refusal whose tail names the
+          // restart command) must wrap, or the one actionable line stays invisible (#screenshot).
+          <Text color={t.color.label}>{C.error(keyError)}</Text>
         ) : keySaving ? (
           <Text color={t.color.muted} wrap="truncate-end">
             {M.key.saving}
