@@ -16,6 +16,7 @@ import type {
 } from '../../../gatewayTypes.js'
 import { t } from '../../../i18n/runtime.js'
 import { formatVoiceRecordKey, parseVoiceRecordKey } from '../../../lib/platform.js'
+import { SESSION_COMPRESS_TIMEOUT_MS } from '../../../lib/rpc.js'
 import type { PanelSection } from '../../../types.js'
 import { applyConfiguredTuiTheme } from '../../createGatewayEventHandler.js'
 import { DEFAULT_INDICATOR_STYLE, INDICATOR_STYLES, type IndicatorStyle } from '../../interfaces.js'
@@ -301,10 +302,16 @@ export const sessionCommands: SlashCommand[] = [
       // mid-compress where `compacting` would be cleared by turn idle.
       patchUiState({ manualCompacting: true })
       ctx.gateway
-        .rpc<SessionCompressResponse>('session.compress', {
-          session_id: ctx.sid,
-          ...(arg ? { focus_topic: arg } : {})
-        })
+        .rpc<SessionCompressResponse>(
+          'session.compress',
+          {
+            session_id: ctx.sid,
+            ...(arg ? { focus_topic: arg } : {})
+          },
+          // The summarization legitimately outlasts the default 120s deadline;
+          // a false timeout here hid a compression that went on to succeed.
+          { timeoutMs: SESSION_COMPRESS_TIMEOUT_MS }
+        )
         .then(
           ctx.guarded<SessionCompressResponse>(r => {
             const current = getUiState()

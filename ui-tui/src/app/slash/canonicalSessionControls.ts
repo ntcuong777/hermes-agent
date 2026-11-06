@@ -3,14 +3,14 @@ import { randomUUID } from 'node:crypto'
 import { introMsg, toTranscriptMessages } from '../../domain/messages.js'
 import { CANONICAL_REASONING_EFFORTS, TUI_SESSION_MODEL_FLAG } from '../../domain/slash.js'
 import { t } from '../../i18n/runtime.js'
-import { asRpcResult, rpcErrorMessage } from '../../lib/rpc.js'
+import { asRpcResult, rpcErrorMessage, SESSION_COMPRESS_TIMEOUT_MS } from '../../lib/rpc.js'
 import { patchOverlayState } from '../overlayStore.js'
 import { getUiState, patchUiState } from '../uiStore.js'
 
 import type { SlashRunCtx } from './types.js'
 
 interface MutationGateway {
-  request: (method: string, params?: Record<string, unknown>) => Promise<unknown>
+  request: (method: string, params?: Record<string, unknown>, timeoutMs?: number) => Promise<unknown>
 }
 
 // Keep the original CAS tuple after a lost reply. Reissuing the same command
@@ -118,7 +118,8 @@ export async function mutateCanonical(
   operation: CanonicalOperation,
   payload: Record<string, unknown> | ((snapshot: MutationSnapshot) => null | Record<string, unknown>),
   stale: () => boolean = () => false,
-  onRead?: (snapshot: MutationSnapshot) => void
+  onRead?: (snapshot: MutationSnapshot) => void,
+  timeoutMs?: number
 ) {
   let requests = pending.get(gw)
 
@@ -164,7 +165,13 @@ export async function mutateCanonical(
   let result
 
   try {
-    result = asRpcResult(await gw.request('session.mutate', params))
+    // Defined-only passthrough keeps the two-argument call shape every existing
+    // consumer (and mock) of `request` sees for the fast mutations.
+    result = asRpcResult(
+      await (timeoutMs === undefined
+        ? gw.request('session.mutate', params)
+        : gw.request('session.mutate', params, timeoutMs))
+    )
 
     if (!result) {
       throw new Error(t('session.common.invalidResponse', 'session.mutate'))
@@ -189,7 +196,8 @@ export async function mutateCanonicalSession(
   operation: 'model' | 'branch' | 'compress',
   arg: string,
   stale: () => boolean = () => false,
-  confirm?: string
+  confirm?: string,
+  timeoutMs?: number
 ) {
   // `confirm`: the owner's one-time token for a guarded model target the user accepted. It keys a
   // separate retained request, so an ambiguous reply to the confirmed send retries that exact one.
@@ -199,7 +207,7 @@ export async function mutateCanonicalSession(
       : { effort: '', payload: arg ? { [operation === 'branch' ? 'title' : 'focus']: arg } : {} }
 
   const payload = { ...body, ...(confirm ? { confirm } : {}) }
-  const mutation = await mutateCanonical(gw, sid, operation, payload, stale)
+  const mutation = await mutateCanonical(gw, sid, operation, payload, stale, undefined, timeoutMs)
 
   if (!mutation?.result) {
     return undefined
@@ -471,7 +479,15 @@ export async function runCanonicalSessionControl(
       patchUiState({ manualCompacting: true })
     }
 
-    const mutation = await mutateCanonicalSession(gw, ctx.sid, operation, arg, ctx.stale, confirm)
+    const mutation = await mutateCanonicalSession(
+      gw,
+      ctx.sid,
+      operation,
+      arg,
+      ctx.stale,
+      confirm,
+      showsCompacting ? SESSION_COMPRESS_TIMEOUT_MS : undefined
+    )
 
     if (!mutation) {
       return

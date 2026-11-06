@@ -211,7 +211,14 @@ export async function startPromptLiveSession({
 
   if (requestedModel) {
     const applyModel = async (confirm?: string) => {
-      const mutation = await mutateCanonicalSession({ request: rpc }, sid, 'model', requestedModel, undefined, confirm)
+      const mutation = await mutateCanonicalSession(
+        { request: (method, params, timeoutMs) => rpc(method, params, { timeoutMs }) },
+        sid,
+        'model',
+        requestedModel,
+        undefined,
+        confirm
+      )
       const refusal = mutation?.result
 
       if (!confirm && refusal?.status === 'confirmation_required' && typeof refusal.confirm === 'string') {
@@ -640,10 +647,11 @@ export function useMainApp(gw: GatewayClient) {
   const rpc: GatewayRpc = useCallback(
     async <T extends Record<string, any> = Record<string, any>>(
       method: string,
-      params: Record<string, unknown> = {}
+      params: Record<string, unknown> = {},
+      opts?: { timeoutMs?: number }
     ) => {
       try {
-        const result = asRpcResult<T>(await gw.request<T>(method, params))
+        const result = asRpcResult<T>(await gw.request<T>(method, params, opts?.timeoutMs))
 
         if (result) {
           return result

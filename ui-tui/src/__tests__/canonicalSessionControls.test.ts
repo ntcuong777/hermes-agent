@@ -3,6 +3,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { createSlashHandler } from '../app/createSlashHandler.js'
 import { getOverlayState, resetOverlayState } from '../app/overlayStore.js'
 import { getUiState, patchUiState, resetUiState } from '../app/uiStore.js'
+import { SESSION_COMPRESS_TIMEOUT_MS } from '../lib/rpc.js'
 
 const flush = () => new Promise(resolve => setImmediate(resolve))
 const info = { model: 'old', skills: {}, tools: {}, execution_epoch: '1', execution_generation: 4 }
@@ -63,14 +64,20 @@ it('canonical model, branch and compression use generation-fenced owner mutation
   ] as const) {
     slash(command)
     await flush()
-    expect(request).toHaveBeenCalledWith('session.mutate', {
-      session_id: 'owner',
-      request_id: expect.any(String),
-      expected_revision: 8,
-      expected_generation: 4,
-      operation,
-      payload
-    })
+    expect(request).toHaveBeenCalledWith(
+      'session.mutate',
+      {
+        session_id: 'owner',
+        request_id: expect.any(String),
+        expected_revision: 8,
+        expected_generation: 4,
+        operation,
+        payload
+      },
+      // /compress rides the Desktop-parity budget; the fast mutations keep the
+      // default deadline and the plain two-argument request shape.
+      ...(operation === 'compress' ? [SESSION_COMPRESS_TIMEOUT_MS] : [])
+    )
 
     if (operation === 'model') {
       expect(getUiState().info?.execution_generation).toBe(5)
