@@ -883,7 +883,8 @@ def _smart_gate(spec: _GateSpec, command: str, description: str, pattern_key: st
 def _human_decision(spec: _GateSpec, *, command: str, description: str,
                     pattern_key: str, pattern_keys: list[str],
                     session_key: str, approval_callback, is_cli: bool, is_gateway: bool,
-                    is_ask: bool, smart: bool = False, pending_body=None) -> dict:
+                    is_ask: bool, smart: bool = False, pending_body=None,
+                    mcp_context: Optional[dict] = None) -> dict:
     """Ask a human (after the optional guardian-LLM step) and turn the answer into the gate result.
 
     ``pattern_keys`` are what :func:`_persist_choice` stores on session/always; a smart-DENY
@@ -960,6 +961,11 @@ def _human_decision(spec: _GateSpec, *, command: str, description: str,
                 data["smart_denied"] = True
             if idle_lane:
                 data["idle"] = True
+            if mcp_context:
+                # Same display boundary as the MCP trust gate: the wire contract's `mcp` card
+                # (tui_gateway/contracts/server_requests.py ApprovalMcpContext) — surfaces render
+                # server/tool/description/redacted arguments instead of command chrome.
+                data["mcp"] = mcp_context
             decision = _await_gateway_decision(session_key, notify_cb, data, surface="gateway")
             if decision.get("notify_failed"):
                 return _denied(spec.notify_failed, pattern_key=pattern_key,
@@ -1065,7 +1071,7 @@ def _run_approval_gate(
     advice: str = "Find an alternative approach that avoids this action.",
     cron_deny_message: str = "", single_query_deny_message: str = "", unattended_deny_message: str = "",
     autoapprove_log_prefix: str, fail_closed_when_no_human: bool = False, no_human_block_message: str = "",
-    pattern_keys: list[str] | None = None,
+    pattern_keys: list[str] | None = None, mcp_context: Optional[dict] = None,
 ) -> dict:
     """Shared human-approval gate for a flagged action (tool call or write): decision core for
     :func:`request_tool_approval` and the file-tool write gates.
@@ -1131,6 +1137,7 @@ def _run_approval_gate(
         _ACTION_GATE, command=display_target, description=description, pattern_key=pattern_key,
         pattern_keys=pattern_keys or [pattern_key], session_key=session_key,
         approval_callback=approval_callback, is_cli=is_cli, is_gateway=is_gateway, is_ask=is_ask,
+        mcp_context=mcp_context,
     )
 
 
@@ -1219,7 +1226,8 @@ def check_dangerous_command(command: str, env_type: str,
     )
 
 
-def request_tool_approval(tool_name: str, reason: str, *, rule_key: str = "", approval_callback=None) -> dict:
+def request_tool_approval(tool_name: str, reason: str, *, rule_key: str = "", approval_callback=None,
+                          args: Optional[dict] = None) -> dict:
     """Escalate an arbitrary tool call to the human-approval gate.
 
     Entry point for a plugin ``pre_tool_call`` hook returning ``{"action": "approve", ...}``:
@@ -1228,7 +1236,9 @@ def request_tool_approval(tool_name: str, reason: str, *, rule_key: str = "", ap
     the LLM cannot skip it. Cron honors ``approvals.cron_mode``; any OTHER non-interactive
     context without an approval bridge fails CLOSED. ``rule_key`` controls the ``[a]lways``
     allowlist grain; when empty it is ``tool_name`` + a hash of ``reason`` so DISTINCT reasons
-    on the same tool persist independently. Returns the ``check_dangerous_command`` result shape.
+    on the same tool persist independently. ``args``: the flagged call's arguments — for an
+    ``mcp__…`` tool they become the structured card's redacted argument block, so approving an
+    MCP call is never blind. Returns the ``check_dangerous_command`` result shape.
     """
     description = reason or f"Plugin requires approval for {tool_name}"
     if not rule_key:
@@ -1244,7 +1254,25 @@ def request_tool_approval(tool_name: str, reason: str, *, rule_key: str = "", ap
         fail_closed_when_no_human=True,
         no_human_block_message=(f"BLOCKED: {subject} but no interactive user or gateway is present "
                                 "to approve it. A plugin flagged this action for human confirmation."),
+        mcp_context=_plugin_rule_mcp_context(tool_name, args),
     )
+
+
+def _plugin_rule_mcp_context(tool_name: str, args: Optional[dict]) -> Optional[dict]:
+    """Structured MCP card context for a plugin-escalated ``mcp__<server>__<tool>`` call, reusing the
+    trust gate's builder (same redaction and caps). None for non-MCP tools or bare names — the card
+    then stays command chrome, exactly as before."""
+    if not args or not tool_name.startswith("mcp__"):
+        return None
+    parts = tool_name.split("__")
+    if len(parts) < 3 or not parts[1] or not parts[2]:
+        return None
+    try:
+        from tools.mcp_tool_handlers import _approval_mcp_context
+        return _approval_mcp_context(parts[1], "__".join(parts[2:]), args)
+    except Exception:
+        logger.debug("plugin-rule MCP context build failed for %s", tool_name, exc_info=True)
+        return None
 
 
 # --- Combined pre-exec guard (floors + dangerous command detection) ------------------------------------------------

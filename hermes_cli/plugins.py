@@ -2047,8 +2047,8 @@ def resolve_pre_tool_block(
 
 
 def _resolve_block_from_details(
-    details: _PreToolCallDirective, tool_name: str, *, turn_id: str = "", tool_call_id: str = "",
-    session_id: str = "",
+    details: _PreToolCallDirective, tool_name: str, args: Optional[dict[str, Any]] = None, *,
+    turn_id: str = "", tool_call_id: str = "", session_id: str = "",
 ) -> Optional[str]:
     """The ONE place for the fail-closed approval logic: ``block`` blocks with its message; an
     ``approve`` whose gate errors, denies, or times out is blocked; anything else proceeds."""
@@ -2064,7 +2064,11 @@ def _resolve_block_from_details(
             approval_tokens = set_current_observability_context(
                 turn_id=turn_id, tool_call_id=tool_call_id, session_id=session_id)
         try:
-            result = request_tool_approval(tool_name, details.message or "", rule_key=details.rule_key or tool_name)
+            # The flagged call's arguments ride along: for an mcp__ tool the approval card then
+            # shows the structured MCP context (server/tool/redacted arguments) instead of the
+            # bare "<mcp__server__tool> (plugin approval rule)" label.
+            result = request_tool_approval(tool_name, details.message or "", rule_key=details.rule_key or tool_name,
+                                           args=args)
         finally:
             if approval_tokens is not None:
                 with suppress(Exception):
@@ -2085,7 +2089,8 @@ def _dispatch_pre_tool_call_hooks(
     block/approve message (``None`` to proceed) and merged ``modify`` args (``None`` if none)."""
     details = _get_pre_tool_call_directive_details(tool_name, args, **hook_kwargs)
     block_msg = _resolve_block_from_details(
-        details, tool_name, **{k: hook_kwargs.get(k, "") for k in ("turn_id", "tool_call_id", "session_id")})
+        details, tool_name, args,
+        **{k: hook_kwargs.get(k, "") for k in ("turn_id", "tool_call_id", "session_id")})
     return (block_msg, details.modified_args)
 
 
