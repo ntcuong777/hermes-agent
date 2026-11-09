@@ -1296,15 +1296,53 @@ class HermesCLI(CLIBacktrackMixin, CLIInitMixin, CLITuiRuntimeMixin, CLIProcessN
         if hasattr(self, '_pending_input'):
             self._pending_input.put(msg)
 
+    def _split_trailing_command_lines(self, instruction: str) -> tuple[str, list[str]]:
+        """Peel whole-line bare ``/command`` lines off the tail of a skill/bundle instruction so they
+        dispatch as commands instead of riding along as instruction text. Only an exact bare line
+        peels (``/exit`` alone yes; ``see /help there`` and ``/usr/local`` stay prose) and an unknown
+        token stays instruction. Returns ``(remaining_instruction, commands_in_order)``."""
+        lines = (instruction or "").splitlines()
+        cut = len(lines)
+        while cut and self._is_dispatchable_command_line(lines[cut - 1].strip()):
+            cut -= 1
+        return "\n".join(lines[:cut]).strip(), [line.strip() for line in lines[cut:]]
+
+    def _is_dispatchable_command_line(self, line: str) -> bool:
+        """True for a bare ``/token`` line this CLI can dispatch: a built-in, skill, bundle, quick
+        or locally-registered plugin command. The gateway's plugin catalog is not probed — the
+        line must resolve without I/O."""
+        if not _looks_like_slash_command(line) or any(ch.isspace() for ch in line):
+            return False
+        token = line[1:].lower()
+        if self._slash_handler(token):
+            return True
+        if f"/{token}" in _session_skill_commands(self) or f"/{token}" in get_skill_bundles():
+            return True
+        return token in self.config.get("quick_commands", {}) or token in _get_plugin_cmd_handler_names()
+
+    def _dispatch_trailing_commands(self, commands: list[str]) -> None:
+        """Run commands peeled by ``_split_trailing_command_lines``; a False return (``/exit``)
+        ends the REPL like the Enter path does (``_tui_run_slash_input``)."""
+        for command in commands:
+            if not self.process_command(command):
+                self._should_exit = True
+                app = getattr(self, "_app", None)
+                if app is not None and app.is_running:
+                    app.exit()
+                break
+
     def _run_skill_bundle_command(self, base_cmd: str, bundle_info: dict, user_instruction: str) -> None:
         """``/<bundle>`` loads several skills at once (bundles win over same-named skills)."""
+        user_instruction, trailing = self._split_trailing_command_lines(user_instruction)
         bundle_result = build_bundle_invocation_message(base_cmd, user_instruction, task_id=self.session_id)
         if not bundle_result:
             ChatConsole().print(f"[bold red]{_t('cli.skills.bundle_load_failed', command=base_cmd)}[/]")
+            self._dispatch_trailing_commands(trailing)
             return
         msg, loaded_names, missing = bundle_result
         self._queue_loaded_skills(
             msg, _t("cli.skills.loading_bundle", name=bundle_info['name'], count=str(len(loaded_names))), missing)
+        self._dispatch_trailing_commands(trailing)
 
     def _queue_loaded_skills(self, msg, label: str, missing) -> None:
         print(f"\n⚡ {label}")
@@ -1315,31 +1353,40 @@ class HermesCLI(CLIBacktrackMixin, CLIInitMixin, CLITuiRuntimeMixin, CLIProcessN
     def _run_skill_slash_command(self, base_cmd: str, skill_info: dict, rest: str) -> None:
         """``/<skill> ...``; stacked ``/skill-a /skill-b do XYZ`` loads every leading skill (up to 5)."""
         from hermes_cli import gateway_plugin_commands
-        if gateway_plugin_commands.run_skill(self, base_cmd, rest):
-            return  # the gateway session's skill, loaded there
         from agent.skill_commands import build_stacked_skill_invocation_message, split_stacked_skill_commands
 
         # Interactive surface: stacked tokens resolve against the interactive
         # map so plugin skills stack in the CLI like native skills.
         extra_keys, user_instruction = split_stacked_skill_commands(rest, interactive=True)
+        # A bare /command line at the instruction's tail is a second command, not instruction text:
+        # the C-g editor round-trip leaves `/caveman\n/exit`-shaped drafts and Enter must quit, not
+        # send "/exit" to the model as the skill's instruction.
+        user_instruction, trailing = self._split_trailing_command_lines(user_instruction)
+        gateway_rest = (" ".join(extra_keys) + " " + user_instruction).strip()
+        if gateway_plugin_commands.run_skill(self, base_cmd, gateway_rest):
+            self._dispatch_trailing_commands(trailing)
+            return  # the gateway session's skill, loaded there
         if extra_keys:
             stacked_result = build_stacked_skill_invocation_message(
                 [base_cmd, *extra_keys], user_instruction, task_id=self.session_id,
             )
             if not stacked_result:
                 ChatConsole().print(f"[bold red]{_t('cli.skills.stacked_load_failed', command=base_cmd)}[/]")
+                self._dispatch_trailing_commands(trailing)
                 return
             msg, loaded_names, missing = stacked_result
             self._queue_loaded_skills(
                 msg, _t("cli.skills.loading_stacked", count=str(len(loaded_names)), names=', '.join(loaded_names)),
                 missing,
             )
+            self._dispatch_trailing_commands(trailing)
             return
-        msg = build_skill_invocation_message(base_cmd, rest, task_id=self.session_id)
+        msg = build_skill_invocation_message(base_cmd, user_instruction, task_id=self.session_id)
         if msg:
             self._queue_loaded_skills(msg, _t("cli.skills.loading_skill", name=skill_info['name']), None)
         else:
             ChatConsole().print(f"[bold red]{_t('cli.skills.skill_load_failed', command=base_cmd)}[/]")
+        self._dispatch_trailing_commands(trailing)
 
     def _expand_slash_prefix(self, cmd_original: str, cmd_lower: str, skill_commands, skill_bundles) -> bool:
         """Unique-prefix expansion against built-in COMMANDS + skill commands/bundles (agrees with tab-completion)."""
