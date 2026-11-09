@@ -487,6 +487,11 @@ _TURN_STATE: dict[str, Any] = {
 
 # Session persistence state.
 _SESSION_STATE: dict[str, Any] = {
+    # P46 reply cap: `agent.reply_max_tokens` (config; None/0 = off) clamps the per-call output
+    # cap to this value on every provider path, the way Pi's max_tokens does. Read from config
+    # below in _init_session_state; the truncation-retry ladder still lifts it per retry via the
+    # one-shot ephemeral cap, which is applied before the clamp.
+    "reply_max_tokens": None,
     "_session_messages": list,
     # Responses encrypted-reasoning replay. The first ``invalid_encrypted_content`` rejection only
     # strips the stale blobs (a rotated sealing key); a second one means the route cannot round-trip
@@ -1086,6 +1091,14 @@ def _init_session_state(agent, session_id, session_db, parent_session_id, reason
     agent.logs_dir = get_hermes_home() / "sessions"
     agent.logs_dir.mkdir(parents=True, exist_ok=True)
     _set_defaults(agent, _SESSION_STATE)
+
+    # P46: pick up `agent.reply_max_tokens` once per session. A missing/unreadable config
+    # leaves the default (None = off), like the cache-TTL read below.
+    with suppress(Exception):
+        from hermes_cli.config import load_config_readonly as _load_reply_cfg
+        _reply_cap = int((_load_reply_cfg().get("agent") or {}).get("reply_max_tokens") or 0)
+        if _reply_cap > 0:
+            agent.reply_max_tokens = _reply_cap
 
     # Filesystem checkpoint manager (transparent — not a tool)
     from tools.checkpoint_manager import CheckpointManager

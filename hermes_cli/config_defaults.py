@@ -64,6 +64,14 @@ DEFAULT_CONFIG = {
         # Turn cap. null = unlimited (default; caps caused silent mid-task truncation). Positive int
         # caps; "none"/"unlimited"/"inf"/0/-1 also mean unlimited (resolve_turn_limit).
         "max_turns": None,
+        # Per-call output cap in tokens (fork P46), the way Pi caps replies: every provider's
+        # request builder sends min(this, the model's own max) as max_tokens / max_completion_tokens.
+        # null/0 = off (the model catalog's max is sent, which on the OpenAI-compatible routes
+        # means no cap at all). The truncation-retry ladder still raises the cap per retry when a
+        # turn genuinely needs more room; on Anthropic reasoning models the thinking budget can
+        # still lift max_tokens above it (the adapter clamps to budget + 4096 so thinking is never
+        # silently truncated).
+        "reply_max_tokens": None,
         # Optional one-time model-visible checkpoint warning before a finite turn cap is exhausted.
         # null = off; set a ratio strictly between 0 and 1 (for example, 0.75).
         "budget_warning_ratio": None,
