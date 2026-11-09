@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-import model_tools  # noqa: F401  (registers the built-in tools the hint looks up)
+import model_tools
 from tools import code_execution_tool as cet
 
 DEFAULT = {

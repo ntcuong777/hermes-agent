@@ -182,7 +182,7 @@ def _cfg(*fields):
 
 def test_get_usage_omits_both_for_the_default_bar(monkeypatch, _isolated_cache):
     _remember(_snapshot(AccountUsageWindow("Weekly", 10.0)))
-    monkeypatch.setattr(server, "_load_cfg_raw", lambda: {})
+    monkeypatch.setattr(server, "_load_cfg_raw", dict)
     usage = server._get_usage(_Agent())
     assert "cost_usd" not in usage and "quota" not in usage
     assert (

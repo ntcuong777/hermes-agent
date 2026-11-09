@@ -1,19 +1,22 @@
+import type * as childProcess from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 
 import { renderSync, Text } from '@hermes/ink'
+import type * as ink from '@hermes/ink'
 import React from 'react'
 import { expect, it, vi } from 'vitest'
 
 import { patchUiState, resetUiState } from '../app/uiStore.js'
 import { useComposerState } from '../app/useComposerState.js'
+import type * as editorMod from '../lib/editor.js'
 
 const editor = vi.hoisted(() => ({ run: (_file: string) => {} }))
 
 vi.mock('node:child_process', async orig => ({
-  ...(await orig<typeof import('node:child_process')>()),
+  ...(await orig<typeof childProcess>()),
   spawnSync: vi.fn((_cmd: string, args: string[]) => {
     editor.run(args.at(-1)!)
 
@@ -21,11 +24,11 @@ vi.mock('node:child_process', async orig => ({
   })
 }))
 vi.mock('../lib/editor.js', async orig => ({
-  ...(await orig<typeof import('../lib/editor.js')>()),
+  ...(await orig<typeof editorMod>()),
   resolveEditor: () => ['fake-editor']
 }))
 vi.mock('@hermes/ink', async orig => ({
-  ...(await orig<typeof import('@hermes/ink')>()),
+  ...(await orig<typeof ink>()),
   withInkSuspended: (fn: () => Promise<void>) => fn()
 }))
 
@@ -61,11 +64,13 @@ it('parks an editor draft when the session changed, restores it unsent on return
 
   try {
     get().actions.setInput('before')
+
     editor.run = file => {
       writeFileSync(file, 'edited\nsecond')
       patchUiState({ sid: 'b' })
       get().actions.clearIn()
     }
+
     await get().actions.openEditor()
 
     // Session b is current: its composer is left alone, nothing was submitted.
@@ -92,10 +97,12 @@ it('holds an editor draft back while the composer has newer text', async () => {
 
   try {
     get().actions.setInput('before')
+
     editor.run = file => {
       writeFileSync(file, 'edited')
       get().actions.setInput('typed meanwhile')
     }
+
     await get().actions.openEditor()
     expect(get().refs.inputRef.current).toBe('typed meanwhile')
 

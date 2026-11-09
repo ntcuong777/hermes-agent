@@ -97,7 +97,7 @@ def test_render_fails_open_for_callback_failure_wrong_type_and_aggregate_budget(
 
 
 def _render_with_cap(monkeypatch, cap, sections=3, size=3500):
-    import hermes_cli.plugins as plugins
+    from hermes_cli import plugins
 
     monkeypatch.setattr(
         plugins,

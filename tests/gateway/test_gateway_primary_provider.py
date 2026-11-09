@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-import gateway.run as run
+from gateway import run
 import hermes_cli.runtime_provider as rp
 
 SHARED = {"provider": "anthropic", "default": "claude-sonnet-5-5"}

@@ -24,7 +24,7 @@ def home(tmp_path, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def fake_redactor(monkeypatch):
-    import agent.redact as redact
+    from agent import redact
 
     monkeypatch.setattr(
         redact,
@@ -104,7 +104,7 @@ def test_an_unwritable_directory_never_blocks_the_approval(home, monkeypatch):
 def test_a_redactor_failure_never_blocks_the_approval_and_writes_nothing(
     home, monkeypatch
 ):
-    import agent.redact as redact
+    from agent import redact
 
     def boom(text, force=False):
         raise RuntimeError("redactor down")

@@ -919,7 +919,7 @@ def _is_user_only_skill(info: Mapping[str, Any]) -> bool:
     try:
         from agent.skill_utils import parse_frontmatter
 
-        frontmatter, _ = parse_frontmatter(Path(path).read_text(encoding="utf-8", errors="replace"))
+        frontmatter, _ = parse_frontmatter(Path(path).read_text(encoding="utf-8-sig", errors="replace"))
     except OSError:
         return False
     return frontmatter.get("disable-model-invocation") is True

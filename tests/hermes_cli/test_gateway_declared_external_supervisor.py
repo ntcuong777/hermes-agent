@@ -130,7 +130,7 @@ def test_setup_flows_need_no_service_when_a_supervisor_is_declared(
 def wizard(declare, monkeypatch):
     """A declared supervisor, a running gateway that is externally supervised, and a spy on restarts."""
     import gateway.status
-    import hermes_cli.cli_output as cli_output
+    from hermes_cli import cli_output
     import hermes_cli.gateway as gw
     import hermes_cli.gateway_supervised_restart as sup
 
