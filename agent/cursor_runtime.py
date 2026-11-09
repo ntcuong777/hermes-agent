@@ -336,7 +336,14 @@ class _Turn:
         if kind == "tool-request":
             return self._on_tool_request(message)
         if kind == "done":
-            return _Outcome(str(message.get("status")), usage=message.get("usage"))
+            status = str(message.get("status"))
+            # An SDK-reported error arrives as done/status:"error" — a legal message with no
+            # detail field, so the host supplies the vocabulary ("sdk-error") itself.
+            if status == "error":
+                return _Outcome(
+                    "error", _FAILURE_TEXT["sdk-error"], usage=message.get("usage")
+                )
+            return _Outcome(status, usage=message.get("usage"))
         if kind == "failed":
             return _Outcome("error", _failure_text(message.get("code")))
         return None

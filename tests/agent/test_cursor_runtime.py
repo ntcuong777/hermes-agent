@@ -220,6 +220,21 @@ def test_worker_failure_ends_the_turn_without_fallback_or_secret_text(tmp_path):
     assert "test-key-not-real" not in json.dumps(result, default=str)
 
 
+def test_an_sdk_errored_turn_speaks_the_fixed_vocabulary(tmp_path):
+    # done/status:"error" is a legal protocol message with no detail field; the host must
+    # translate it into the same vocabulary as a failed line, never echo the bare status.
+    command = _worker(
+        tmp_path,
+        """
+        send({"type": "done", "turnId": tid, "status": "error"})
+    """,
+    )
+    result = _run(FakeAgent(), command)
+    assert result["completed"] is False
+    assert result["error"] == cr._FAILURE_TEXT["sdk-error"]
+    assert "turn ended with status" not in result["error"]
+
+
 def test_worker_death_without_terminal_message_is_a_failed_turn(tmp_path):
     command = _worker(tmp_path, "sys.exit(3)")
     result = _run(FakeAgent(), command)
