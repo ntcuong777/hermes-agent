@@ -8,8 +8,10 @@ the parent's viewers (TUI, Desktop) anyway:
 * the gateway registers one *idle notifier* per session key (``register_idle_notify``) and leaves it in
   place after the turn; it answers ``available()`` only while a viewer is attached;
 * a caller that wants the lane wraps its ask in ``idle_ask()``. Every other approval, in or out of a
-  turn, keeps today's behaviour: ``tools.approval._human_decision`` consults the lane only inside that
-  context and only when no turn notifier is registered.
+  turn, keeps today's behaviour. Inside the context, the lane is the delivery path when no turn
+  notifier is registered; when one is, the ask still rides the turn notifier but is flagged ``idle``
+  so the turn-end sweep (``tools.approval.unregister_gateway_notify``) leaves it waiting — a child
+  that asked mid-turn outlives that turn.
 
 An entry that rides this lane is flagged ``idle`` so the turn-end sweep
 (``tools.approval.unregister_gateway_notify``) leaves it waiting for its answer.

@@ -93,7 +93,11 @@ def test_the_lane_is_not_used_when_no_viewer_could_see_it():
     assert approval_idle.idle_notify_for(KEY) is None
 
 
-def test_a_turn_notifier_wins_over_the_lane():
+def test_a_child_ask_under_a_live_turn_rides_the_turn_notifier_but_survives_the_sweep():
+    """The race the lane exists for, mid-turn: a child asks while its parent's turn is live, and
+    the turn ends before anyone answers. Delivery stays on the live turn notifier, the entry is
+    flagged idle, and the sweep leaves it waiting instead of withdrawing it (a later phone
+    answer must still land, not wake the child with a BLOCKED nobody issued)."""
     lane, turn = Notifier(), Notifier()
     approval_idle.register_idle_notify(KEY, lane)
     approval.register_gateway_notify(KEY, turn)
@@ -102,9 +106,12 @@ def test_a_turn_notifier_wins_over_the_lane():
     assert _pending()
     wait_until(lambda: turn.seen, what="turn notifier called")
     assert lane.seen == []
-    assert "idle" not in turn.seen[0]
-    approval.resolve_gateway_approval(KEY, "deny")
+    assert turn.seen[0]["idle"] is True
+    approval.unregister_gateway_notify(KEY)  # the parent's turn ended mid-wait
+    assert approval.list_gateway_approvals(KEY), "the child's ask was killed by the sweep"
+    approval.resolve_gateway_approval(KEY, "once")
     thread.join(timeout=5)
+    assert box["result"]["approved"] is True
 
 
 def test_the_turn_end_sweep_wakes_a_turn_ask_but_spares_an_idle_one():

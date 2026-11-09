@@ -918,6 +918,24 @@ def _smart_gate(spec: _GateSpec, command: str, description: str, pattern_key: st
     }, True
 
 
+def _gateway_idle_delivery(session_key: str) -> tuple[object, bool]:
+    """Who delivers a gateway ask for *session_key*, and whether the entry must survive the turn.
+
+    ``(turn notifier, False)`` is the plain path. A background child's ask (the opt-in idle
+    context) outlives the parent's turn, so it is flagged idle even when the turn notifier is
+    live — the flag is what keeps the turn-end sweep from withdrawing an ask nobody answered
+    yet. With no turn notifier, the out-of-turn lane is the delivery path when a viewer could
+    see the card.
+    """
+    notify_cb = _gateway_notify_cb(session_key)
+    if not approval_idle.idle_ask_allowed():
+        return notify_cb, False
+    if notify_cb is None:
+        lane = approval_idle.idle_notify_for(session_key)
+        return (lane, True) if lane is not None else (None, False)
+    return notify_cb, True
+
+
 def _human_decision(spec: _GateSpec, *, command: str, description: str,
                     pattern_key: str, pattern_keys: list[str],
                     session_key: str, approval_callback, is_cli: bool, is_gateway: bool,
@@ -980,12 +998,7 @@ def _human_decision(spec: _GateSpec, *, command: str, description: str,
         # command still executes after approval and persistence keys off pattern_key.
         display_command = redact_approval_display(command)
         display_description = redact_approval_display(description)
-        notify_cb = _gateway_notify_cb(session_key)
-        idle_lane = False
-        if notify_cb is None and approval_idle.idle_ask_allowed():
-            # Opt-in only (a background subagent's ask after its parent's turn ended).
-            notify_cb = approval_idle.idle_notify_for(session_key)
-            idle_lane = notify_cb is not None
+        notify_cb, idle_lane = _gateway_idle_delivery(session_key)
         if notify_cb is not None:
             # Smart DENY overrides are one-operation decisions, so the UI must not offer a
             # permanent or session scope.
