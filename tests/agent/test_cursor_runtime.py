@@ -253,6 +253,34 @@ def test_classified_worker_failures_speak_their_own_line(tmp_path):
         assert result["error"] == expected
 
 
+def test_a_silent_worker_is_reaped_before_the_turn_deadline(tmp_path, monkeypatch):
+    # An upstream wedge streams nothing at all; the stall watchdog must reap the turn long
+    # before the hard deadline instead of spinning until it.
+    monkeypatch.setattr(cr, "_turn_timeout", lambda: 8.0)
+    monkeypatch.setattr(cr, "_stall_timeout", lambda: 1.5)
+    command = _worker(tmp_path, "import time; time.sleep(120)")
+    result = _run(FakeAgent(), command)
+    assert result["completed"] is False
+    assert "silent" in result["error"]
+
+
+def test_a_live_pipe_is_never_reaped_as_silent(tmp_path, monkeypatch):
+    # Events inside the window keep the watchdog quiet; the turn still finishes normally.
+    monkeypatch.setattr(cr, "_stall_timeout", lambda: 1.0)
+    command = _worker(
+        tmp_path,
+        """
+        import time
+        for _ in range(4):
+            time.sleep(0.4)
+            send({"type": "event", "turnId": tid, "kind": "progress", "text": "running"})
+        send({"type": "done", "turnId": tid, "status": "finished"})
+    """,
+    )
+    result = _run(FakeAgent(), command)
+    assert result["completed"] is True and result["error"] is None
+
+
 def test_worker_death_without_terminal_message_is_a_failed_turn(tmp_path):
     command = _worker(tmp_path, "sys.exit(3)")
     result = _run(FakeAgent(), command)

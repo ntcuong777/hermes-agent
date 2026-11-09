@@ -41,6 +41,7 @@ MAX_WORKER_LINE_CHARS = 1024 * 1024
 _POLL_SECONDS = 0.2
 _CANCEL_GRACE_SECONDS = 5.0
 _DEFAULT_TURN_TIMEOUT_SECONDS = 1800.0
+_DEFAULT_STALL_TIMEOUT_SECONDS = 300.0
 _WORKER_ENV_ALLOWLIST = (
     "PATH",
     "LANG",
@@ -298,18 +299,30 @@ class _Turn:
         self.final_text = ""
         self.seen_calls: set[Any] = set()
         self.spinner_on = False
+        self.last_rx = 0.0
 
     def run(self, start: dict[str, Any]) -> _Outcome:
         self.turn_id = start["turnId"]
         if not self.worker.send(start):
             return _Outcome("error", "worker did not accept the turn")
+        self.last_rx = time.monotonic()
         deadline = time.monotonic() + _turn_timeout()
+        stall = _stall_timeout()
         while True:
             if getattr(self.agent, "_interrupt_requested", False):
                 return self._cancel()
-            if time.monotonic() > deadline:
+            now = time.monotonic()
+            if now > deadline:
                 self._cancel()
                 return _Outcome("error", "turn deadline exceeded")
+            if stall and now - self.last_rx > stall:
+                # The SDK streams events, so this silence is a wedged upstream run, not a slow one.
+                self._cancel()
+                return _Outcome(
+                    "error",
+                    f"the worker went silent for {int(stall)}s — the run stalled; "
+                    "retry, or pick another model with /model",
+                )
             outcome = self._step()
             if outcome is not None:
                 return outcome
@@ -321,6 +334,7 @@ class _Turn:
             return None
         if message is None:
             return _Outcome("error", "worker exited before finishing the turn")
+        self.last_rx = time.monotonic()
         if message.get("type") == "ready" or message.get("turnId") not in (
             self.turn_id,
             None,
@@ -560,6 +574,20 @@ def _turn_timeout() -> float:
         )
     except Exception:
         return _DEFAULT_TURN_TIMEOUT_SECONDS
+
+
+def _stall_timeout() -> float:
+    """Silence window before a wedged run is reaped. The SDK streams status events, so a healthy
+    pipe never goes quiet for long; 0 disables. Config: cursor.stall_timeout."""
+    try:
+        from hermes_cli.config import load_config
+
+        return float(
+            (load_config().get("cursor") or {}).get("stall_timeout")
+            or _DEFAULT_STALL_TIMEOUT_SECONDS
+        )
+    except Exception:
+        return _DEFAULT_STALL_TIMEOUT_SECONDS
 
 
 def _failed_result(agent, messages: list[dict[str, Any]], error: str) -> dict[str, Any]:
