@@ -235,6 +235,24 @@ def test_an_sdk_errored_turn_speaks_the_fixed_vocabulary(tmp_path):
     assert "turn ended with status" not in result["error"]
 
 
+def test_classified_worker_failures_speak_their_own_line(tmp_path):
+    # The worker classifies an SDK-reported errored run (auth / rate-limit / upstream) into
+    # failed codes; each must surface as its own actionable sentence, never a bare status.
+    for code, expected in (
+        ("rate-limit", cr._FAILURE_TEXT["rate-limit"]),
+        ("upstream-error", cr._FAILURE_TEXT["upstream-error"]),
+    ):
+        command = _worker(
+            tmp_path,
+            f"""
+        send({{"type": "failed", "turnId": tid, "code": "{code}"}})
+    """,
+        )
+        result = _run(FakeAgent(), command)
+        assert result["completed"] is False
+        assert result["error"] == expected
+
+
 def test_worker_death_without_terminal_message_is_a_failed_turn(tmp_path):
     command = _worker(tmp_path, "sys.exit(3)")
     result = _run(FakeAgent(), command)
