@@ -15,7 +15,7 @@ _WARP_OK = {
 
 
 def _ring(monkeypatch, *, flag_on, env, **kwargs):
-    for key in _WARP_OK:
+    for key in (*_WARP_OK, "TMUX"):
         monkeypatch.delenv(key, raising=False)
     for key, value in env.items():
         monkeypatch.setenv(key, value)
@@ -52,10 +52,30 @@ def test_warp_osc777_only_under_supported_warp_build(monkeypatch):
     assert prefix not in _ring(monkeypatch, flag_on=True, env=not_warp, context="approval")
 
 
+def test_under_tmux_the_sequence_rides_dcs_passthrough(monkeypatch):
+    """Inside tmux a raw OSC is parsed and dropped (Ghostty #10387); the whole sequence —
+    bell aside — must go out DCS-wrapped with every ESC doubled, so the outer terminal
+    (allow-passthrough on) still raises the notification. Outside tmux: unchanged."""
+    raw = _ring(monkeypatch, flag_on=True, env={}, context="approval")
+    assert raw.startswith("\a\x1b]9;") and not raw.startswith("\a\x1bPtmux;")
+
+    wrapped = _ring(monkeypatch, flag_on=True, env={"TMUX": "/tmp/tmux-0/default,1,0"}, context="approval")
+    assert wrapped.startswith("\a\x1bPtmux;") and wrapped.endswith("\x1b\\")
+    payload = wrapped[1:][7:-2]  # strip \a, DCS tmux; header and ST trailer
+    # Undoing tmux's ESC-doubling restores exactly the unwrapped sequence.
+    assert payload.replace("\x1b\x1b", "\x1b") == raw[1:]
+
+    # Warp payload rides the same wrapper when tmux is in the middle.
+    both = _ring(monkeypatch, flag_on=True, env={"TMUX": "/tmp/tmux-0/default,1,0", **_WARP_OK},
+                 context="approval", detail="rm -rf build")
+    assert both.startswith("\a\x1bPtmux;")
+    assert "\x1b\x1b\x1b" not in both  # no triple ESC: doubling applied once, at the seam
+
+
 def test_running_app_gets_bell_and_osc9_on_its_loop_never_a_second_tty_writer(monkeypatch):
     """With the prompt_toolkit app live, the bell + notification must reach the tty through the
     app's output ON THE APP LOOP, never via a second writer from the calling thread."""
-    for key in _WARP_OK:
+    for key in (*_WARP_OK, "TMUX"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(terminal_notify, "write_tty", lambda seq: pytest.fail(f"stray tty write: {seq!r}"))
 

@@ -67,10 +67,27 @@ def warp_osc777(event: str, detail: str, session_id: str = "") -> str:
     return f"\x1b]777;notify;warp://cli-agent;{json.dumps(payload, separators=(',', ':'))}\x07"
 
 
+def tmux_passthrough(seq: str) -> str:
+    """Wrap a sequence in tmux's DCS passthrough when running under tmux.
+
+    tmux parses the pane stream and silently drops OSC sequences it does not
+    implement — OSC 9 desktop notifications among them (Ghostty discussion
+    #10387), so a raw write never reaches the outer terminal. The ``DCS tmux``
+    wrapper forwards the payload verbatim when ``allow-passthrough`` is on
+    (the nix-darwin tmux.conf sets it for clipetty already); every ESC inside
+    must be doubled per tmux's passthrough escaping rule. Outside tmux the
+    sequence passes through unchanged, matching Claude Code's approach
+    (anthropics/claude-code#19976).
+    """
+    if not os.environ.get("TMUX"):
+        return seq
+    return "\x1bPtmux;" + seq.replace("\x1b", "\x1b\x1b") + "\x1b\\"
+
+
 def notification_sequence(context: str, *, prompt: bool, session_id: str = "", detail: str = "") -> str:
     """OSC 9 (plus Warp OSC 777 when supported) for a blocking prompt or turn end."""
     seq = osc9(f"Hermes: {context}")
     if warp_supported():
         event = "permission_request" if prompt else "stop"
         seq += warp_osc777(event, detail or context, session_id)
-    return seq
+    return tmux_passthrough(seq)
