@@ -1,5 +1,7 @@
-import type { AnyGatewayEvent } from '../gatewayTypes.js'
-import type { SessionInfo } from '../types.js'
+import type {
+  AnyGatewayEvent,
+  SessionInfo
+} from '@hermes/shared/gateway-types'
 
 import { approvalMcpContext } from './createServerRequestHandler.js'
 import { patchOverlayState } from './overlayStore.js'

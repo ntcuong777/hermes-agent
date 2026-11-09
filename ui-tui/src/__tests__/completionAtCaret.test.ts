@@ -1,6 +1,6 @@
+import { applyCompletion, completionCursor, completionToApplyOnSubmit } from '@hermes/shared/slash-input'
 import { describe, expect, it } from 'vitest'
 
-import { applyCompletion, completionCursor, completionToApplyOnSubmit } from '../domain/slash.js'
 import { completionRequestForInput } from '../hooks/useCompletion.js'
 
 // The caret is not always at the end: the person types `@` in the middle of a prompt they already wrote.

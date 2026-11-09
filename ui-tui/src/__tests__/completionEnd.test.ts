@@ -1,6 +1,6 @@
+import { applyCompletion, completionCursor, completionEnd, completionToApplyOnSubmit } from '@hermes/shared/slash-input'
 import { describe, expect, it } from 'vitest'
 
-import { applyCompletion, completionCursor, completionEnd, completionToApplyOnSubmit } from '../domain/slash.js'
 import { completionRequestForInput } from '../hooks/useCompletion.js'
 
 // B4. A completion is asked for the text as it was at the caret, and its rows arrive a moment later. Characters

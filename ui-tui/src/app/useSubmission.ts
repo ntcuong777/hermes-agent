@@ -1,19 +1,27 @@
+import type { ShellExecResponse } from '@hermes/shared/gateway-types'
+import { hasInterpolation, INTERPOLATION_RE } from '@hermes/shared/interpolation'
 import { looksLikeSlashCommand, parseSlashCommand } from '@hermes/shared/slash'
+import { completionCursor, completionEnd, completionToApplyOnSubmit } from '@hermes/shared/slash-input'
 import { type MutableRefObject, useCallback, useEffect, useRef } from 'react'
 
 import { TYPING_IDLE_MS } from '../config/timing.js'
 import { expandTokens, imageAttachments } from '../domain/attachments.js'
-import { completionCursor, completionEnd, completionToApplyOnSubmit } from '../domain/slash.js'
 import type { GatewayClient } from '../gatewayClient.js'
-import type { ShellExecResponse } from '../gatewayTypes.js'
 import { queueItem, type QueueItem } from '../hooks/useQueue.js'
 import { t } from '../i18n/runtime.js'
 import { asRpcResult } from '../lib/rpc.js'
-import { hasInterpolation, INTERPOLATION_RE } from '../protocol/interpolation.js'
 import type { Msg } from '../types.js'
 
+import { cancelPendingRewind, sendPendingRewind } from './backtrackStore.js'
 import { reportSlashCommand } from './createSlashHandler.js'
-import type { BusyInputMode, ComposerActions, ComposerRefs, ComposerState, ComposerToken, SlashHandler } from './interfaces.js'
+import type {
+  BusyInputMode,
+  ComposerActions,
+  ComposerRefs,
+  ComposerState,
+  ComposerToken,
+  SlashHandler
+} from './interfaces.js'
 import { stagePastes } from './pasteStore.js'
 import { applyQueuePlan, planQueueSlash } from './queueSlash.js'
 import { findSlashCommand } from './slash/registry.js'
@@ -84,7 +92,11 @@ export interface BusyControl {
 export const captureBusyControl = (): BusyControl => {
   const live = getUiState()
 
-  return { destination: captureDestination(), mode: live.busyInputMode, executionGeneration: live.info?.execution_generation }
+  return {
+    destination: captureDestination(),
+    mode: live.busyInputMode,
+    executionGeneration: live.info?.execution_generation
+  }
 }
 
 export function useSubmission(opts: UseSubmissionOptions) {
@@ -129,7 +141,13 @@ export function useSubmission(opts: UseSubmissionOptions) {
       showUserMessage = true,
       displayText?: string,
       expandOverride?: (value: string) => string,
-      submitOpts: { attachments?: Array<{ path: string; mime: string }>; skipDetectDrop?: boolean; destination?: SubmissionDestination; queueItem?: QueueItem; behindTurn?: boolean } = {}
+      submitOpts: {
+        attachments?: Array<{ path: string; mime: string }>
+        skipDetectDrop?: boolean
+        destination?: SubmissionDestination
+        queueItem?: QueueItem
+        behindTurn?: boolean
+      } = {}
     ) => {
       // Read tokens off the ref, not render state: a paste immediately followed
       // by Enter submits before React has re-rendered with the new token.
@@ -138,7 +156,8 @@ export function useSubmission(opts: UseSubmissionOptions) {
       const destination = submitOpts.destination ?? captureDestination()
 
       const item =
-        submitOpts.queueItem ?? (destination.sid ? composerActions.stage?.(text, displayText, destination, submitOpts.attachments) : undefined)
+        submitOpts.queueItem ??
+        (destination.sid ? composerActions.stage?.(text, displayText, destination, submitOpts.attachments) : undefined)
 
       submitPrompt(
         text,
@@ -213,17 +232,15 @@ export function useSubmission(opts: UseSubmissionOptions) {
 
       Promise.all(
         matches.map(m =>
-          gw
-            .request<ShellExecResponse>('shell.exec', { command: m[1]!, session_id: destination.sid })
-            .then(raw => {
-              const r = asRpcResult<ShellExecResponse>(raw)
+          gw.request<ShellExecResponse>('shell.exec', { command: m[1]!, session_id: destination.sid }).then(raw => {
+            const r = asRpcResult<ShellExecResponse>(raw)
 
-              if (!r) {
-                throw new Error(t('session.common.invalidResponse', 'shell.exec'))
-              }
+            if (!r) {
+              throw new Error(t('session.common.invalidResponse', 'shell.exec'))
+            }
 
-              return [r.stdout, r.stderr].filter(Boolean).join('\n').trim()
-            })
+            return [r.stdout, r.stderr].filter(Boolean).join('\n').trim()
+          })
         )
       ).then(
         results => then(spliceMatches(text, matches, results)),
@@ -296,13 +313,19 @@ export function useSubmission(opts: UseSubmissionOptions) {
       if (gw.isCanonical && mode !== 'queue') {
         const staged = item.settle ? item : composerActions.stage?.(item.text, item.display, destination)
 
-        if (!staged) { return }
+        if (!staged) {
+          return
+        }
         staged.controlMethod ??= mode === 'steer' ? 'session.steer' : 'session.redirect'
         staged.executionGeneration ??= executionGeneration
         staged.attachments ??= item.attachments
 
         return send(item.text, true, item.display, value => value, {
-          destination, behindTurn: true, queueItem: staged, attachments: item.attachments })
+          destination,
+          behindTurn: true,
+          queueItem: staged,
+          attachments: item.attachments
+        })
       }
 
       if (mode === 'queue') {
@@ -311,7 +334,11 @@ export function useSubmission(opts: UseSubmissionOptions) {
         // running turn. Legacy gateways keep the renderer-side queue.
         if (gw.isCanonical) {
           return send(item.text, true, item.display, value => value, {
-            destination, behindTurn: true, queueItem: item.settle ? item : undefined, attachments: item.attachments })
+            destination,
+            behindTurn: true,
+            queueItem: item.settle ? item : undefined,
+            attachments: item.attachments
+          })
         }
 
         return enqueueText()
@@ -325,7 +352,11 @@ export function useSubmission(opts: UseSubmissionOptions) {
       // the agent is in model generation, tool execution, or an older runtime.
       // Reuse the normal submit pipeline so the correction gets its user bubble
       // and file-drop interpolation exactly once.
-      send(item.text, true, item.display, value => value, { destination, queueItem: item.settle ? item : undefined, attachments: item.attachments })
+      send(item.text, true, item.display, value => value, {
+        destination,
+        queueItem: item.settle ? item : undefined,
+        attachments: item.attachments
+      })
     },
     [composerActions, gw, send]
   )
@@ -342,20 +373,34 @@ export function useSubmission(opts: UseSubmissionOptions) {
         return
       }
 
+      // An armed backtrack edit: a plain message rewinds to before the picked prompt and sends;
+      // a slash or shell command disarms it (nothing cut) and runs as usual.
       // History stores resolved content, not `[[…]]` labels: tokens are cleared
       // on submit, so recall must be self-contained. Image tokens resolve to
       // nothing — a detached image can't be re-attached by recalling the text.
       // Idempotent on token-free text, so re-submitting a recalled entry is
       // stable.
-      const destination = captureDestination()
       const submissionTokens = [...composerRefs.tokensRef.current]
       const submission = prepareSubmission(full, submissionTokens)
       const toHistory = submission.text
 
+      // Expanded here, before clearIn() empties the tokens the async rewind would expand against;
+      // the tokens ride along so a rewind that cuts nothing restores the draft whole.
+      if (sendPendingRewind({ ...submission, tokens: submissionTokens }, getUiState().sid)) {
+        // The sent row shows each chip and expands it from these bodies, as an ordinary submit's does.
+        stagePastes(full, submission.text, submissionTokens)
+        composerActions.pushHistory(toHistory)
+        composerActions.clearIn()
+
+        return
+      }
+
+      const destination = captureDestination()
+
       // The composer is the only copy of a draft until the pending-input
       // journal holds it, so it is cleared after that first durable write and
       // kept — text and image tokens — when the write fails.
-      const journaled = <T,>(write: () => T): { value: T } | undefined => {
+      const journaled = <T>(write: () => T): { value: T } | undefined => {
         try {
           const value = write()
           composerActions.clearIn()
@@ -409,7 +454,10 @@ export function useSubmission(opts: UseSubmissionOptions) {
           composerActions.clearIn()
           // Image tokens are labels in the command; the descriptors and their
           // expander ride along so a skill/alias send still carries the image.
-          slashRef.current(slash.command, { attachments: submission.attachments, expand: expandTokens(submissionTokens) })
+          slashRef.current(slash.command, {
+            attachments: submission.attachments,
+            expand: expandTokens(submissionTokens)
+          })
         }
 
         return
@@ -434,7 +482,9 @@ export function useSubmission(opts: UseSubmissionOptions) {
 
       if (unbound) {
         composerActions.pushHistory(toHistory)
-        journaled(() => composerActions.enqueue(submission.text, submission.display, destination, submission.attachments))
+        journaled(() =>
+          composerActions.enqueue(submission.text, submission.display, destination, submission.attachments)
+        )
 
         return
       }
@@ -479,13 +529,18 @@ export function useSubmission(opts: UseSubmissionOptions) {
 
       if (getUiState().busy) {
         return void journaled(() =>
-          handleBusyInput({ ...queueItem(submission.text, submission.display), attachments: submission.attachments }))
+          handleBusyInput({ ...queueItem(submission.text, submission.display), attachments: submission.attachments })
+        )
       }
 
       if (shouldInterpolateSubmission(full)) {
-        const staged = journaled(() => composerActions.stage?.(submission.text, submission.display, destination, submission.attachments))
+        const staged = journaled(() =>
+          composerActions.stage?.(submission.text, submission.display, destination, submission.attachments)
+        )
 
-        if (!staged) { return }
+        if (!staged) {
+          return
+        }
         patchUiState({ busy: true })
         const item = staged.value
 
@@ -494,14 +549,17 @@ export function useSubmission(opts: UseSubmissionOptions) {
           text =>
             send(prepareSubmission(text, submissionTokens).text, true, text, value => value, {
               destination,
-              queueItem: item, attachments: submission.attachments
+              queueItem: item,
+              attachments: submission.attachments
             }),
           destination,
           item
         )
       }
 
-      journaled(() => send(submission.text, true, submission.display, value => value, { attachments: submission.attachments }))
+      journaled(() =>
+        send(submission.text, true, submission.display, value => value, { attachments: submission.attachments })
+      )
     },
     [
       appendMessage,
@@ -544,6 +602,7 @@ export function useSubmission(opts: UseSubmissionOptions) {
       }
 
       if (!value.trim() && !composerState.inputBuf.length) {
+        cancelPendingRewind(sys)
         const live = getUiState()
         const now = Date.now()
         const doubleTap = now - lastEmptyAt.current < DOUBLE_ENTER_MS
