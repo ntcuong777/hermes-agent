@@ -1487,12 +1487,7 @@ export function TextInput({
         return
       }
 
-      if (
-        eventRaw === '\x1bv' ||
-        eventRaw === '\x1bV' ||
-        eventRaw === '\x16' ||
-        (isMac && isActionMod(k) && inp.toLowerCase() === 'v')
-      ) {
+      if (isPasteHotkey(eventRaw, inp, k, isMac)) {
         flushKeyBurst()
 
         if (cbPaste.current) {
@@ -1984,6 +1979,25 @@ export const shouldPassThroughToGlobalHandler = (
   key.pageDown ||
   key.escape ||
   isVoiceToggleKey(key, input, voiceRecordKey)
+
+/**
+ * The key gestures the composer treats as "paste from the clipboard": Alt+V
+ * (ESC v), Ctrl+V, and Cmd/Ctrl+V via the platform action modifier. Ctrl+V is
+ * matched on the parsed key, not the raw sequence: extended-key protocols
+ * (kitty CSI u — tmux extended-keys, Ghostty, kitty, WezTerm) deliver it as
+ * ESC [ 118 ; 5 u, and only the C0 byte \x16 arrives as `eventRaw`.
+ */
+export const isPasteHotkey = (
+  eventRaw: string | undefined,
+  input: string,
+  key: Key,
+  macHost: boolean
+): boolean =>
+  eventRaw === '\x1bv' ||
+  eventRaw === '\x1bV' ||
+  eventRaw === '\x16' ||
+  (key.ctrl && input.toLowerCase() === 'v') ||
+  (macHost && isActionMod(key) && input.toLowerCase() === 'v')
 
 export interface TextInputMouseApi {
   dragAt: (row: number, col: number) => void

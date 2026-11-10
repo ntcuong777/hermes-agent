@@ -65,6 +65,28 @@ describe('readOsc52Clipboard', () => {
     const flush = vi.fn().mockResolvedValue(undefined)
     await expect(readOsc52Clipboard({ flush, send })).resolves.toBeNull()
   })
+
+  it('stays bounded when the terminal never answers the query or the DA1 sentinel', async () => {
+    // A terminal that ignores OSC52 AND never answers the flush()'s DA1 must
+    // not wedge the clipboard read: both waits ride the same deadline.
+    vi.useFakeTimers()
+
+    try {
+      const never = () => new Promise<never>(() => {})
+      const read = readOsc52Clipboard({ flush: vi.fn(never), send: vi.fn(never) })
+      const outcome = read.then(
+        () => 'resolved' as const,
+        () => 'rejected' as const
+      )
+
+      await vi.advanceTimersByTimeAsync(1500)
+
+      await expect(outcome).resolves.toBe('resolved')
+      await expect(read).resolves.toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('writeOsc52Clipboard', () => {
