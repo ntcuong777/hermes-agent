@@ -114,16 +114,25 @@ def test_a_result_transform_applies_once_to_what_the_worker_and_transcript_see(t
 
 
 def test_an_agent_context_tool_updates_the_live_agent_state(tmp_path, monkeypatch):
-    # With a lone toolset Hermes defers todo_list behind its tool_call bridge; the bridge is offered and
-    # forwarded like any tool, and the underlying tool still runs against the live agent.
+    # The runtime is one SDK call: deferred tools can never be injected mid-turn, so todo_list is
+    # declared outright and the underlying tool runs against the live agent.
     agent = _agent(["todo"])
-    assert "tool_call" in agent.valid_tool_names
+    assert "todo_list" in agent.valid_tool_names
     assert not agent._todo_store.has_items()
-    result, reply = _run(agent, monkeypatch, tmp_path, "tool_call", {
-        "name": "todo_list",
-        "arguments": {"todos": [{"id": "1", "content": "ship it", "status": "pending"}]}})
+    result, reply = _run(agent, monkeypatch, tmp_path, "todo_list", {
+        "todos": [{"id": "1", "content": "ship it", "status": "pending"}]})
     assert result["completed"] is True and reply["isError"] is False
     assert agent._todo_store.has_items()
+
+
+def test_the_tool_search_bridge_is_never_offered_on_the_cursor_runtime():
+    # The worker declares exactly agent.tools as the SDK's custom tools. A bridge tool would point the
+    # model at deferred names the worker never declared; Cursor then reports the attempt as a native
+    # tool call and the whole turn is forbidden. The bridge must not exist here.
+    agent = _agent(["todo"])
+    bridge = {n for n in agent.valid_tool_names if n.startswith("tool_")}
+    assert not bridge, f"tool_search bridge offered on cursor_sdk: {sorted(bridge)}"
+    assert {"todo_list"} <= agent.valid_tool_names
 
 
 def _manual_approvals(monkeypatch, answer, asked):

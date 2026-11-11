@@ -25,6 +25,7 @@ from urllib.parse import parse_qs, urlparse, urlunparse
 from agent.context_compressor import ContextCompressor
 from agent.agent_init_fallback import _fallback_entries, _init_fallback_chain, recompute_init_fallback_api_mode
 from agent.agent_init_params import _CALLBACK_PARAMS, _GATEWAY_IDENTITY_PARAMS, _PASSTHROUGH_PARAMS
+from agent.agent_init_routes import _context_route_mismatch
 from agent.agent_runtime_helpers import _ra
 from agent.iteration_budget import IterationBudget, normalize_budget_warning_ratio
 from agent.memory_context import StreamingContextScrubber
@@ -52,78 +53,6 @@ from utils import base_url_host_matches, is_truthy_value
 
 # Same logger name as run_agent so caplog/patches on "run_agent" see our records.
 logger = logging.getLogger("run_agent")
-
-
-def _provider_default_routes(provider: str) -> set[str]:
-    """Return known exact default routes for a canonical provider id."""
-    routes: set[str] = set()
-
-    def add(value):
-        route = normalize_route_base_url(value)
-        if route:
-            routes.add(route)
-
-    with suppress(Exception):
-        from hermes_cli.providers import HERMES_OVERLAYS, get_provider
-        overlay = HERMES_OVERLAYS.get(provider)
-        provider_def = get_provider(provider, allow_network=False)
-        add(getattr(overlay, "base_url_override", ""))
-        add(getattr(provider_def, "base_url", ""))
-
-    with suppress(Exception):
-        from providers import get_provider_profile
-        add(getattr(get_provider_profile(provider), "base_url", ""))
-
-    with suppress(Exception):
-        from hermes_cli.auth import PROVIDER_REGISTRY
-        from hermes_cli.models import normalize_provider as normalize_model_provider
-        from hermes_cli.providers import normalize_provider as normalize_registry_provider
-        for provider_id, config in PROVIDER_REGISTRY.items():
-            if normalize_registry_provider(normalize_model_provider(provider_id)) == provider:
-                add(getattr(config, "inference_base_url", ""))
-
-    if provider == "gemini":
-        routes.update(f"{route.rstrip('/')}/openai" for route in list(routes))
-    return routes
-
-
-def _context_route_mismatch(
-    configured_base_url: Any, active_base_url: Any, configured_provider: Any, active_provider: Any,
-    *, already_normalized: bool = False,
-) -> bool:
-    """Return whether a context pin's configured route differs from runtime."""
-    _norm = (lambda v: str(v or "")) if already_normalized else normalize_route_base_url
-    configured_route, active_route = _norm(configured_base_url), _norm(active_base_url)
-    if configured_route:
-        return configured_route != active_route
-
-    configured_provider = str(configured_provider or "").strip()
-    active_provider = str(active_provider or "").strip()
-    if not configured_provider:
-        return False
-    try:
-        from hermes_cli.models import normalize_provider as normalize_model_provider
-        configured_provider = normalize_model_provider(configured_provider)
-        active_provider = normalize_model_provider(active_provider)
-    except Exception:
-        configured_provider = configured_provider.lower()
-        active_provider = active_provider.lower()
-    with suppress(Exception):
-        from hermes_cli.providers import normalize_provider as normalize_registry_provider
-        configured_provider = normalize_registry_provider(configured_provider)
-        active_provider = normalize_registry_provider(active_provider)
-
-    if active_route:
-        configured_routes = _provider_default_routes(configured_provider)
-        if configured_routes:
-            return active_route not in configured_routes
-        # Named/custom providers have no catalog default routes: an empty configured URL
-        # with a matching provider identity is the same route (gateway display paths
-        # compare the raw empty model.base_url and must not drop model.context_length).
-        return not (active_provider and configured_provider == active_provider)
-    return bool(
-        configured_provider and active_provider and configured_provider != active_provider
-    )
 
 
 def _normalize_custom_provider_name(value: Any) -> str:
@@ -1021,8 +950,13 @@ def _load_tools(agent, enabled_toolsets, disabled_toolsets):
         disabled_toolsets, getattr(agent, "platform", None), oneshot=agent_is_oneshot(agent))  # pin restore reads both
     agent.disabled_toolsets = disabled_toolsets  # so the tool_search bridge and delegate children drop them too
     agent._tool_snapshot_selection = tool_selection_key(enabled_toolsets, disabled_toolsets)  # tools[] freeze gate
+    # A whole-turn runtime (cursor_sdk) declares agent.tools to the SDK once and cannot inject schemas
+    # mid-turn, so the tool_search bridge would only bait the model into calling deferred names the
+    # worker never declared — Cursor reports that as a native tool call and forbids the turn. Every
+    # enabled tool goes out as a full schema instead.
     agent.tools = agent_tool_surface(agent, model_tools.get_tool_definitions(
-        enabled_toolsets=enabled_toolsets, disabled_toolsets=disabled_toolsets, quiet_mode=agent.quiet_mode) or [])
+        enabled_toolsets=enabled_toolsets, disabled_toolsets=disabled_toolsets, quiet_mode=agent.quiet_mode,
+        skip_tool_search_assembly=getattr(agent, "api_mode", "") == "cursor_sdk") or [])
     agent.valid_tool_names = {tool["function"]["name"] for tool in agent.tools} if agent.tools else set()
     # Kanban guidance is session-static for the dispatcher-owned worker only. Profiles may
     # expose kanban_show interactively, and children/cron runs inherit the env var, without
