@@ -181,6 +181,43 @@ def test_a_fast_only_model_lists_its_fast_variant(tmp_path, monkeypatch):
     ]
 
 
+def test_fetch_writes_a_metadata_sidecar_for_the_picker(tmp_path, monkeypatch):
+    # The /model picker annotates rows (context window, fast, max mode) from this sidecar; the
+    # ids-only models cache cannot carry it. Written best-effort next to the models cache.
+    catalog = [
+        {
+            "id": "grok-4.7",
+            "displayName": "Grok 4.7",
+            "parameters": [
+                {"id": "context", "values": [{"value": "256k"}, {"value": "500k"}]},
+                {"id": "reasoning_effort", "values": [{"value": "low"}, {"value": "high"}]},
+                {"id": "fast", "values": [{"value": "false"}, {"value": "true"}]},
+            ],
+            "variants": [
+                {"params": [{"id": "context", "value": "256k"}, {"id": "fast", "value": "false"}]},
+                {"params": [{"id": "context", "value": "500k"}, {"id": "fast", "value": "false"}], "isDefault": True, "isMaxMode": True},
+                {"params": [{"id": "context", "value": "500k"}, {"id": "fast", "value": "true"}]},
+            ],
+        },
+        {"id": "composer-2.5", "parameters": [{"id": "fast", "values": [{"value": "false"}, {"value": "true"}]}],
+         "variants": [{"params": [{"id": "fast", "value": "false"}], "isDefault": True},
+                      {"params": [{"id": "fast", "value": "true"}]}]},
+    ]
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_CURSOR_WORKER", _fake_worker(tmp_path, _catalog_body(*catalog)))
+    assert get_provider_profile("cursor").fetch_models(api_key="crsr_test_key") == [
+        "grok-4.7", "grok-4.7-256k", "grok-4.7-256k-fast", "grok-4.7-500k", "grok-4.7-500k-fast",
+        "composer-2.5", "composer-2.5-fast",
+    ]
+    meta = json.loads((tmp_path / "cache" / "cursor_models_meta.json").read_text())["models"]
+    assert meta["grok-4.7"] == {"context": "500k", "fast": False, "max": True}
+    assert meta["grok-4.7-256k"] == {"context": "256k", "fast": False, "max": False}
+    assert meta["grok-4.7-256k-fast"] == {"context": "256k", "fast": True, "max": False}
+    assert meta["grok-4.7-500k-fast"] == {"context": "500k", "fast": True, "max": False}
+    assert meta["composer-2.5"] == {"fast": False, "max": False}
+    assert meta["composer-2.5-fast"] == {"fast": True, "max": False}
+
+
 def test_variant_ids_resolve_their_context_length():
     profile = get_provider_profile("cursor")
     assert profile.get_model_context_length("grok-4.7-500k") == 500_000

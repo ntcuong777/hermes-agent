@@ -529,8 +529,13 @@ def window_plan_default(model_ids: list[str], pricing: Optional[dict] = None) ->
 def annotate_window_plan_rows(provider_data: dict, model_ids: list) -> tuple[list, Optional[str]]:
     """``(labels, limit_line)`` for the /model picker's model stage. On a Nous usage-window plan rows carry
     the TUI's ``Large`` / ``Free`` tags, and with a full allowance ``limit_line`` (above the hint) says it
-    once, with what happens next. Every other account: the bare ids and None. Display only."""
-    if str((provider_data or {}).get("slug") or "").lower() != "nous":
+    once, with what happens next. Cursor rows carry their catalog metadata instead (context window, fast,
+    max mode — hermes_cli/cursor_model_meta.py). Every other account: the bare ids and None. Display only."""
+    slug = str((provider_data or {}).get("slug") or "").lower()
+    if slug == "cursor":
+        from hermes_cli.cursor_model_meta import cursor_row_labels
+        return cursor_row_labels(list(model_ids)), None
+    if slug != "nous":
         return list(model_ids), None
     try:
         usage = nous_picker_usage()  # fresh snapshot only: a stale percent would mislabel the line

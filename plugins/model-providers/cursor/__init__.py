@@ -10,7 +10,9 @@ import json
 import re
 import subprocess
 import tempfile
+import time
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 from providers import register_provider
@@ -20,6 +22,9 @@ from providers.base import ProviderProfile, _profile_user_agent
 # (hermes/cursor-runtime model-params.ts) parses the same shapes back into catalog params.
 _VARIANT_CONTEXT_SUFFIX = re.compile(r"-(\d+)(k|m)$")
 _CONTEXT_SCALE = {"k": 1_000, "m": 1_000_000}
+# Display metadata for the /model picker rows (context window, fast, max mode), read by
+# hermes_cli/cursor_model_meta.py. Regenerated on every SDK-catalog fetch; display-only.
+_META_SIDECAR = Path("cache") / "cursor_models_meta.json"
 
 
 def _ids(data: Any) -> list[str]:
@@ -32,23 +37,30 @@ def _ids(data: Any) -> list[str]:
     return list(dict.fromkeys(str(i) for i in found if i))
 
 
-def _catalog_entry_ids(entry: Any) -> list[str]:
-    """The picker ids for one SDK-catalog model: its base id plus one id per selectable context/fast
-    variant. Context values come from the entry's variants (ground truth — the declared ``context``
-    parameter can lag them), falling back to that parameter's declared values; fast pairs with each
-    context value when a variant turns it on. A bare ``-fast`` id only exists for context-less models."""
+def _catalog_entry_ids_and_meta(entry: Any) -> tuple[list[str], dict[str, dict[str, Any]]]:
+    """The picker ids for one SDK-catalog model — its base id plus one id per selectable context/fast
+    variant — with the display metadata each id shows in the picker. Context values come from the
+    entry's variants (ground truth — the declared ``context`` parameter can lag them), falling back to
+    that parameter's declared values; fast pairs with each context value when a variant turns it on.
+    A bare ``-fast`` id only exists for context-less models. The base id's metadata is the default
+    variant's (that is what the backend runs when only the base id is sent)."""
     if not isinstance(entry, dict):
-        return []
+        return [], {}
     base = str(entry.get("id") or "")
     if not base:
-        return []
+        return [], {}
     variants = [v for v in entry.get("variants") or [] if isinstance(v, dict)]
-    variant_params = [p for v in variants for p in (v.get("params") or []) if isinstance(p, dict)]
-    context_values = list(
-        dict.fromkeys(
-            str(p.get("value")) for p in variant_params if p.get("id") == "context" and p.get("value")
+
+    def param(variant: dict, pid: str) -> str | None:
+        return next(
+            (str(p.get("value")) for p in variant.get("params") or []
+             if isinstance(p, dict) and p.get("id") == pid and p.get("value") is not None),
+            None,
         )
-    )
+
+    context_values = list(dict.fromkeys(
+        ctx for ctx in (param(v, "context") for v in variants) if ctx
+    ))
     if not context_values:
         context_values = [
             str(v.get("value"))
@@ -57,16 +69,59 @@ def _catalog_entry_ids(entry: Any) -> list[str]:
             for v in p.get("values") or []
             if isinstance(v, dict) and v.get("value")
         ]
-    fast_offered = any(p.get("id") == "fast" and p.get("value") == "true" for p in variant_params)
+    fast_offered = any(param(v, "fast") == "true" for v in variants)
+
+    def group_meta(context: str | None, fast: bool, members: list[dict]) -> dict[str, Any]:
+        out: dict[str, Any] = {"fast": fast, "max": any(v.get("isMaxMode") for v in members)}
+        if context is not None:
+            out = {"context": context, **out}
+        return out
+
+    meta: dict[str, dict[str, Any]] = {}
     ids = [base]
     if context_values:
         for value in context_values:
             ids.append(f"{base}-{value}")
+            meta[f"{base}-{value}"] = group_meta(
+                value, False, [v for v in variants if param(v, "context") == value and param(v, "fast") != "true"])
             if fast_offered:
                 ids.append(f"{base}-{value}-fast")
+                meta[f"{base}-{value}-fast"] = group_meta(
+                    value, True, [v for v in variants if param(v, "context") == value and param(v, "fast") == "true"])
     elif fast_offered:
         ids.append(f"{base}-fast")
-    return ids
+        meta[f"{base}-fast"] = group_meta(
+            None, True, [v for v in variants if param(v, "fast") == "true"])
+    default = next((v for v in variants if v.get("isDefault")), variants[0] if variants else None)
+    if default is not None:
+        meta[base] = {
+            **({"context": ctx} if (ctx := param(default, "context")) is not None else {}),
+            "fast": param(default, "fast") == "true",
+            "max": bool(default.get("isMaxMode")),
+        }
+    else:
+        meta[base] = {"fast": False, "max": False}
+    return ids, meta
+
+
+def _catalog_entry_ids(entry: Any) -> list[str]:
+    """Picker ids only; see :func:`_catalog_entry_ids_and_meta`."""
+    return _catalog_entry_ids_and_meta(entry)[0]
+
+
+def _write_meta_sidecar(meta: dict[str, dict[str, Any]]) -> None:
+    """Persist the picker metadata next to the models cache. Best-effort: a failed write only
+    costs the row tags, never the model list."""
+    if not meta:
+        return
+    try:
+        from hermes_constants import get_hermes_home
+
+        path = Path(get_hermes_home()) / _META_SIDECAR
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"at": int(time.time()), "models": meta}))
+    except OSError:
+        pass
 
 
 class _CursorProfile(ProviderProfile):
@@ -108,11 +163,20 @@ class _CursorProfile(ProviderProfile):
             if done.returncode != 0:
                 return None
             catalog = json.loads(done.stdout)
-            return list(dict.fromkeys(
-                model_id
-                for entry in (catalog if isinstance(catalog, list) else [])
-                for model_id in _catalog_entry_ids(entry)
-            )) or None
+            if not isinstance(catalog, list):
+                return None
+            ids: list[str] = []
+            meta: dict[str, dict[str, Any]] = {}
+            for entry in catalog:
+                entry_ids, entry_meta = _catalog_entry_ids_and_meta(entry)
+                for model_id in entry_ids:
+                    if model_id not in meta:
+                        ids.append(model_id)
+                        meta[model_id] = entry_meta[model_id]
+            if not ids:
+                return None
+            _write_meta_sidecar(meta)
+            return ids
         except (CursorRuntimeError, OSError, ValueError, subprocess.SubprocessError):
             return None
 
