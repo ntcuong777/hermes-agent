@@ -125,3 +125,69 @@ def test_worker_output_that_is_not_a_model_list_is_ignored(tmp_path, monkeypatch
     monkeypatch.setenv("HERMES_CURSOR_WORKER", _fake_worker(tmp_path, "echo 'not json'"))
     _rest(monkeypatch, {"models": ["composer-2"]})
     assert get_provider_profile("cursor").fetch_models(api_key="crsr_test_key") == ["composer-2"]
+
+
+# -- the catalog's context / fast variants are listed as separate picker ids ----------------------------------------
+
+
+def _catalog_body(*models):
+    return f"echo '{json.dumps(list(models))}'"
+
+
+def test_context_and_fast_variants_are_listed_as_separate_ids(tmp_path, monkeypatch):
+    catalog = [
+        {
+            "id": "grok-4.7",
+            "displayName": "Grok 4.7",
+            "parameters": [
+                {"id": "context", "values": [{"value": "256k"}, {"value": "500k"}]},
+                {"id": "reasoning_effort", "values": [{"value": "low"}, {"value": "high"}]},
+                {"id": "fast", "values": [{"value": "false"}, {"value": "true"}]},
+            ],
+            "variants": [
+                {"params": [{"id": "context", "value": "256k"}, {"id": "reasoning_effort", "value": "low"}, {"id": "fast", "value": "false"}]},
+                {"params": [{"id": "context", "value": "500k"}, {"id": "reasoning_effort", "value": "high"}, {"id": "fast", "value": "false"}], "isDefault": True},
+                {"params": [{"id": "context", "value": "500k"}, {"id": "reasoning_effort", "value": "high"}, {"id": "fast", "value": "true"}]},
+            ],
+        },
+    ]
+    monkeypatch.setenv("HERMES_CURSOR_WORKER", _fake_worker(tmp_path, _catalog_body(*catalog)))
+    assert get_provider_profile("cursor").fetch_models(api_key="crsr_test_key") == [
+        "grok-4.7",
+        "grok-4.7-256k",
+        "grok-4.7-256k-fast",
+        "grok-4.7-500k",
+        "grok-4.7-500k-fast",
+    ]
+
+
+def test_a_fast_only_model_lists_its_fast_variant(tmp_path, monkeypatch):
+    catalog = [
+        {
+            "id": "composer-2.5",
+            "parameters": [{"id": "fast", "values": [{"value": "false"}, {"value": "true"}]}],
+            "variants": [
+                {"params": [{"id": "fast", "value": "false"}], "isDefault": True},
+                {"params": [{"id": "fast", "value": "true"}]},
+            ],
+        },
+        {"id": "plain"},
+    ]
+    monkeypatch.setenv("HERMES_CURSOR_WORKER", _fake_worker(tmp_path, _catalog_body(*catalog)))
+    assert get_provider_profile("cursor").fetch_models(api_key="crsr_test_key") == [
+        "composer-2.5",
+        "composer-2.5-fast",
+        "plain",
+    ]
+
+
+def test_variant_ids_resolve_their_context_length():
+    profile = get_provider_profile("cursor")
+    assert profile.get_model_context_length("grok-4.7-500k") == 500_000
+    assert profile.get_model_context_length("claude-sonnet-5-5-1m") == 1_000_000
+    assert profile.get_model_context_length("grok-4.7-256k-fast") == 256_000
+    # The bare id and a plain -fast variant carry no window suffix; the live chain decides.
+    assert profile.get_model_context_length("grok-4.7") is None
+    assert profile.get_model_context_length("composer-2.5-fast") is None
+    # A trailing number that is not a k/m window is not a variant suffix.
+    assert profile.get_model_context_length("deepseek-v41-flash-1017") is None

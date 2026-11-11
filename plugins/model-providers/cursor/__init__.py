@@ -7,6 +7,7 @@ here (base URL, auth) serve model discovery and the picker only; the worker auth
 
 import base64
 import json
+import re
 import subprocess
 import tempfile
 import urllib.request
@@ -14,6 +15,11 @@ from typing import Any
 
 from providers import register_provider
 from providers.base import ProviderProfile, _profile_user_agent
+
+# Picker variant suffixes Hermes synthesizes from the catalog (see _variant_ids); the worker
+# (hermes/cursor-runtime model-params.ts) parses the same shapes back into catalog params.
+_VARIANT_CONTEXT_SUFFIX = re.compile(r"-(\d+)(k|m)$")
+_CONTEXT_SCALE = {"k": 1_000, "m": 1_000_000}
 
 
 def _ids(data: Any) -> list[str]:
@@ -24,6 +30,43 @@ def _ids(data: Any) -> list[str]:
         items = next((data[key] for key in ("models", "items", "data") if isinstance(data.get(key), list)), [])
     found = [it if isinstance(it, str) else (it or {}).get("id") for it in items or []]
     return list(dict.fromkeys(str(i) for i in found if i))
+
+
+def _catalog_entry_ids(entry: Any) -> list[str]:
+    """The picker ids for one SDK-catalog model: its base id plus one id per selectable context/fast
+    variant. Context values come from the entry's variants (ground truth — the declared ``context``
+    parameter can lag them), falling back to that parameter's declared values; fast pairs with each
+    context value when a variant turns it on. A bare ``-fast`` id only exists for context-less models."""
+    if not isinstance(entry, dict):
+        return []
+    base = str(entry.get("id") or "")
+    if not base:
+        return []
+    variants = [v for v in entry.get("variants") or [] if isinstance(v, dict)]
+    variant_params = [p for v in variants for p in (v.get("params") or []) if isinstance(p, dict)]
+    context_values = list(
+        dict.fromkeys(
+            str(p.get("value")) for p in variant_params if p.get("id") == "context" and p.get("value")
+        )
+    )
+    if not context_values:
+        context_values = [
+            str(v.get("value"))
+            for p in entry.get("parameters") or []
+            if isinstance(p, dict) and p.get("id") == "context"
+            for v in p.get("values") or []
+            if isinstance(v, dict) and v.get("value")
+        ]
+    fast_offered = any(p.get("id") == "fast" and p.get("value") == "true" for p in variant_params)
+    ids = [base]
+    if context_values:
+        for value in context_values:
+            ids.append(f"{base}-{value}")
+            if fast_offered:
+                ids.append(f"{base}-{value}-fast")
+    elif fast_offered:
+        ids.append(f"{base}-fast")
+    return ids
 
 
 class _CursorProfile(ProviderProfile):
@@ -50,8 +93,9 @@ class _CursorProfile(ProviderProfile):
     @staticmethod
     def _sdk_models(api_key: str) -> list[str] | None:
         """The SDK's own catalog through the worker (`--list-models`): the base models (grok-4.7, grok-4.6 ...) the
-        worker will accept, with effort and fast as parameters. Cursor's REST list holds only a few pre-flattened
-        variants, so it hid models the SDK serves. None when no worker is configured or it fails."""
+        worker will accept, with effort and fast as parameters, expanded into picker variant ids. Cursor's REST list
+        holds only a few pre-flattened variants, so it hid models the SDK serves. None when no worker is configured
+        or it fails."""
         from agent.cursor_runtime import CursorRuntimeError, _worker_command, _worker_env
 
         try:
@@ -61,9 +105,27 @@ class _CursorProfile(ProviderProfile):
                     command, env=_worker_env(api_key, scratch), capture_output=True, text=True, timeout=30,
                     stdin=subprocess.DEVNULL, check=False,
                 )
-            return _ids(json.loads(done.stdout)) if done.returncode == 0 else None
+            if done.returncode != 0:
+                return None
+            catalog = json.loads(done.stdout)
+            return list(dict.fromkeys(
+                model_id
+                for entry in (catalog if isinstance(catalog, list) else [])
+                for model_id in _catalog_entry_ids(entry)
+            )) or None
         except (CursorRuntimeError, OSError, ValueError, subprocess.SubprocessError):
             return None
+
+    def get_model_context_length(self, model: str) -> int | None:
+        """A picker variant id carries its own window (`grok-4.7-500k`, `claude-sonnet-5-5-1m`) and must not fall
+        through to the generic chain, which knows the bare slug only and would leave the variant at the 256K
+        fallback — compressing a 500K turn at a 256K threshold. The worker validates the full id against the live
+        catalog at turn time, so an unknown base fails there instead."""
+        slug = str(model or "").strip().lower()
+        match = _VARIANT_CONTEXT_SUFFIX.search(slug)
+        if match is None and slug.endswith("-fast"):
+            match = _VARIANT_CONTEXT_SUFFIX.search(slug[: -len("-fast")])
+        return int(match.group(1)) * _CONTEXT_SCALE[match.group(2)] if match else None
 
 
 cursor = _CursorProfile(
