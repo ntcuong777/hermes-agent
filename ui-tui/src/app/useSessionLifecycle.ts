@@ -42,6 +42,16 @@ export { refreshSessionView, scheduleResumeScrollToBottom } from './sessionResum
 
 const usageFrom = (info: null | SessionInfo): Usage => (info?.usage ? { ...ZERO, ...info.usage } : ZERO)
 
+/** `session.create` params for a deliberate workspace pick on the `+new` row.
+ *  `cwd_explicit` (#52589) is the provenance flag: only an explicit pick beats
+ *  the profile's `terminal.cwd`; the launch-time workspace (HERMES_TUI_CWD)
+ *  deliberately stays non-explicit. Empty/whitespace = no pick. */
+export const workspaceCwdParams = (cwd?: string): { cwd: string; cwd_explicit: true } | Record<string, never> => {
+  const picked = cwd?.trim()
+
+  return picked ? { cwd: picked, cwd_explicit: true } : {}
+}
+
 const statusFromLiveSession = (status?: string, running = false) => {
   if (status === 'waiting') {
     return t('session.status.waitingForInput')
@@ -422,7 +432,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
   )
 
   const startNewSession = useCallback(
-    async (msg?: string, title?: string, keepCurrent = false) => {
+    async (msg?: string, title?: string, keepCurrent = false, cwd?: string) => {
       const flight = ++attachmentFlight.current
       const previousSid = getUiState().sid
       const previousSubscription = releasedOnLeave(previousSid, canonicalSubscriptions.current, keepCurrent)
@@ -448,9 +458,13 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
           return null
         }
 
-        // HERMES_TUI_CWD is the dashboard-picked workspace: an explicit cwd on
-        // session.create on both transports, so /new stays in that workspace.
-        const workspaceCwd = STARTUP_WORKSPACE_CWD ? { cwd: STARTUP_WORKSPACE_CWD } : {}
+        // A deliberate pick on the +new row wins over everything (cwd_explicit);
+        // otherwise HERMES_TUI_CWD is the dashboard-picked workspace: an explicit
+        // cwd on session.create on both transports, so /new stays in that workspace.
+        const workspaceCwd = {
+          ...(STARTUP_WORKSPACE_CWD ? { cwd: STARTUP_WORKSPACE_CWD } : {}),
+          ...workspaceCwdParams(cwd)
+        }
 
         const r = await rpc<SessionCreateResponse>(
           'session.create',
@@ -558,10 +572,10 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
   )
 
   const newLiveSession = useCallback(
-    (msg = t('session.lifecycle.newLiveSessionStarted'), title?: string) => {
+    (msg = t('session.lifecycle.newLiveSessionStarted'), title?: string, cwd?: string) => {
       patchOverlayState({ sessions: false })
 
-      return startNewSession(msg, title, true)
+      return startNewSession(msg, title, true, cwd)
     },
     [startNewSession]
   )

@@ -176,7 +176,9 @@ export const orchestratorContextHintSegments = (newSelected: boolean): Orchestra
         { role: 'hotkey', text: 'Enter' },
         { role: 'text', text: h.start },
         { role: 'hotkey', text: 'Tab' },
-        { role: 'text', text: h.model }
+        { role: 'text', text: h.model },
+        { role: 'hotkey', text: 'Ctrl+O' },
+        { role: 'text', text: h.workspace }
       ]
     : [
         { role: 'label', text: h.sessionRowLabel },
@@ -406,6 +408,14 @@ export function ActiveSessionSwitcher({
   // narrow to fuzzy matches (client-side over the already-loaded pages).
   const [filtering, setFiltering] = useState(false)
   const [query, setQuery] = useState('')
+  // Workspace pick on the `+new` row: Ctrl+O swaps the prompt input for a
+  // path input; the confirmed value rides session.create as
+  // `{ cwd, cwd_explicit: true }` (empty pick = default workspace resolution).
+  // `cwdDraft` is the editor's working copy — it commits to `draftCwd` (the
+  // pick) only on Enter, so Esc / Ctrl+O step back and discard the edit.
+  const [draftCwd, setDraftCwd] = useState('')
+  const [cwdDraft, setCwdDraft] = useState('')
+  const [pickingWorkspace, setPickingWorkspace] = useState(false)
   // When non-null, the user pressed `d` on this (history) session and we await
   // a second `d` to confirm deletion. Tracked by session id (not row index) so
   // the 1.5s live-status poll re-indexing rows can't redirect the delete to a
@@ -582,15 +592,15 @@ export function ActiveSessionSwitcher({
     historyDisplayRef.current = history
   }, [items, history])
 
-  // While a switcher input (filter now, workspace pick later) owns the keys,
-  // main must not answer Esc with "close the overlay".
+  // While a switcher input (filter, workspace pick) owns the keys, main must
+  // not answer Esc with "close the overlay".
   useEffect(() => {
-    $sessionsOverlayInputMode.set(filtering)
+    $sessionsOverlayInputMode.set(filtering || pickingWorkspace)
 
     return () => {
       $sessionsOverlayInputMode.set(false)
     }
-  }, [filtering])
+  }, [filtering, pickingWorkspace])
 
   // Keystroke-time refilter: re-derive the displayed lists from the raw rows
   // without a network round-trip; the selection re-anchors or clamps inside.
@@ -619,9 +629,9 @@ export function ActiveSessionSwitcher({
       }
 
       setDraft('')
-      onNewPrompt(prompt, draftModel || undefined)
+      onNewPrompt(prompt, draftModel || undefined, draftCwd.trim() || undefined)
     },
-    [draftModel, onNewPrompt]
+    [draftCwd, draftModel, onNewPrompt]
   )
 
   const closeSelected = useCallback(async () => {
@@ -783,6 +793,26 @@ export function ActiveSessionSwitcher({
       return
     }
 
+    // Workspace pick: the input owns printable keys; Esc / Ctrl+O discard the
+    // working copy and step back to the prompt, Enter commits it trimmed
+    // (empty clears back to the default workspace resolution).
+    if (pickingWorkspace) {
+      if (key.escape || isCtrl('o')) {
+        setPickingWorkspace(false)
+
+        return
+      }
+
+      if (key.return) {
+        setDraftCwd(cwdDraft.trim())
+        setPickingWorkspace(false)
+
+        return
+      }
+
+      return
+    }
+
     if (key.escape) {
       return onCancel()
     }
@@ -800,6 +830,21 @@ export function ActiveSessionSwitcher({
     if (key.tab) {
       if (newSelected) {
         setPickingModel(true)
+      }
+
+      return
+    }
+
+    if (isCtrl('o')) {
+      if (newSelected) {
+        if (pickingWorkspace) {
+          setPickingWorkspace(false)
+        } else {
+          // Opening pre-fills the working copy from the stored pick; closing
+          // discards the edit (the pick itself only moves on Enter).
+          setCwdDraft(draftCwd)
+          setPickingWorkspace(true)
+        }
       }
 
       return
@@ -851,7 +896,7 @@ export function ActiveSessionSwitcher({
     if (key.return) {
       if (newSelected) {
         if (!draftHasText) {
-          return onNew()
+          return onNew(draftCwd.trim() || undefined)
         }
 
         return
@@ -1094,19 +1139,39 @@ export function ActiveSessionSwitcher({
       ) : newSelected ? (
         <>
           <Box marginTop={1}>
-            <Text color={t.color.label}>{S.promptLabel}</Text>
-            <TextInput
-              color={t.color.text}
-              columns={promptColumns}
-              onChange={setDraft}
-              onSubmit={submitDraft}
-              value={draft}
-            />
+            {pickingWorkspace ? (
+              <>
+                <Text color={t.color.label}>{S.workspaceLabel}</Text>
+                <TextInput
+                  color={t.color.text}
+                  columns={promptColumns}
+                  ignoreVerticalArrows
+                  onChange={setCwdDraft}
+                  value={cwdDraft}
+                />
+              </>
+            ) : (
+              <>
+                <Text color={t.color.label}>{S.promptLabel}</Text>
+                <TextInput
+                  color={t.color.text}
+                  columns={promptColumns}
+                  onChange={setDraft}
+                  onSubmit={submitDraft}
+                  value={draft}
+                />
+              </>
+            )}
           </Box>
           <OrchestratorHintText segments={orchestratorContextHintSegments(true)} t={t} />
           <Text color={t.color.muted} wrap="truncate-end">
             {S.draftModel(draftModelDisplayLabel(draftModel))}
           </Text>
+          {draftCwd.trim() ? (
+            <Text color={t.color.muted} wrap="truncate-end">
+              {S.draftWorkspace(draftCwd.trim())}
+            </Text>
+          ) : null}
         </>
       ) : (
         <Box flexDirection="column" marginTop={1}>
@@ -1146,8 +1211,8 @@ interface ActiveSessionSwitcherProps {
   maxWidth?: number
   onCancel: () => void
   onClose: (id: string) => Promise<null | SessionCloseResponse>
-  onNew: () => void
-  onNewPrompt: (prompt: string, modelArg?: string) => void
+  onNew: (cwd?: string) => void
+  onNewPrompt: (prompt: string, modelArg?: string, cwd?: string) => void
   onResume: (id: string) => void
   onSelect: (id: string) => void
   t: Theme

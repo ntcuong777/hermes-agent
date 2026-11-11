@@ -144,8 +144,11 @@ export const pickersEn = {
       noOtherSessions: 'no other sessions — Enter on +new to start one',
       promptLabel: 'prompt › ',
       filterLabel: 'find › ',
+      workspaceLabel: 'workspace › ',
       // {0} = the draft model label (short model id or `currentOrDefault`).
       draftModel: (label: string) => `model: ${label}`,
+      // {0} = the workspace directory the next +new session will be created in.
+      draftWorkspace: (label: string) => `workspace: ${label}`,
       selectNewPrefix: 'Select ',
       newRowMarker: '+new',
       selectNewSuffix: ' to type a prompt',
@@ -162,7 +165,8 @@ export const pickersEn = {
         newRowLabel: 'New row:',
         typePrompt: ' type prompt · ',
         start: ' start · ',
-        model: ' model',
+        model: ' model · ',
+        workspace: ' workspace',
         sessionRowLabel: 'Session row:',
         switch: ' switch · ',
         close: ' close',

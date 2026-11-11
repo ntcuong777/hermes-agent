@@ -107,4 +107,31 @@ describe('startPromptLiveSession', () => {
     expect(sid).toBeNull()
     expect(calls).toEqual([])
   })
+
+  it('threads the workspace pick through to the new live session', async () => {
+    const calls: Array<[string, unknown]> = []
+
+    await startPromptLiveSession({
+      cwd: '  /home/u/proj  ',
+      dispatchSubmission: prompt => calls.push(['dispatch', prompt]),
+      maybeWarn: () => calls.push('warn'),
+      newLiveSession: async (message, title, cwd) => {
+        calls.push(['new', { cwd, message, title }])
+
+        patchUiState({ sid: 'abc123' })
+
+        return 'abc123'
+      },
+      prompt: 'hello',
+      rpc: async method =>
+        method === 'session.resume' ? { revision: 8, execution_generation: 4 } : { model: 'm', warning: '' },
+      sys: () => calls.push('sys')
+    })
+
+    expect(calls[0]).toEqual([
+      'new',
+      { cwd: '  /home/u/proj  ', message: t('session.lifecycle.newLiveSessionStarted'), title: undefined }
+    ])
+    expect(calls[1]).toEqual(['dispatch', 'hello'])
+  })
 })

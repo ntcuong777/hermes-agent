@@ -666,7 +666,7 @@ export interface SlashHandlerContext {
     die: () => void
     dieWithCode: (code: number) => void
     guardBusySessionSwitch: (what?: string) => boolean
-    newLiveSession: (msg?: string, title?: string) => void
+    newLiveSession: (msg?: string, title?: string, cwd?: string) => void
     newSession: (msg?: string, title?: string) => Promise<unknown> | void
     resetVisibleHistory: (info?: null | SessionInfo) => void
     resumeById: (id: string) => Promise<void> | void
@@ -707,8 +707,8 @@ export interface AppLayoutActions {
   clearSelection: () => void
   activateLiveSession: (id: string) => void
   closeLiveSession: (id: string) => Promise<null | SessionCloseResponse>
-  newLiveSession: () => void
-  newPromptSession: (prompt: string, modelArg?: string) => void
+  newLiveSession: (cwd?: string) => void
+  newPromptSession: (prompt: string, modelArg?: string, cwd?: string) => void
   onModelSelect: (value: string) => void
   resumeById: (id: string) => void
   setStickyPrompt: (value: string) => void
@@ -777,8 +777,8 @@ export interface AppOverlaysProps {
   onActiveSessionSelect: (sessionId: string) => void
   onActiveSessionClose: (sessionId: string) => Promise<null | SessionCloseResponse>
   onModelSelect: (value: string) => void
-  onNewLiveSession: () => void
-  onNewPromptSession: (prompt: string, modelArg?: string) => void
+  onNewLiveSession: (cwd?: string) => void
+  onNewPromptSession: (prompt: string, modelArg?: string, cwd?: string) => void
   onResumeSelect: (sessionId: string) => void
   onSecretSubmit: (value: string) => void
   onSudoSubmit: (pw: string) => void

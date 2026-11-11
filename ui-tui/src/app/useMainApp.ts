@@ -168,10 +168,13 @@ const detailsVisibility = (detailsLayoutKey: string, ui: Pick<UiState, 'detailsM
 }
 
 export interface PromptLiveSessionOptions {
+  /** Deliberate workspace pick from the `+new` row; rides session.create as
+   *  `{ cwd, cwd_explicit: true }` (`workspaceCwdParams`). */
+  cwd?: string
   dispatchSubmission: (full: string, destination: SubmissionDestination) => void
   maybeWarn: (value: unknown) => void
   modelArg?: string
-  newLiveSession: (msg?: string, title?: string) => Promise<null | string> | null | string | void
+  newLiveSession: (msg?: string, title?: string, cwd?: string) => Promise<null | string> | null | string | void
   onModelSwitched?: (value: string, result: ConfigSetResponse) => void
   prompt: string
   rpc: GatewayRpc
@@ -179,6 +182,7 @@ export interface PromptLiveSessionOptions {
 }
 
 export async function startPromptLiveSession({
+  cwd,
   dispatchSubmission,
   maybeWarn,
   modelArg,
@@ -198,7 +202,7 @@ export async function startPromptLiveSession({
   // the initial title. Auto-title generation can rename it after the first
   // response; pre-queuing prompt text here causes duplicate-title errors when
   // users dispatch common prompts like "Hello, what model are you?".
-  const sid = (await newLiveSession(t('session.lifecycle.newLiveSessionStarted'))) ?? null
+  const sid = (await newLiveSession(t('session.lifecycle.newLiveSessionStarted'), undefined, cwd)) ?? null
 
   if (!sid) {
     sys(`error: ${t('session.main.failedToStartLiveSession')}`)
@@ -219,6 +223,7 @@ export async function startPromptLiveSession({
         undefined,
         confirm
       )
+
       const refusal = mutation?.result
 
       if (!confirm && refusal?.status === 'confirmation_required' && typeof refusal.confirm === 'string') {
@@ -1418,8 +1423,9 @@ export function useMainApp(gw: GatewayClient) {
   )
 
   const newPromptSession = useCallback(
-    (prompt: string, modelArg?: string) => {
+    (prompt: string, modelArg?: string, cwd?: string) => {
       void startPromptLiveSession({
+        cwd,
         dispatchSubmission: (text, destination) => send(text, true, text, value => value, { destination }),
         maybeWarn,
         modelArg,
@@ -1506,7 +1512,7 @@ export function useMainApp(gw: GatewayClient) {
       answerVaultUnlock,
       cancelClarify,
       clearSelection,
-      newLiveSession: () => session.newLiveSession(),
+      newLiveSession: (cwd?: string) => session.newLiveSession(undefined, undefined, cwd),
       newPromptSession,
       onModelSelect,
       // Resuming a cold session from the overlay CLOSES the current one, so it
