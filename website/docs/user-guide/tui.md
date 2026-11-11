@@ -165,7 +165,7 @@ Inside the switcher:
 
 ### Finding a session: `/` filter
 
-With dozens of past sessions, cycling rows one by one is slow. On any session row (not `+new`), press `/` to open a filter input and type keywords: live and resumable rows narrow instantly to fuzzy matches against the title, last prompt, session id, workspace directory and git branch — so typing part of a project name or path finds the session that belonged to it. `↑` / `↓` still move the selection and `Enter` opens the selected session; `Esc` first clears the query, then leaves filter mode, and the next `Esc` closes the switcher. The filter combines with `w` (workspace-only listing): press `w` to fetch only this workspace's sessions from the gateway, then `/` to narrow within them. Switcher hotkeys (`d`, `w`, `Ctrl+N`, `Ctrl+R`, `Ctrl+D`) are suppressed while the filter is open.
+With dozens of past sessions, cycling rows one by one is slow. On any session row (not `+new`), press `/` to open a filter input and type keywords: live and resumable rows narrow instantly to fuzzy matches against the title, last prompt, session id, workspace directory, git branch and model — so typing part of a project name or path finds the session that belonged to it. `↑` / `↓` still move the selection and `Enter` opens the selected session; `Esc` first clears the query, then leaves filter mode, and the next `Esc` closes the switcher. The filter combines with `w` (workspace-only listing): press `w` to fetch only this workspace's sessions from the gateway, then `/` to narrow within them. Switcher hotkeys (`d`, `w`, `Ctrl+N`, `Ctrl+R`, `Ctrl+D`) are suppressed while the filter is open.
 
 ## LaTeX math rendering
 

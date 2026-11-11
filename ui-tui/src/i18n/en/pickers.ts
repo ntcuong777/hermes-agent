@@ -156,6 +156,8 @@ export const pickersEn = {
       noMatches: (query: string) => `no sessions match "${query}"`,
       // Hint fragments are concatenated with hotkey tokens in code, so the
       // leading/trailing spaces and ` · ` separators are part of each leaf.
+      // Exception: `find` is line-final on the row-context hints, where the
+      // switcher injects the ` · ` separator itself (filterHintSuffixSegments).
       hint: {
         resumableLabel: 'Resumable:',
         resume: ' resume · ',

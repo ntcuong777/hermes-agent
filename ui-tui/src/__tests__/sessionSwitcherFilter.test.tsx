@@ -167,4 +167,27 @@ describe('sessions overlay filter', () => {
       instance.unmount()
     }
   })
+  it('feeds w into the query instead of toggling the workspace listing', async () => {
+    const { props, stdin, instance, text, mark } = await renderSwitcher()
+
+    try {
+      stdin.write('/')
+      await until(() => text().includes('find › '))
+
+      // `w` while filtering must reach the query, not toggle the gateway-side
+      // workspace listing (no session.list call gains the cwd param).
+      const before = mark()
+      stdin.write('w')
+      await until(() => text().slice(before).includes('find › w'))
+
+      for (const call of props.gw.request.mock.calls) {
+        expect(call[1]).not.toHaveProperty('cwd')
+      }
+
+      // …and it did not arm a delete either.
+      expect(text().slice(before)).not.toContain('press d again')
+    } finally {
+      instance.unmount()
+    }
+  })
 })

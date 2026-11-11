@@ -411,10 +411,10 @@ export function ActiveSessionSwitcher({
   // Workspace pick on the `+new` row: Ctrl+O swaps the prompt input for a
   // path input; the confirmed value rides session.create as
   // `{ cwd, cwd_explicit: true }` (empty pick = default workspace resolution).
-  // `cwdDraft` is the editor's working copy — it commits to `draftCwd` (the
+  // `cwdInput` is the editor's working copy — it commits to `pickedCwd` (the
   // pick) only on Enter, so Esc / Ctrl+O step back and discard the edit.
-  const [draftCwd, setDraftCwd] = useState('')
-  const [cwdDraft, setCwdDraft] = useState('')
+  const [pickedCwd, setPickedCwd] = useState('')
+  const [cwdInput, setCwdInput] = useState('')
   const [pickingWorkspace, setPickingWorkspace] = useState(false)
   // When non-null, the user pressed `d` on this (history) session and we await
   // a second `d` to confirm deletion. Tracked by session id (not row index) so
@@ -629,9 +629,9 @@ export function ActiveSessionSwitcher({
       }
 
       setDraft('')
-      onNewPrompt(prompt, draftModel || undefined, draftCwd.trim() || undefined)
+      onNewPrompt(prompt, draftModel || undefined, pickedCwd || undefined)
     },
-    [draftCwd, draftModel, onNewPrompt]
+    [pickedCwd, draftModel, onNewPrompt]
   )
 
   const closeSelected = useCallback(async () => {
@@ -724,6 +724,27 @@ export function ActiveSessionSwitcher({
   const newSelected = selectedKind === 'new'
   const draftHasText = Boolean(draft.trim())
 
+  // One activation ladder for Enter wherever it is handled (plain flow and
+  // filter mode): +new with no draft starts a blank session in the picked
+  // workspace, a live row switches, a history row resumes.
+  const activateSelected = useCallback(() => {
+    if (newSelected) {
+      if (!draftHasText) {
+        onNew(pickedCwd || undefined)
+      }
+
+      return
+    }
+
+    if (selectedKind === 'live' && items[sel - 1]) {
+      return onSelect(items[sel - 1]!.id)
+    }
+
+    if (selectedKind === 'history' && history[sel - 1 - items.length]) {
+      return onResume(history[sel - 1 - items.length]!.id)
+    }
+  }, [draftHasText, history, items, newSelected, onNew, onResume, onSelect, pickedCwd, sel, selectedKind])
+
   useInput((ch, key) => {
     if (pickingModel || deletePending()) {
       return
@@ -804,7 +825,7 @@ export function ActiveSessionSwitcher({
       }
 
       if (key.return) {
-        setDraftCwd(cwdDraft.trim())
+        setPickedCwd(cwdInput.trim())
         setPickingWorkspace(false)
 
         return
@@ -837,14 +858,12 @@ export function ActiveSessionSwitcher({
 
     if (isCtrl('o')) {
       if (newSelected) {
-        if (pickingWorkspace) {
-          setPickingWorkspace(false)
-        } else {
-          // Opening pre-fills the working copy from the stored pick; closing
-          // discards the edit (the pick itself only moves on Enter).
-          setCwdDraft(draftCwd)
-          setPickingWorkspace(true)
-        }
+        // Opening pre-fills the working copy from the stored pick; closing
+        // discards the edit (the pick itself only moves on Enter). This arm
+        // is only reachable with the editor closed: the pickingWorkspace
+        // branch above handles every key while it is open.
+        setCwdInput(pickedCwd)
+        setPickingWorkspace(true)
       }
 
       return
@@ -894,21 +913,7 @@ export function ActiveSessionSwitcher({
     }
 
     if (key.return) {
-      if (newSelected) {
-        if (!draftHasText) {
-          return onNew(draftCwd.trim() || undefined)
-        }
-
-        return
-      }
-
-      if (selectedKind === 'live' && items[sel - 1]) {
-        return onSelect(items[sel - 1]!.id)
-      }
-
-      if (selectedKind === 'history' && history[sel - 1 - items.length]) {
-        return onResume(history[sel - 1 - items.length]!.id)
-      }
+      return activateSelected()
     }
   })
 
@@ -1146,8 +1151,8 @@ export function ActiveSessionSwitcher({
                   color={t.color.text}
                   columns={promptColumns}
                   ignoreVerticalArrows
-                  onChange={setCwdDraft}
-                  value={cwdDraft}
+                  onChange={setCwdInput}
+                  value={cwdInput}
                 />
               </>
             ) : (
@@ -1167,9 +1172,9 @@ export function ActiveSessionSwitcher({
           <Text color={t.color.muted} wrap="truncate-end">
             {S.draftModel(draftModelDisplayLabel(draftModel))}
           </Text>
-          {draftCwd.trim() ? (
+          {pickedCwd ? (
             <Text color={t.color.muted} wrap="truncate-end">
-              {S.draftWorkspace(draftCwd.trim())}
+              {S.draftWorkspace(pickedCwd)}
             </Text>
           ) : null}
         </>

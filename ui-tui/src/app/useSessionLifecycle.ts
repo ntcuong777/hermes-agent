@@ -46,7 +46,12 @@ const usageFrom = (info: null | SessionInfo): Usage => (info?.usage ? { ...ZERO,
  *  `cwd_explicit` (#52589) is the provenance flag: only an explicit pick beats
  *  the profile's `terminal.cwd`; the launch-time workspace (HERMES_TUI_CWD)
  *  deliberately stays non-explicit. Empty/whitespace = no pick. */
-export const workspaceCwdParams = (cwd?: string): { cwd: string; cwd_explicit: true } | Record<string, never> => {
+export interface SessionCreateCwdParams {
+  cwd: string
+  cwd_explicit: true
+}
+
+export const workspaceCwdParams = (cwd?: string): SessionCreateCwdParams | Record<string, never> => {
   const picked = cwd?.trim()
 
   return picked ? { cwd: picked, cwd_explicit: true } : {}

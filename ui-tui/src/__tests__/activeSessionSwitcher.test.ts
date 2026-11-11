@@ -214,8 +214,26 @@ describe('unified Sessions overlay helpers', () => {
     expect(filterSessionLists(items, history, 'WEBHOOKS').history.map(h => h.id)).toEqual(['aaa'])
     expect(filterSessionLists(items, history, 'zzz')).toEqual({ items: [], history: [] })
 
-    // The composed search text is exactly the union of the findable fields.
-    expect(sessionSearchText(history[0]!)).toBe('Payments refactor stripe webhooks aaa /home/u/pay feat/pay')
-    expect(sessionSearchText(items[0]!)).toBe('Deploy pipeline liv1 kimi/k2.6')
+    // Rank order: a title-prefix match outranks a mid-word hit of the same
+    // query (the contract is ordering, not just membership).
+    const ranked = filterSessionLists(
+      [],
+      [
+        { id: 'mid', title: 'Snap payments flow', started_at: 1, message_count: 1 },
+        { id: 'prefix', title: 'Payments hub', started_at: 2, message_count: 2 }
+      ] satisfies SessionListRow[],
+      'pay'
+    )
+
+    expect(ranked.history.map(h => h.id)).toEqual(['prefix', 'mid'])
+
+    // The search text is the union of the findable fields (order not pinned).
+    for (const field of ['Payments refactor', 'stripe webhooks', 'aaa', '/home/u/pay', 'feat/pay']) {
+      expect(sessionSearchText(history[0]!)).toContain(field)
+    }
+
+    for (const field of ['Deploy pipeline', 'liv1', 'kimi/k2.6']) {
+      expect(sessionSearchText(items[0]!)).toContain(field)
+    }
   })
 })
