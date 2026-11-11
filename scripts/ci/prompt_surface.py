@@ -79,6 +79,13 @@ def _pin_environment() -> None:
     socket.socket.connect = refuse  # type: ignore[method-assign]
     socket.create_connection = refuse  # type: ignore[assignment]
     socket.getaddrinfo = refuse  # type: ignore[assignment]
+    # Warm the platform-sensitive modules before the flip: Python 3.14 names the sysconfigdata
+    # module from sys.platform at call time (`_sysconfigdata__linux_darwin` does not exist on a
+    # darwin host) and psutil picks its compiled platform extension from sys.platform at import
+    # time; both must resolve against the real host platform or the child cannot start.
+    import psutil
+    import sysconfig
+    sysconfig.get_config_vars()
     sys.platform = "linux"  # skills index ``platforms:`` gate
 
     import hermes_time
