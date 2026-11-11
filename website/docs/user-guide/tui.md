@@ -161,7 +161,11 @@ Inside the switcher:
 - `Ctrl+N` starts a blank live session.
 - `Ctrl+R` refreshes the live-session list.
 - `Esc` closes the switcher.
-- Select `+new`, type a prompt, and press `Enter` to dispatch a new live session. Press `Tab` first if you want to choose a model just for that new session.
+- Select `+new`, type a prompt, and press `Enter` to dispatch a new live session. Press `Tab` first if you want to choose a model just for that new session, and `Ctrl+O` to pick a workspace directory: Enter commits the path (empty clears it), Esc or `Ctrl+O` steps back to the prompt and discards the edit. The next session started from that row — prompt dispatch or blank — is created in that directory, overriding the profile's configured workspace (`terminal.cwd`) for that session. `Ctrl+N` and `/sessions new` still use the default workspace.
+
+### Finding a session: `/` filter
+
+With dozens of past sessions, cycling rows one by one is slow. On any session row (not `+new`), press `/` to open a filter input and type keywords: live and resumable rows narrow instantly to fuzzy matches against the title, last prompt, session id, workspace directory and git branch — so typing part of a project name or path finds the session that belonged to it. `↑` / `↓` still move the selection and `Enter` opens the selected session; `Esc` first clears the query, then leaves filter mode, and the next `Esc` closes the switcher. The filter combines with `w` (workspace-only listing): press `w` to fetch only this workspace's sessions from the gateway, then `/` to narrow within them. Switcher hotkeys (`d`, `w`, `Ctrl+N`, `Ctrl+R`, `Ctrl+D`) are suppressed while the filter is open.
 
 ## LaTeX math rendering
 
