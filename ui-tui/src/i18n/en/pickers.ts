@@ -143,11 +143,14 @@ export const pickersEn = {
       },
       noOtherSessions: 'no other sessions — Enter on +new to start one',
       promptLabel: 'prompt › ',
+      filterLabel: 'find › ',
       // {0} = the draft model label (short model id or `currentOrDefault`).
       draftModel: (label: string) => `model: ${label}`,
       selectNewPrefix: 'Select ',
       newRowMarker: '+new',
       selectNewSuffix: ' to type a prompt',
+      // {0} = the active filter query.
+      noMatches: (query: string) => `no sessions match "${query}"`,
       // Hint fragments are concatenated with hotkey tokens in code, so the
       // leading/trailing spaces and ` · ` separators are part of each leaf.
       hint: {
@@ -164,8 +167,10 @@ export const pickersEn = {
         switch: ' switch · ',
         close: ' close',
         move: ' move · ',
+        find: ' find',
         new: ' new · ',
-        refresh: ' refresh · '
+        refresh: ' refresh · ',
+        clearBack: ' clear/back'
       }
     },
     pet: {

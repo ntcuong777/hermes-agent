@@ -42,6 +42,7 @@ import {
 import {
   $isBlocked,
   $overlayState,
+  $sessionsOverlayInputMode,
   capturePromptResponseGuard,
   hasSensitivePrompt,
   patchOverlayState,
@@ -1003,7 +1004,9 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
       if (isCtrl(key, ch, 'c') || (key.escape && hasSensitivePrompt(overlay))) {
         cancelOverlayFromCtrlC()
-      } else if (key.escape && overlay.sessions) {
+      } else if (key.escape && overlay.sessions && !$sessionsOverlayInputMode.get()) {
+        // The switcher owns Esc while its filter / workspace input is open
+        // (clear, then back) — closing the overlay here would skip both.
         patchOverlayState({ sessions: false })
       }
 

@@ -1,9 +1,11 @@
 import { Box, Text, useInput, useStdout } from '@hermes/ink'
+import { fuzzyRank } from '@hermes/shared/fuzzy'
 import type { SessionListResult, SessionListRow } from '@hermes/shared/gateway-events'
 import type { SessionActiveItem, SessionActiveListResponse, SessionCloseResponse } from '@hermes/shared/gateway-types'
 import { sessionScopedModelArg } from '@hermes/shared/slash-input'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { $sessionsOverlayInputMode } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import { useSessionDelete } from '../hooks/useSessionDelete.js'
 import { messages } from '../i18n/runtime.js'
@@ -91,6 +93,43 @@ export const resumableHistory = (history: readonly SessionListRow[], live: reado
   return history.filter(h => !liveIds.has(h.id))
 }
 
+/** Everything a row can be found by: words from the title/preview, the id, and
+ *  — the reason resume filtering exists — which project a session belonged to
+ *  (cwd / branch; live rows carry the model instead). */
+export const sessionSearchText = (row: SessionActiveItem | SessionListRow): string =>
+  [
+    row.title,
+    row.preview,
+    row.id,
+    'cwd' in row ? row.cwd : undefined,
+    'git_branch' in row ? row.git_branch : undefined,
+    'model' in row ? row.model : undefined
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+export interface SessionLists {
+  items: SessionActiveItem[]
+  history: SessionListRow[]
+}
+
+/** Fuzzy-narrow both row lists by `query` (same ranker as the model picker).
+ *  An empty query is the identity, returning the input arrays untouched. */
+export const filterSessionLists = (
+  items: readonly SessionActiveItem[],
+  history: readonly SessionListRow[],
+  query: string
+): SessionLists => {
+  if (!query.trim()) {
+    return { items: items as SessionActiveItem[], history: history as SessionListRow[] }
+  }
+
+  return {
+    items: fuzzyRank(items, query, sessionSearchText).map(r => r.item),
+    history: fuzzyRank(history, query, sessionSearchText).map(r => r.item)
+  }
+}
+
 // Hint segment tables are functions (not module constants) so their text
 // fragments resolve against the active language at render time.
 export const resumeRowContextHintSegments = (): OrchestratorHintSegment[] => {
@@ -102,7 +141,8 @@ export const resumeRowContextHintSegments = (): OrchestratorHintSegment[] => {
     { role: 'hotkey', text: 'Enter' },
     { role: 'text', text: h.resume },
     { role: 'hotkey', text: 'd' },
-    { role: 'text', text: h.delete }
+    { role: 'text', text: h.delete },
+    ...filterHintSuffixSegments()
   ]
 }
 
@@ -144,7 +184,8 @@ export const orchestratorContextHintSegments = (newSelected: boolean): Orchestra
         { role: 'hotkey', text: 'Enter' },
         { role: 'text', text: h.switch },
         { role: 'hotkey', text: 'Ctrl+D' },
-        { role: 'text', text: h.close }
+        { role: 'text', text: h.close },
+        ...filterHintSuffixSegments()
       ]
 }
 
@@ -160,6 +201,33 @@ export const orchestratorGlobalHotkeyHintSegments = (): OrchestratorHintSegment[
     { role: 'text', text: h.refresh },
     { role: 'hotkey', text: 'Esc' },
     { role: 'text', text: h.close }
+  ]
+}
+
+/** `/ find` is advertised on the row-context hint lines — it is a row action
+ *  (it cannot open from the `+new` row) and the global hotkey line is already
+ *  at its truncation width with the workspace segment appended. */
+export const filterHintSuffixSegments = (): OrchestratorHintSegment[] => {
+  const h = messages().pickers.session.hint
+
+  return [
+    { role: 'text', text: ' · ' },
+    { role: 'hotkey', text: '/' },
+    { role: 'text', text: h.find }
+  ]
+}
+
+/** Hint line shown while the filter input is open: what a row does now. */
+export const orchestratorFilterHintSegments = (onHistory: boolean): OrchestratorHintSegment[] => {
+  const h = messages().pickers.session.hint
+
+  return [
+    { role: 'hotkey', text: '↑↓' },
+    { role: 'text', text: h.move },
+    { role: 'hotkey', text: 'Enter' },
+    { role: 'text', text: onHistory ? h.resume : h.switch },
+    { role: 'hotkey', text: 'Esc' },
+    { role: 'text', text: h.clearBack }
   ]
 }
 
@@ -334,6 +402,10 @@ export function ActiveSessionSwitcher({
   const [draftModel, setDraftModel] = useState('')
   const [pickingModel, setPickingModel] = useState(false)
   const [closingId, setClosingId] = useState('')
+  // `/` filter: while open, printable keys feed the query and the row lists
+  // narrow to fuzzy matches (client-side over the already-loaded pages).
+  const [filtering, setFiltering] = useState(false)
+  const [query, setQuery] = useState('')
   // When non-null, the user pressed `d` on this (history) session and we await
   // a second `d` to confirm deletion. Tracked by session id (not row index) so
   // the 1.5s live-status poll re-indexing rows can't redirect the delete to a
@@ -350,6 +422,11 @@ export function ActiveSessionSwitcher({
   // session that was hidden while live reappears in history once it closes —
   // without re-querying the DB. Only refreshed on a full (includeHistory) load.
   const rawHistoryRef = useRef<SessionListRow[]>([])
+  // The raw live list, same contract as `rawHistoryRef`: the displayed lists
+  // are re-derived from these through the active filter on every poll/keystroke.
+  const rawItemsRef = useRef<SessionActiveItem[]>([])
+  // Mirror of `query` for the async load/derive paths.
+  const queryRef = useRef('')
   // Mirror the displayed lists so the async poll can re-anchor the selection to
   // the *same* row (by session id) after live sessions appear/disappear, rather
   // than keeping a now-stale flat index.
@@ -369,6 +446,49 @@ export function ActiveSessionSwitcher({
   const listLen = liveCount + histCount
   const total = listLen + 1
   const rowKind = useCallback((index: number) => sessionRowKindAt(index, liveCount), [liveCount])
+
+  // Derive the DISPLAYED lists from the raw rows through the active filter,
+  // store them, and re-anchor the selection to the same row by identity (the
+  // live list can grow/shrink between polls, which would otherwise drift a
+  // flat index). Shared by network loads and keystroke-time refiltering.
+  const commitLists = useCallback(
+    (nextRaw: readonly SessionActiveItem[], histRaw: readonly SessionListRow[], initializeSelection: boolean) => {
+      const hist = resumableHistory(histRaw, nextRaw)
+      const { items: next, history: histFiltered } = filterSessionLists(nextRaw, hist, queryRef.current)
+      const maxSel = next.length + histFiltered.length // == total - 1 (new row is index 0)
+
+      setItems(next)
+      setHistory(histFiltered)
+      setSel(s => {
+        if (initializeSelection) {
+          // Land on the current live session (shifted +1 past the pinned new
+          // row); with no live sessions, start on the new row itself.
+          return next.length ? Math.min(currentSessionSelectionIndex(next, currentSessionId) + 1, maxSel) : 0
+        }
+
+        if (s <= 0) {
+          return 0 // "+ new" row
+        }
+
+        const prevItems = itemsRef.current
+        const prevHist = historyDisplayRef.current
+        const clamp = () => Math.max(0, Math.min(s, maxSel))
+
+        if (s - 1 < prevItems.length) {
+          const id = prevItems[s - 1]?.id
+          const i = id ? next.findIndex(x => x.id === id) : -1
+
+          return i >= 0 ? i + 1 : clamp()
+        }
+
+        const id = prevHist[s - 1 - prevItems.length]?.id
+        const i = id ? histFiltered.findIndex(x => x.id === id) : -1
+
+        return i >= 0 ? 1 + next.length + i : clamp()
+      })
+    },
+    [currentSessionId]
+  )
 
   const load = useCallback(
     // `quiet` skips the loading spinner (used by the live-status poll);
@@ -418,7 +538,8 @@ export function ActiveSessionSwitcher({
           return []
         }
 
-        const next = r.sessions ?? []
+        const nextRaw = r.sessions ?? []
+        rawItemsRef.current = nextRaw
 
         // Surface a garbled/failed session.list rather than silently blanking
         // the resumable section; keep the last good raw history so a transient
@@ -439,46 +560,13 @@ export function ActiveSessionSwitcher({
           }
         }
 
-        const hist = resumableHistory(rawHistoryRef.current, next)
         const initializeSelection = !initialSelectionAppliedRef.current
         initialSelectionAppliedRef.current = true
-        const maxSel = next.length + hist.length // == total - 1 (new row is index 0)
-
-        setItems(next)
-        setHistory(hist)
-        // Re-anchor selection to the same row by identity (the live list can
-        // grow/shrink between polls, which would otherwise drift a flat index).
-        setSel(s => {
-          if (initializeSelection) {
-            // Land on the current live session (shifted +1 past the pinned new
-            // row); with no live sessions, start on the new row itself.
-            return next.length ? Math.min(currentSessionSelectionIndex(next, currentSessionId) + 1, maxSel) : 0
-          }
-
-          if (s <= 0) {
-            return 0 // "+ new" row
-          }
-
-          const prevItems = itemsRef.current
-          const prevHist = historyDisplayRef.current
-          const clamp = () => Math.max(0, Math.min(s, maxSel))
-
-          if (s - 1 < prevItems.length) {
-            const id = prevItems[s - 1]?.id
-            const i = id ? next.findIndex(x => x.id === id) : -1
-
-            return i >= 0 ? i + 1 : clamp()
-          }
-
-          const id = prevHist[s - 1 - prevItems.length]?.id
-          const i = id ? hist.findIndex(x => x.id === id) : -1
-
-          return i >= 0 ? 1 + next.length + i : clamp()
-        })
+        commitLists(nextRaw, rawHistoryRef.current, initializeSelection)
         setErr(histError)
         setLoading(false)
 
-        return next
+        return nextRaw
       } catch (e: unknown) {
         setErr(rpcErrorMessage(e))
         setLoading(false)
@@ -486,13 +574,34 @@ export function ActiveSessionSwitcher({
         return []
       }
     },
-    [currentSessionId, gw, workspaceOnly]
+    [commitLists, currentSessionId, gw, workspaceOnly]
   )
 
   useEffect(() => {
     itemsRef.current = items
     historyDisplayRef.current = history
   }, [items, history])
+
+  // While a switcher input (filter now, workspace pick later) owns the keys,
+  // main must not answer Esc with "close the overlay".
+  useEffect(() => {
+    $sessionsOverlayInputMode.set(filtering)
+
+    return () => {
+      $sessionsOverlayInputMode.set(false)
+    }
+  }, [filtering])
+
+  // Keystroke-time refilter: re-derive the displayed lists from the raw rows
+  // without a network round-trip; the selection re-anchors or clamps inside.
+  const applyFilter = useCallback(
+    (value: string) => {
+      queryRef.current = value
+      setQuery(value)
+      commitLists(rawItemsRef.current, rawHistoryRef.current, false)
+    },
+    [commitLists]
+  )
 
   useEffect(() => {
     void load()
@@ -626,6 +735,54 @@ export function ActiveSessionSwitcher({
     const lower = ch?.toLowerCase() ?? ''
     const isCtrl = (letter: string) => key.ctrl && (lower === letter || ch === ctrlChar(letter))
 
+    // `/` filter mode: the input owns printable keys, so only navigation and
+    // the two exits are handled here — every other switcher hotkey (d, w,
+    // Ctrl+N/R/D, Tab) is suppressed until the filter closes. Esc clears the
+    // query first, then leaves filter mode; the next Esc closes the overlay.
+    if (filtering) {
+      if (key.escape) {
+        if (query.trim()) {
+          applyFilter('')
+        } else {
+          setFiltering(false)
+        }
+
+        return
+      }
+
+      if (key.return) {
+        setFiltering(false)
+
+        if (newSelected) {
+          if (!draftHasText) {
+            onNew()
+          }
+
+          return
+        }
+
+        if (selectedKind === 'live' && items[sel - 1]) {
+          return onSelect(items[sel - 1]!.id)
+        }
+
+        if (selectedKind === 'history' && history[sel - 1 - items.length]) {
+          return onResume(history[sel - 1 - items.length]!.id)
+        }
+
+        return
+      }
+
+      if (key.upArrow && sel > 0) {
+        return setSel(s => Math.max(0, s - 1))
+      }
+
+      if (key.downArrow && sel < total - 1) {
+        return setSel(s => Math.min(total - 1, s + 1))
+      }
+
+      return
+    }
+
     if (key.escape) {
       return onCancel()
     }
@@ -653,6 +810,12 @@ export function ActiveSessionSwitcher({
 
       setWorkspaceOnly(next)
       void load(false, true, next)
+
+      return
+    }
+
+    if (!key.ctrl && ch === '/' && !newSelected) {
+      setFiltering(true)
 
       return
     }
@@ -783,7 +946,9 @@ export function ActiveSessionSwitcher({
       </Box>
 
       {offset > 0 && <Text color={t.color.muted}>{C.moreAbove(offset)}</Text>}
-      {!listLen && <Text color={t.color.muted}>{S.noOtherSessions}</Text>}
+      {!listLen && (
+        <Text color={t.color.muted}>{query.trim() ? S.noMatches(query.trim()) : S.noOtherSessions}</Text>
+      )}
 
       {visibleRows.map(i => {
         const selected = sel === i
@@ -912,7 +1077,21 @@ export function ActiveSessionSwitcher({
 
       {offset + VISIBLE < listLen && <Text color={t.color.muted}>{C.moreBelow(listLen - offset - VISIBLE)}</Text>}
 
-      {newSelected ? (
+      {filtering ? (
+        <>
+          <Box marginTop={1}>
+            <Text color={t.color.label}>{S.filterLabel}</Text>
+            <TextInput
+              color={t.color.text}
+              columns={promptColumns}
+              ignoreVerticalArrows
+              onChange={applyFilter}
+              value={query}
+            />
+          </Box>
+          <OrchestratorHintText segments={orchestratorFilterHintSegments(selectedKind === 'history')} t={t} />
+        </>
+      ) : newSelected ? (
         <>
           <Box marginTop={1}>
             <Text color={t.color.label}>{S.promptLabel}</Text>

@@ -10,14 +10,19 @@ import {
   draftModelArgFromPickerValue,
   draftModelDisplayLabel,
   draftTitleFromPrompt,
+  filterSessionLists,
   isNewSessionRow,
   newSessionRowIndex,
+  orchestratorContextHintSegments,
+  orchestratorFilterHintSegments,
   orchestratorGlobalHotkeyHint,
   orchestratorRowClickAction,
   orchestratorVisibleRowIndexes,
   relativeSessionAge,
   resumableHistory,
+  resumeRowContextHintSegments,
   sessionRowKindAt,
+  sessionSearchText,
   sessionStatusLabel
 } from '../components/activeSessionSwitcher.js'
 import { applyLocale, messages, resetLocale } from '../i18n/runtime.js'
@@ -156,5 +161,61 @@ describe('unified Sessions overlay helpers', () => {
     }
 
     expect(sessionStatusLabel('working')).toBe('working')
+  })
+
+  it('advertises `/ find` on the row-context hints, not the width-capped global line', () => {
+    const hintText = (segments: readonly { role: string; text: string }[]) => segments.map(s => s.text).join('')
+
+    expect(hintText(orchestratorContextHintSegments(false))).toBe(
+      'Session row: Enter switch · Ctrl+D close · / find'
+    )
+    expect(hintText(resumeRowContextHintSegments())).toBe('Resumable: Enter resume · d delete · / find')
+    expect(hintText(orchestratorFilterHintSegments(true))).toBe('↑↓ move · Enter resume · Esc clear/back')
+  })
+
+  it('filters live and history rows by title, preview, id, cwd, branch and model', () => {
+    const items = [
+      { id: 'liv1', title: 'Deploy pipeline', status: 'working', model: 'kimi/k2.6' },
+      { id: 'liv2', title: 'Docs draft', status: 'idle' }
+    ] satisfies SessionActiveItem[]
+
+    const history = [
+      {
+        id: 'aaa',
+        title: 'Payments refactor',
+        preview: 'stripe webhooks',
+        cwd: '/home/u/pay',
+        git_branch: 'feat/pay',
+        started_at: 1,
+        message_count: 4
+      },
+      {
+        id: 'bbb',
+        title: 'Random chat',
+        preview: 'hello there',
+        cwd: '/home/u/misc',
+        git_branch: 'main',
+        started_at: 2,
+        message_count: 9
+      }
+    ] satisfies SessionListRow[]
+
+    // Empty/whitespace query is the identity, inputs returned untouched.
+    expect(filterSessionLists(items, history, '')).toEqual({ items, history })
+    expect(filterSessionLists(items, history, '   ').history).toBe(history)
+
+    // Title words, the branch, the cwd path segment and the model all match.
+    expect(filterSessionLists(items, history, 'payments').history.map(h => h.id)).toEqual(['aaa'])
+    expect(filterSessionLists(items, history, 'feat/pay').history.map(h => h.id)).toEqual(['aaa'])
+    expect(filterSessionLists(items, history, 'misc').history.map(h => h.id)).toEqual(['bbb'])
+    expect(filterSessionLists(items, history, 'k2.6').items.map(s => s.id)).toEqual(['liv1'])
+
+    // Case-insensitive; a query matching nothing filters both lists to empty.
+    expect(filterSessionLists(items, history, 'WEBHOOKS').history.map(h => h.id)).toEqual(['aaa'])
+    expect(filterSessionLists(items, history, 'zzz')).toEqual({ items: [], history: [] })
+
+    // The composed search text is exactly the union of the findable fields.
+    expect(sessionSearchText(history[0]!)).toBe('Payments refactor stripe webhooks aaa /home/u/pay feat/pay')
+    expect(sessionSearchText(items[0]!)).toBe('Deploy pipeline liv1 kimi/k2.6')
   })
 })

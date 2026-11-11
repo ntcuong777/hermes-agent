@@ -46,6 +46,12 @@ const buildOverlayState = (): OverlayState => ({
 
 export const $overlayState = atom<OverlayState>(buildOverlayState())
 
+// While the sessions overlay owns a text input (the `/` filter, or the `+new`
+// workspace pick), Esc means "clear, then step back" inside that input — the
+// main handler must not answer it with "close the overlay". The switcher
+// publishes the mode here; useInputHandlers reads it in its sessions Esc branch.
+export const $sessionsOverlayInputMode = atom(false)
+
 // Every overlay that suspends text input. `ambient` is the one non-blocking key.
 const BLOCKING_KEYS = [
   'agents',
