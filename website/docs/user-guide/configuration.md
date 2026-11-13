@@ -3067,6 +3067,8 @@ discord:
 - `auto_thread` — when `true` (default), mentions in channels automatically create a thread for the conversation, keeping channels clean (similar to Slack threading).
 - `free_response_auto_thread` — when `true`, channels in `free_response_channels` also auto-create a thread per top-level message. Default `false`: free-response channels reply inline. Requires `auto_thread: true`.
 
+Per-chat terminal workspaces are a platform-scoped setting (like Telegram's `dm_topics`): `platforms.discord.extra.thread_workspaces` maps a channel or thread ID to a host directory that **new** sessions in that chat start in (local terminal backend only). Threads inherit their parent channel's entry; `/cwd` shows or overrides the binding per conversation. See [Discord → `platforms.discord.extra.thread_workspaces`](./messaging/discord.md#platformsdiscordextrathread_workspaces).
+
 ## Security
 
 Secret redaction and the website blocklist:

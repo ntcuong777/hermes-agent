@@ -1028,6 +1028,45 @@ class GatewaySessionCommandsMixin:
         return t("gateway.topic.bound_status", label=title or t("gateway.topic.untitled_session"),
                  session_id=session_id)
 
+    # ------------------------------------------------------------------------ /cwd
+
+    async def _handle_cwd_command(self, event: MessageEvent) -> str:
+        """Handle /cwd: show this conversation's terminal workspace, or set a new one.
+
+        The binding rides the same routing-entry metadata the turn runner restores from
+        (gateway/session_terminal_cwd.py), so it holds across gateway restarts and ends at /new.
+        """
+        source = event.source
+        # Defense in depth: /cwd redirects where this chat's commands run, so re-check the allowlist
+        # here like /topic does, even though the slash access gate already ran.
+        try:
+            if not self._is_user_authorized_for_source(source):
+                return t("gateway.cwd.unauthorized")
+        except Exception:
+            logger.debug("cwd auth check failed", exc_info=True)
+        session_key = self._session_key_for_source(source)
+        args = event.get_command_args().strip()
+        if not args:
+            from gateway.session_terminal_cwd import get_chat_workspace
+            current = await asyncio.to_thread(get_chat_workspace, self, session_key)
+            if not current:
+                # Scope-aware read: a raw os.environ would show another profile's pinned cwd.
+                from tools.terminal_tool import _ensure_terminal_env_bridged
+                from tools.terminal_tool_config import _tenv
+                _ensure_terminal_env_bridged()
+                current = _tenv("TERMINAL_CWD") or "~"
+            return t("gateway.cwd.current", cwd=current)
+        from gateway.session_terminal_cwd import set_chat_workspace
+        resolved, reason = await asyncio.to_thread(set_chat_workspace, self, session_key, args)
+        if resolved:
+            return t("gateway.cwd.set", cwd=resolved)
+        if reason == "backend":
+            return t("gateway.cwd.backend")
+        if reason == "missing":
+            return t("gateway.cwd.invalid", path=args)
+        logger.warning("/cwd could not bind workspace for %s: %s", session_key, reason)
+        return t("gateway.cwd.failed")
+
     # ------------------------------------------------------------------ /save, /title
 
     async def _handle_save_command(self, event: MessageEvent) -> str:

@@ -6449,15 +6449,18 @@ class TelegramAdapter(TelegramContactMixin, TelegramHeldInboundMixin, TelegramRe
             logger.info("[%s] Cached DM topic from message: %s -> thread_id=%s", self.name, cache_key, thread_id)
 
     def _resolve_topic_binding(self, message: Message, chat_type: str, thread_id_str: Optional[str]) -> tuple:
-        """Return ``(chat_topic, topic_skill)`` for a DM topic or bound forum topic (else Nones)."""
+        """Return ``(chat_topic, topic_skill, topic_workspace)`` for a DM topic or bound forum
+        topic (else Nones)."""
         chat = message.chat
         chat_topic = None
         topic_skill = None
+        topic_workspace = None
         if chat_type == "dm" and thread_id_str:
             topic_info = self._get_dm_topic_info(str(chat.id), thread_id_str)
             if topic_info:
                 chat_topic = topic_info.get("name")
                 topic_skill = topic_info.get("skill")
+                topic_workspace = topic_info.get("workspace")
             # forum_topic_created service messages also reveal topic names
             if hasattr(message, "forum_topic_created") and message.forum_topic_created:
                 created_name = message.forum_topic_created.name
@@ -6486,9 +6489,10 @@ class TelegramAdapter(TelegramContactMixin, TelegramHeldInboundMixin, TelegramRe
                     if tid is not None and str(tid) == thread_id_str:
                         chat_topic = topic.get("name")
                         topic_skill = topic.get("skill")
+                        topic_workspace = topic.get("workspace")
                         break
                 break
-        return chat_topic, topic_skill
+        return chat_topic, topic_skill, topic_workspace
 
     def _reply_context(self, message: Message) -> tuple:
         """``(reply_to_id, reply_to_text)`` for the replied-to message: Telegram's native partial quote
@@ -6536,7 +6540,7 @@ class TelegramAdapter(TelegramContactMixin, TelegramHeldInboundMixin, TelegramRe
         # creation it follows is then the only source of the topic id. Adopt it before anything downstream
         # (gating, batching, session routing, topic recovery) reads the event source.
         thread_id_str = self._adopt_created_topic_thread(message, chat_type, thread_id_str)
-        chat_topic, topic_skill = self._resolve_topic_binding(message, chat_type, thread_id_str)
+        chat_topic, topic_skill, topic_workspace = self._resolve_topic_binding(message, chat_type, thread_id_str)
         has_full_name = hasattr(chat, "full_name")
         if user:
             user_name = user.full_name
@@ -6559,6 +6563,7 @@ class TelegramAdapter(TelegramContactMixin, TelegramHeldInboundMixin, TelegramRe
             message_id=str(message.message_id), platform_update_id=update_id,
             user_id=source.user_id, user_name=source.user_name,
             reply_to_message_id=reply_to_id, reply_to_text=reply_to_text, auto_skill=topic_skill,
+            auto_workspace=topic_workspace,
             channel_prompt=group_identity_prompt(self, message, channel_prompt), reply_expected=group_reply_expected(self, message, chat_type),
             edit_revision=self._edit_revision(message, update_id), timestamp=message.date)
 

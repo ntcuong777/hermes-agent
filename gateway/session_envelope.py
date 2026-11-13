@@ -173,6 +173,9 @@ def _validate_native(runner, event, provenance=None, fresh_roles=False):
     if not (skill is None or isinstance(skill, str)
             or isinstance(skill, list) and all(isinstance(item, str) for item in skill)):
         _refuse(event, 'invalid_params', 'auto_skill')
+    workspace = getattr(event, 'auto_workspace', None)
+    if not (workspace is None or isinstance(workspace, str)):
+        _refuse(event, 'invalid_params', 'auto_workspace')
     if (clause := _media_clause(event)) is not None:
         _refuse(event, 'invalid_params', clause)
     encoded_source = source.to_dict()

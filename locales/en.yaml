@@ -494,6 +494,13 @@ gateway:
     new_header: "Started a new Hermes session in this topic.\n\nTip: for parallel work, open All Messages and send a message there to create a separate topic instead of using /new here. /new replaces the session attached to the current topic."
     help: "/topic — enable multi-session DM mode (one bot, many parallel chats)\n\nUsage:\n  /topic             Enable topic mode, or show status if already on\n  /topic help        Show this message\n  /topic off         Disable topic mode and clear topic bindings\n  /topic <id>        Inside a topic: restore a previous session by ID\n\nHow it works:\n1. Run /topic once in this DM — Hermes checks BotFather Threads\n   Settings are enabled and flips on multi-session mode.\n2. Tap All Messages at the top of the bot and send any message.\n   Telegram creates a new topic for that message; each topic is\n   an independent Hermes session (fresh history, fresh context).\n3. The root DM becomes a system lobby — send /topic, /status,\n   /help, /usage there. Normal prompts go in a topic.\n4. /new inside a topic resets just that topic's session.\n5. /topic <id> inside a topic restores an old session into it."
     setup_image_caption: "BotFather → Bot Settings → Threads Settings"
+  cwd:
+    current: "📁 Working directory: `{cwd}`"
+    set: "📁 Working directory set to `{cwd}`\nCommands in this conversation now run there (a `/new` returns to the default)."
+    invalid: "❌ Directory does not exist: `{path}`"
+    backend: "❌ Workspaces are only available while the terminal backend is `local`."
+    unauthorized: "You are not authorized to use /cwd on this bot."
+    failed: "❌ Could not set the working directory. Check the gateway logs."
     no_chat_id: "Could not determine chat ID."
     mode_not_enabled: "Multi-session topic mode is not currently enabled for this chat."
     disable_failed: "Failed to disable topic mode: {error}"
@@ -1160,6 +1167,8 @@ platform:
       title:
         description: "Set or show the session title"
         arg_name: "Session title. Leave empty to show current."
+      cwd:
+        arg_path: "Workspace directory for this conversation (e.g. ~/code/foo). Leave empty to show current."
       resume:
         arg_name: "Session name to resume. Leave empty to list sessions."
       usage:
@@ -1569,6 +1578,8 @@ slash:
     description: "Resume a previously-named session"
   sethome:
     description: "Set this chat as the home channel"
+  cwd:
+    description: "Show or set this conversation's terminal workspace (until /new)"
   update:
     description: "Update Hermes Agent to the latest version"
   category:

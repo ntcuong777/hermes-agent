@@ -87,6 +87,47 @@ def persist_turn_cwd(runner, session_key: str | None, token: object | None) -> N
         logger.warning("Could not save the terminal cwd of %s: %s", session_key, exc)
 
 
+def get_chat_workspace(runner, session_key: str) -> str | None:
+    """The chat's explicit workspace binding, or None when it runs in the default ``terminal.cwd``."""
+    entry = _routing_entry(runner, session_key)
+    if entry is None:
+        return None
+    saved = entry.metadata.get(_METADATA_KEY)
+    return saved if isinstance(saved, str) and saved else None
+
+
+def set_chat_workspace(runner, session_key: str, raw_path: str) -> tuple[str | None, str | None]:
+    """Point this chat's terminal at an explicit workspace: the ``/cwd`` command and topic/channel
+    workspace bindings. Returns ``(resolved_path, None)`` on success, ``(None, reason)`` otherwise.
+
+    Local backend only (a host path can be checked before it is trusted). The binding lives on the
+    routing entry, so it survives a restart and ``restore_turn_cwd`` seeds from it; the in-process
+    record is written too, so the turn already in flight — or the next command — lands there.
+    A ``/new`` starts a fresh entry with no binding, back in ``terminal.cwd``.
+    """
+    raw = (raw_path or "").strip()
+    if not raw:
+        return None, "empty"
+    if not _local_backend(None):
+        return None, "backend"
+    resolved = os.path.abspath(os.path.expanduser(raw))
+    if not os.path.isdir(resolved):
+        return None, "missing"
+    entry = _routing_entry(runner, session_key)
+    if entry is None:
+        return None, "no_entry"
+    try:
+        runner.session_store.set_session_metadata(session_key, _METADATA_KEY, resolved)
+    except Exception as exc:  # health: allow BLE001 -- a failed save must not strand the reply
+        logger.warning("Could not bind workspace of %s: %s", session_key, exc)
+        return None, "save_failed"
+    from tools.terminal_tool import _qualify_task_key, clear_session_cwd, record_session_cwd
+    clear_session_cwd(session_key)
+    record_session_cwd(session_key, resolved)
+    _record_owner[_qualify_task_key(session_key)] = entry.created_at
+    return resolved, None
+
+
 def forget_turn_cwd(runner, session_key: str) -> None:
     """Drop the chat's saved cwd along with its record (a workspace move): the next turn must start in
     the new binding's directory, not restore the old one."""

@@ -878,6 +878,7 @@ platforms:
         - name: Research
           icon_color: 16766590
           skill: arxiv              # Auto-load a skill in this topic
+          workspace: ~/code/papers  # New sessions in this topic start here
 ```
 
 **Fields:**
@@ -888,6 +889,7 @@ platforms:
 | `icon_color` | No | Telegram icon color code (integer) |
 | `icon_custom_emoji_id` | No | Custom emoji ID for the topic icon |
 | `skill` | No | Skill to auto-load on new sessions in this topic |
+| `workspace` | No | Host directory new sessions in this topic start in (local terminal backend only). Same binding `/cwd` sets |
 | `thread_id` | No | Auto-populated after topic creation — don't set manually |
 
 ### How it works
@@ -929,6 +931,10 @@ unaffected.
 Topics with a `skill` field automatically load that skill when a new session starts in the topic. This works exactly like typing `/skill-name` at the start of a conversation — the skill content is injected into the first message, and subsequent messages see it in the conversation history.
 
 For example, a topic with `skill: arxiv` will have the arxiv skill pre-loaded whenever its session resets (after an explicit `/new` or `/reset`).
+
+### Workspace binding
+
+Topics with a `workspace` field start each **new** session's terminal in that host directory — topic "Website" works in `~/code/site`, topic "Research" in `~/code/papers`, each isolated. Ongoing sessions are unaffected (a binding never teleports a conversation mid-work), and `/new` returns the topic to the default directory until the next fresh session re-applies it. To set or inspect the directory inside a conversation, use `/cwd` — both write the same per-chat binding. Requires the local terminal backend.
 
 :::tip
 Topics created outside of the config (e.g., by manually calling the Telegram API) are discovered automatically when a `forum_topic_created` service message arrives. You can also add topics to the config while the gateway is running — they'll be picked up on the next cache miss.
@@ -1132,6 +1138,7 @@ platforms:
 | `name` | No | Human-readable label for the topic (informational only) |
 | `thread_id` | Yes | Telegram forum topic ID — visible in `t.me/c/<group_id>/<thread_id>` links |
 | `skill` | No | Skill to auto-load on new sessions in this topic |
+| `workspace` | No | Host directory new sessions in this topic start in (local terminal backend only) |
 
 ### How it works
 

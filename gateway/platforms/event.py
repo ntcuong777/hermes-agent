@@ -137,6 +137,10 @@ class MessageEvent:
     # unknown). For adapters whose ``media_urls`` are random cache names (relay); the name is
     # display data only, never a path. Appended for positional compat.
     media_filenames: list[str] = field(default_factory=list)
+    # Workspace this chat's topic/channel binding starts a NEW session in (like ``auto_skill``,
+    # ongoing sessions carry theirs in history). Resolved and validated in
+    # gateway/session_terminal_cwd.py; applied in run_turn_prepare only when the session is new.
+    auto_workspace: Optional[str] = None
 
     # Process-local admission receipt, never routing metadata or execution acknowledgement.
     _gateway_accepted: bool = field(default=False, init=False, repr=False, compare=False)

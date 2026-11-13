@@ -793,6 +793,17 @@ class GatewayTurnPrepareMixin:
         _auto = getattr(event, "auto_skill", None)
         if _is_new_session and _auto:
             self._hmwa_auto_load_skills(event, _auto, _quick_key, session_key)
+        # Same rule for a topic/channel-bound workspace: seed only a fresh session's cwd (an ongoing
+        # session already has its own; seeding mid-conversation would teleport its tools).
+        _workspace = getattr(event, "auto_workspace", None)
+        if _is_new_session and isinstance(_workspace, str) and _workspace.strip():
+            try:
+                from gateway.session_terminal_cwd import set_chat_workspace
+                _resolved, _reason = set_chat_workspace(self, session_key, _workspace)
+                if not _resolved:
+                    logger.info("Workspace binding %r not applied to %s: %s", _workspace, session_key, _reason)
+            except Exception:  # health: allow BLE001 -- a bad binding must never fail the turn
+                logger.warning("Workspace binding failed for %s", session_key, exc_info=True)
 
         await self._hmwa_acquire_turn_lease(_quick_key, run_generation, session_entry, _session_env_tokens)
 
