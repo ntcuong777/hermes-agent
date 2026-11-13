@@ -490,40 +490,6 @@ def _dispatch_quick(rid, params, session, name, arg):
     return _ok(rid, {"type": "alias", "target": qc.get("target", "")}) if qc.get("type") == "alias" else None
 
 
-def _plugin_command_handler(name: str):
-    try:
-        return _tools_mod("hermes_cli.plugins").get_plugin_command_handler(name)
-    except Exception:
-        return None
-
-
-def _run_plugin_command(handler, arg: str, session=None, sid: str = "") -> dict | str:
-    """Run a plugin slash-command handler under the session's ``HERMES_SESSION_*`` binding.
-
-    Plugin handlers read ``get_session_env()`` for the chat/session they serve; these RPCs run on
-    the socket/worker thread where nothing upstream binds it (only the turn path does), so a handler
-    saw ``""`` or the launch process's inherited values. Same class as the messaging gateway's
-    #108698; ``_set_session_context`` is the turn path's own seam.
-
-    A dict result is a TUI directive (``{"type": "prefill", ...}`` — the /undo contract at
-    _cmd_undo, used by /stash pop) and is returned unwrapped so the caller can pass it through
-    instead of stringifying it into ``output``; every other result stays a string."""
-    plugins = _tools_mod("hermes_cli.plugins")
-    invoke = _tools_mod("hermes_cli.plugin_command_dispatch").invoke_plugin_command
-    key = str(session.get("session_key") or "") if session else ""
-    tokens = _set_session_context(key, cwd=str(session.get("cwd") or "")) if session else []
-    context = {"source": None, "session_key": key, "platform": _session_source(session),
-               "session_id": getattr(session.get("agent"), "session_id", None) or key if session else ""}
-    # ctx.ask_choice: the ``clarify`` server request this backend's clarify tool sends.
-    choices = _tools_mod("hermes_cli.plugin_choices")
-    try:
-        with choices.bind_asker(choices.clarify_asker(lambda questions: _clarify_block(sid, questions))):
-            result = plugins.resolve_plugin_command_result(invoke(handler, arg, **context)) or ""
-            return result if isinstance(result, dict) else str(result)
-    finally:
-        _clear_session_context(tokens)
-
-
 @contextlib.contextmanager
 def _session_home_scope(session, cwd: str | None = None, profile: str | None = None):
     """Bind HERMES_HOME and the logical cwd to the session for the block.
@@ -595,14 +561,14 @@ def _is_registry_command(base: str) -> bool:
 
 
 def _dispatch_plugin(rid, params, session, name, arg):
-    if handler := _plugin_command_handler(name):
-        with contextlib.suppress(Exception):
-            out = _run_plugin_command(handler, arg, session, params.get("session_id", ""))
+    with contextlib.suppress(Exception):
+        if (output := _dispatch_plugin_in_profile_scope(
+                name, arg, session, params.get("session_id", ""), _str_arg(params, "profile") or None)) is not None:
             # Directive dict (e.g. /stash pop prefill) → pass through as-is; the TUI's
             # parseCommandDispatch reads it exactly like /undo's slash.exec response.
-            if isinstance(out, dict) and isinstance(out.get("type"), str):
-                return _ok(rid, out)
-            return _ok(rid, {"type": "plugin", "output": out})
+            if isinstance(output, dict) and isinstance(output.get("type"), str):
+                return _ok(rid, output)
+            return _ok(rid, {"type": "plugin", "output": output})
     return None
 
 
@@ -1025,7 +991,7 @@ def _(rid, params: dict) -> dict:
     # must resolve against the SAME profile or a secondary-only skill is routed here and then
     # not found (#110695).
     stages = (_dispatch_quick, _dispatch_plugin, _dispatch_bundle, _dispatch_skill, _SLASH_BUILTINS.get(name))
-    with _session_home_scope(session):
+    with _session_home_scope(session, profile=_str_arg(params, "profile") or None):
         for stage in filter(None, stages):
             res = stage(rid, params, session, name, arg)
             if res is not None:
@@ -1072,14 +1038,15 @@ def _(rid, params: dict) -> dict:
         # run it. Anything else might be the skill the scan failed to see.
         if (dispatched.get("result") or {}).get("type") or not _is_registry_command(base):
             return dispatched
-    if plugin_handler := _plugin_command_handler(base) if base else None:
+    if base:
         try:
-            out = _run_plugin_command(plugin_handler, arg, session, params.get("session_id", ""))
-            # Directive dict (e.g. /stash pop prefill) → return as the response body so the
-            # client's parseCommandDispatch handles it like /undo's {"type": "prefill", ...}.
-            if isinstance(out, dict) and isinstance(out.get("type"), str):
-                return _ok(rid, out)
-            return _ok(rid, {"output": out or "(no output)"})
+            plugin_output = _dispatch_plugin_in_profile_scope(base, arg, session, params.get("session_id", ""))
+            if plugin_output is not None:
+                # Directive dict (e.g. /stash pop prefill) → return as the response body so the
+                # client's parseCommandDispatch handles it like /undo's {"type": "prefill", ...}.
+                if isinstance(plugin_output, dict) and isinstance(plugin_output.get("type"), str):
+                    return _ok(rid, plugin_output)
+                return _ok(rid, {"output": plugin_output or "(no output)"})
         except Exception as e:
             return _ok(rid, {"output": f"Plugin command error: {e}"})
     worker = session.get("slash_worker")
@@ -1243,7 +1210,7 @@ def _(rid, params: dict) -> dict:
         {"title": "Model", "rows": [
             ["Model", _resolve_model()], ["Base URL", base_url or "(default)"], ["API Key", masked]]},
         {"title": "Agent", "rows": [
-            ["Max Turns", str(_cfg_max_turns(cfg, 500))],
+            ["Max Turns", _tools_mod("hermes_cli.config_turn_limit").turn_limit_label(_cfg_max_turns(cfg))],
             ["Toolsets", ", ".join(cfg.get("enabled_toolsets", [])) or "all"],
             ["Verbose", str(cfg.get("verbose", False))]]},
         {"title": "Environment", "rows": [["Working Dir", os.getcwd()], ["Config File", str(_active_config_path())]]},
@@ -1996,3 +1963,6 @@ def _(rid, params: dict) -> dict:
 def register(server) -> None:
     """Rebind this module's helpers + handlers onto ``server`` and register the handlers."""
     bind_module(globals(), server, skip=("_",))
+    from . import methods_tools_plugin_commands  # the plugin-command stage's helpers, same namespace
+
+    methods_tools_plugin_commands.register(server)
