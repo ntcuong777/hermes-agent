@@ -54,7 +54,8 @@ async def events(ws: WebSocket):
 def _install(home, name):
     dashboard = home / "plugins" / name / "dashboard"
     dashboard.mkdir(parents=True)
-    (dashboard / "manifest.json").write_text(json.dumps({"name": name, "api": "plugin_api.py"}))
+    (dashboard / "manifest.json").write_text(json.dumps(
+        {"name": name, "api": "plugin_api.py", "entry": "index.js"}))
     (dashboard / "plugin_api.py").write_text(_PLUGIN_API)
     (dashboard / "index.js").write_text("export {}\n")
     return dashboard / "IMPORTED"

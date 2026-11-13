@@ -480,7 +480,7 @@ None of them are required; include only the layers you need.
 | `tab.override` | No | Set to a built-in route path (`"/"`, `"/sessions"`, `"/config"`, ...) to **replace** that page instead of adding a new tab. See [Replacing built-in pages](#replacing-built-in-pages-taboverride). |
 | `tab.hidden` | No | When true, register the component and any slots without adding a tab to the nav. Used by slot-only plugins. See [Slot-only plugins](#slot-only-plugins-tabhidden). |
 | `slots` | No | Named shell slots this plugin populates. **Documentation aid only** — actual registration happens from the JS bundle via `registerSlot()`. Listing slots here makes discovery surfaces more informative. |
-| `entry` | Yes | Path to the JS bundle relative to `dashboard/`. Defaults to `dist/index.js`. |
+| `entry` | Yes | Path to the JS bundle relative to `dashboard/`. Defaults to `dist/index.js`. A plugin whose bundle is missing gets no tab; its `api` routes still mount, so a backend-only plugin needs no bundle. |
 | `css` | No | Path to a CSS file to inject as a `<link>` tag. |
 | `api` | No | Path to a Python file with FastAPI routes. Mounted at `/api/plugins/<name>/`. |
 
@@ -921,10 +921,11 @@ Check that the file is in `~/.hermes/dashboard-themes/` and ends in `.yaml` or `
 
 **My plugin's tab doesn't show up.**
 1. Check the manifest is at `~/.hermes/plugins/<name>/dashboard/manifest.json` (note the `dashboard/` subdirectory).
-2. `curl http://127.0.0.1:9119/api/dashboard/plugins/rescan` to force re-discovery.
-3. Open browser dev tools → Network — confirm `manifest.json`, `index.js`, and any CSS loaded without 404s.
-4. Open browser dev tools → Console — look for errors during the IIFE or `window.__HERMES_PLUGINS__ is undefined` (indicates the SDK didn't initialize, usually a React render crash earlier).
-5. Verify your bundle calls `window.__HERMES_PLUGINS__.register(...)` with the **same name** as `manifest.json:name`.
+2. Check the bundle exists at the manifest's `entry` path (default `dashboard/dist/index.js`). A plugin with no bundle is left out of `/api/dashboard/plugins` and gets no tab.
+3. `curl http://127.0.0.1:9119/api/dashboard/plugins/rescan` to force re-discovery.
+4. Open browser dev tools → Network — confirm `manifest.json`, `index.js`, and any CSS loaded without 404s.
+5. Open browser dev tools → Console — look for errors during the IIFE or `window.__HERMES_PLUGINS__ is undefined` (indicates the SDK didn't initialize, usually a React render crash earlier).
+6. Verify your bundle calls `window.__HERMES_PLUGINS__.register(...)` with the **same name** as `manifest.json:name`.
 
 **Slot-registered components don't render.**
 The `sidebar` slot only renders when the active theme has `layoutVariant: cockpit`. Other slots always render. If you're registering into a slot with no hits, add `console.log` inside `registerSlot` to confirm the plugin bundle ran at all.

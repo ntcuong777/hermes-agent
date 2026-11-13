@@ -18,7 +18,7 @@ from hermes_cli.config import cfg_get
 from hermes_cli.web_routers._common import config_scoped_to_thread
 from hermes_cli.web_server_dashboard import (
     _BUILTIN_DASHBOARD_THEMES, _discover_user_themes, _invalidate_plugins_hub_cache, _merged_plugins_hub,
-    _plugin_consent_withheld,
+    _plugin_consent_withheld, _serves_browser_bundle,
 )
 from hermes_cli.web_server_memory import _normalize_memory_provider_name, _require_memory_provider_ready
 from hermes_cli.web_models import (
@@ -110,12 +110,15 @@ async def set_dashboard_font(body: FontSetBody, profile: Optional[str] = None):
 
 @router.get("/api/dashboard/plugins")
 async def get_dashboard_plugins(profile: Optional[str] = None):
-    """Return discovered dashboard plugins (excludes user-hidden and non-enabled ones)."""
+    """Return the dashboard plugins the browser can load (excludes user-hidden, non-enabled and
+    bundle-less ones)."""
     def _run():
         hidden: list = cfg_get(load_config(), "dashboard", "hidden_plugins", default=[]) or []
-        # The consent the asset route and the API gates apply, so no listed tab fails to load.
+        # The consent the asset route and the API gates apply, and a bundle that route can serve,
+        # so no listed tab fails to load.
         return [p for p in _get_dashboard_plugins()
-                if p.get("name", "") not in hidden and not _plugin_consent_withheld(p)]
+                if p.get("name", "") not in hidden and not _plugin_consent_withheld(p)
+                and _serves_browser_bundle(p)]
 
     # Strip internal fields before sending to frontend.
     return [{k: v for k, v in p.items() if not k.startswith("_")}

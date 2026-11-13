@@ -635,6 +635,18 @@ def _dashboard_plugin_entry(data: dict[str, Any], name: str, dashboard_dir: Path
     }
 
 
+def _serves_browser_bundle(plugin: dict[str, Any]) -> bool:
+    """Whether the asset route can serve the plugin's ``entry`` (a file inside ``dashboard/``).
+
+    A manifest may ship only the backend layer: desktop plugins share just ``/api/plugins/<name>``
+    with the web dashboard, so their ``dashboard/`` has an ``api`` and no bundle. Read per request
+    rather than at discovery, so a bundle built later needs no rescan.
+    """
+    base = Path(plugin["_dir"]).resolve()
+    target = (base / plugin["entry"]).resolve()
+    return target.is_relative_to(base) and target.is_file()
+
+
 def _discover_dashboard_plugins(search_dirs: Optional[list] = None) -> list:
     """Scan ``<plugins root>/*/dashboard/manifest.json`` across user, bundled and (opt-in)
     project plugin sources — same three sources as ``hermes_cli.plugins`` — or ``search_dirs``."""
