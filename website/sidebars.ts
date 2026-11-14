@@ -784,6 +784,7 @@ const sidebars: SidebarsConfig = {
             'developer-guide/provider-runtime',
             'developer-guide/config-backend',
             'developer-guide/programmatic-integration',
+            'developer-guide/gateway-ssh-clients',
           ],
         },
         {
