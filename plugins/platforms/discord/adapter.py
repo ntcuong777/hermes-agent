@@ -1280,6 +1280,7 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
         )
         self._liveness_task: Optional[asyncio.Task] = None
         self._mirror_task: Optional[asyncio.Task] = None
+        self._mirror_seen: dict = {}
         self._liveness_notification_task: Optional[asyncio.Task] = None
         # True while disconnect() intentionally closes discord.py (done callback: shutdown vs crash).
         self._disconnecting = False
@@ -1471,6 +1472,13 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
                 )
                 if adapter_self._missed_message_backfill_enabled():
                     adapter_self._ensure_missed_message_backfill_task()
+
+            @self._client.event
+            async def on_thread_update(thread):
+                # The session mirror's reverse rename: a thread rename in Discord renames the
+                # mirrored session. Sessions the mirror never bound are ignored by the sync.
+                from plugins.platforms.discord.adapter_session_mirror import sync_thread_title
+                await sync_thread_title(adapter_self, thread)
 
             @self._client.event
             async def on_socket_event_type(event_type: str):
