@@ -177,16 +177,16 @@ def _missing_hermes_tools_import_hint(m, enabled_tools) -> str:
                 "If that import failed, the generated module may be stale or another "
                 "hermes_tools may be first on sys.path. Check hermes_tools.__file__ "
                 "and retry with reset=true.")
-    allowed = sandbox_allowed_tools()
-    available = sorted(allowed & set(enabled_tools or allowed))
+    available = sorted(_sandbox_tools_for(enabled_tools))
+    available_text = ", ".join(available) or "none"
     if _is_registered_tool(missing):
         return (f"'{missing}' is a Hermes tool but is not importable inside execute_code. "
-                f"Importable tools here: {', '.join(available)}. Call it as a normal tool call; if it is not "
+                f"Importable tools here: {available_text}. Call it as a normal tool call; if it is not "
                 f"in your tool list, go through tool_call: tool_call(calls=[{{\"name\": \"{missing}\", "
                 "\"arguments\": {...}}]). To make it importable, add its name to "
                 "code_execution.allowed_tools in config.yaml.")
     return (f"'{missing}' is not available inside the execute_code sandbox. "
-            f"Importable tools here: {', '.join(available)}. For anything "
+            f"Importable tools here: {available_text}. For anything "
             "else, use the normal tool call instead of execute_code.")
 
 
@@ -638,9 +638,14 @@ def _finish_remote_kernel_result(kernel_result: dict[str, Any], *,
 
 
 def _sandbox_tools_for(enabled_tools: Optional[list[str]]) -> frozenset:
-    """Enabled ∩ the allowed tools, or every allowed tool when the intersection is empty."""
+    """Tri-state sandbox tool resolution. None → legacy default (every allowed tool); an
+    explicit list (possibly empty) → exact intersection with the allowed tools, so an
+    empty grant denies all rather than broadening to the default
+    (SECURITY-CLASS-faf9d60580300e16 / #84271)."""
     allowed = sandbox_allowed_tools()
-    return frozenset(allowed & set(enabled_tools or ())) or allowed
+    if enabled_tools is None:
+        return allowed
+    return frozenset(allowed & set(enabled_tools))
 
 
 def _run_remote_per_call(env, env_type: str, code: str, effective_task_id: str,

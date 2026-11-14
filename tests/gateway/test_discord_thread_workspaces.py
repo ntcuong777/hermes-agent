@@ -84,8 +84,12 @@ def test_build_cwd_choices_filter_cap_and_cache(monkeypatch):
     monkeypatch.setattr("gateway.workspace_candidates.candidate_workspaces", _counting)
     monkeypatch.setattr(adapter, "_cwd_candidates_cache", None)
 
-    assert len(adapter._build_cwd_choices("")) == 25  # broad query hits the cap
+    bare = adapter._build_cwd_choices("")
+    assert bare[0].value == "list"  # the subcommand is offered first, riding the path arg
+    assert len(bare) == 25  # broad query hits the cap (list choice + dirs)
     d3 = adapter._build_cwd_choices("d3")
     assert len(d3) == 11 and all("d3" in c.name for c in d3)  # d3 + d30..d39
-    assert adapter._build_cwd_choices("zzz-none") == []
-    assert len(calls) == 1  # TTL cache: one build serves all three keystrokes
+    li = adapter._build_cwd_choices("li")
+    assert li[0].value == "list" and li[0].name.startswith("list — ")
+    assert adapter._build_cwd_choices("zzz-none") == []  # garbage matches nothing, not even list
+    assert len(calls) == 1  # TTL cache: one build serves all keystrokes
