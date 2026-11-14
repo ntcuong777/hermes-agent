@@ -130,7 +130,13 @@ def _modal_unavailable_reason(modal_state: dict[str, Any]) -> tuple[str, str]:
 
 # --- Environment builders. Signature: (*, image, cwd, timeout, cc, task_id, ssh_config, local_config, host_cwd)
 # (env_type is only forwarded to the plugin-registry fallback, not to the built-in builders.)
-def _build_local_env(*, cwd, timeout, local_config=None, **_):
+def _build_local_env(*, image=None, cwd, timeout, cc=None, task_id="default", local_config=None, **_):
+    # P7: `terminal.local_wall` routes the local backend through a plugin wall first;
+    # None = no wall configured, and the plain in-tree local environment is built.
+    from tools.local_wall_overlay import walled_local_environment
+    walled = walled_local_environment(image=image, cwd=cwd, timeout=timeout, cc=cc, task_id=task_id)
+    if walled is not None:
+        return walled
     return _LocalEnvironment(cwd=cwd, timeout=timeout, persistent=(local_config or {}).get("persistent", True))
 
 
