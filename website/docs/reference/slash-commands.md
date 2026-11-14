@@ -259,7 +259,7 @@ The messaging gateway supports the following built-in commands inside Telegram, 
 | `/sethome` (alias: `/set-home`) | Mark the current chat as the platform home channel for deliveries. |
 | `/compress [here [N] \| focus topic]` | Manually compress conversation context. `/compress here [N]` keeps the most recent N exchanges (default 2) verbatim and summarizes the rest. A focus topic narrows what a full summary preserves. |
 | `/topic [off\|help\|session-id]` | **Telegram DM only.** Manage user-managed multi-session topic mode. `/topic` enables it or shows status; `/topic off` disables it and clears bindings; `/topic help` shows usage; `/topic <session-id>` inside a topic restores a previous session. See [Multi-session DM mode](../user-guide/messaging/telegram.md#multi-session-dm-mode-topic). |
-| `/cwd [path]` | Show this conversation's terminal workspace, or set one (`/cwd ~/code/foo`). Commands in this conversation run there; the binding survives gateway restarts and ends at `/new`. Local terminal backend only. |
+| `/cwd [path]` | Show this conversation's terminal workspace, or set one. `/cwd list` numbers your projects and recently used repos; `/cwd <number>` picks one, and a partial path (`/cwd ~/co`) expands when it uniquely matches. Full paths work as before. The binding survives gateway restarts and ends at `/new`. Discord adds type-ahead over the same candidates. Local terminal backend only. |
 | `/save <json\|md\|html> [filename] [redact]` | Export the current session as JSON, Markdown, or HTML and send the file into the chat as a document. Bare `/save` shows usage; `redact` scrubs secrets first. |
 | `/title [name]` | Set or show the session title. |
 | `/resume [name]` | Resume a previously named session. |

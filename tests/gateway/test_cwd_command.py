@@ -12,6 +12,7 @@ import pytest
 
 from gateway.session import SessionEntry
 from gateway.session_terminal_cwd import get_chat_workspace, set_chat_workspace
+from gateway.slash_commands_session import GatewaySessionCommandsMixin
 
 KEY = 'agent:main:telegram:dm:202'
 
@@ -111,3 +112,80 @@ def test_cwd_is_a_registered_gateway_command():
     from hermes_cli.commands import COMMAND_REGISTRY
     (cmd,) = [c for c in COMMAND_REGISTRY if c.name == 'cwd']
     assert cmd.gateway_only and cmd.category == 'Session'
+
+
+# ── list / <n> / prefix completion (handler level) ────────────────────────────
+
+
+class _Runner:
+    """Runner stand-in: session store + the mixin methods under test, bound the way the gateway
+    binds them (GatewaySessionCommandsMixin methods run against the GatewayRunner instance).
+    ``candidate_workspaces`` is stubbed so the tests drive the handler logic, not projects.db."""
+
+    def __init__(self, tmp_path, candidates, monkeypatch=None):
+        self.session_store = _Store()
+        self.session_store._entries[KEY] = _entry()
+        for name in ('_cwd_candidates_with_db', '_cwd_candidates_reply', '_cwd_pick_candidate'):
+            setattr(self, name, getattr(GatewaySessionCommandsMixin, name).__get__(self))
+        if monkeypatch is not None:
+            fixed = list(candidates)
+            monkeypatch.setattr('gateway.workspace_candidates.candidate_workspaces',
+                                lambda db=None: fixed)
+
+
+def test_list_numbers_the_candidates(tmp_path, monkeypatch):
+    runner = _Runner(tmp_path, ['/a', '/b'], monkeypatch)
+    reply = runner._cwd_candidates_reply(KEY)
+    assert '1. `/a`' in reply and '2. `/b`' in reply and '`/cwd <number>`' in reply
+
+
+def test_list_empty_has_no_numbers(tmp_path, monkeypatch):
+    runner = _Runner(tmp_path, [], monkeypatch)
+    reply = runner._cwd_candidates_reply(KEY)
+    assert '/cwd list' not in reply and '1.' not in reply
+
+
+def test_numeric_pick_sets_the_nth_candidate(tmp_path, monkeypatch):
+    work = tmp_path / 'repo-b'
+    work.mkdir()
+    runner = _Runner(tmp_path, [str(tmp_path / 'nope'), str(work)], monkeypatch)
+    reply = runner._cwd_pick_candidate(KEY, 2)
+    assert str(work) in reply
+    from tools.terminal_tool import get_session_cwd
+    assert get_session_cwd(KEY) == str(work)
+
+
+def test_numeric_pick_out_of_range_lists_again(tmp_path, monkeypatch):
+    runner = _Runner(tmp_path, ['/a'], monkeypatch)
+    reply = runner._cwd_pick_candidate(KEY, 5)
+    assert 'between 1 and 1' in reply
+
+
+def test_unique_prefix_expands_through_the_handler_path(tmp_path, monkeypatch):
+    """The handler's prefix flow: one basename match expands, sets, and confirms — the phone path
+    (`/cwd pers` instead of the full directory)."""
+    from gateway.workspace_candidates import match_workspace_prefix
+    work = tmp_path / 'papers'
+    work.mkdir()
+    candidates = [str(tmp_path / 'site'), str(work)]
+    matches, note = match_workspace_prefix(candidates, 'pers')
+    assert (note, matches) == ('unique', [str(work)])
+    runner = _Runner(tmp_path, candidates, monkeypatch)
+    reply = runner._cwd_pick_candidate(KEY, 2)  # the expansion sets via the same set_chat_workspace call
+    assert str(work) in reply
+
+
+def test_prefix_matches_basenames_too(tmp_path):
+    from gateway.workspace_candidates import match_workspace_prefix
+    matches, note = match_workspace_prefix(['/home/me/code/website', '/srv/data'], 'site')
+    assert note == 'unique' and matches == ['/home/me/code/website']
+    matches, note = match_workspace_prefix(['/x/alpha', '/y/alpine'], 'al')
+    assert note == 'ambiguous' and len(matches) == 2
+
+
+def test_unknown_prefix_falls_through_to_literal_path(tmp_path):
+    """No prefix match = empty note: the handler treats the argument as a literal path, so a
+    nonexistent one still gets the plain invalid-directory refusal (not a list)."""
+    from gateway.workspace_candidates import match_workspace_prefix
+    matches, note = match_workspace_prefix(['/home/me/code/website'], 'zzz-nowhere')
+    assert (matches, note) == ([], '')

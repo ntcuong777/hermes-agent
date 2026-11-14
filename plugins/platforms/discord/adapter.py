@@ -131,9 +131,8 @@ _NATIVE_SLASH_COMMAND_SPECS: tuple = (
     ("title", "platform.discord.command.title.description",
      (("name", str, "", "platform.discord.command.title.arg_name", None),),
      "/title {name}", None),
-    ("cwd", "slash.cwd.description",
-     (("path", str, "", "platform.discord.command.cwd.arg_path", None),),
-     "/cwd {path}", None),
+    # /cwd: template None -> registered by _register_cwd_slash (dynamic path autocomplete).
+    ("cwd", "slash.cwd.description", (), None, None),
     ("resume", "slash.resume.description",
      (("name", str, "", "platform.discord.command.resume.arg_name", None),),
      "/resume {name}", None),
@@ -4466,6 +4465,60 @@ class DiscordAdapter(DiscordAuthorizationMixin, DiscordMediaMixin, DiscordThread
                 _handler = discord.app_commands.choices(**choices)(_handler)
         return _handler
 
+    _CWD_CANDIDATES_TTL_SECONDS = 30.0
+
+    def _cwd_autocomplete_choices(self, current: str) -> list:
+        """Workspace candidates for the /cwd type-ahead, over the runner's own session store.
+        Cached briefly: a candidates build walks projects.db and git probes — too slow per keystroke."""
+        import time as _time
+        now = _time.monotonic()
+        cached = getattr(self, "_cwd_candidates_cache", None)
+        if cached is not None and now - cached[0] < self._CWD_CANDIDATES_TTL_SECONDS:
+            candidates = cached[1]
+        else:
+            from gateway.workspace_candidates import candidate_workspaces
+            runner = getattr(self, "gateway_runner", None)
+            db = None
+            try:
+                store = getattr(runner, "session_store", None)
+                db = store._db_for_key("discord:cwd:autocomplete") if store is not None and hasattr(store, "_db_for_key") else None
+            except Exception:  # health: allow BLE001 -- autocomplete is advisory; store problems must not raise here
+                db = None
+            candidates = candidate_workspaces(db)
+            self._cwd_candidates_cache = (now, candidates)
+        q = (current or "").strip().lower()
+        choices: list = []
+        for path in candidates:
+            if not q or q in path.lower() or q in os.path.basename(path.rstrip("/\\")).lower():
+                # Discord's Choice.name is capped at 100 chars.
+                choices.append(discord.app_commands.Choice(name=path[:100], value=path))
+                if len(choices) >= 25:
+                    break
+        return choices
+
+    def _register_cwd_slash(self, tree, description: str) -> None:
+        """/cwd with dynamic path autocomplete over the profile's candidate workspaces
+        (the _register_skill_group shape). Unauthorized users get []: no path leak."""
+        async def _autocomplete_path(interaction: discord.Interaction, current: str) -> list:
+            try:
+                allowed, _reason = self._evaluate_slash_authorization(interaction)
+            except Exception:  # health: allow BLE001 -- never raise from autocomplete; fail closed
+                return []
+            if not allowed:
+                return []
+            return self._cwd_autocomplete_choices(current)
+
+        @discord.app_commands.describe(
+            path=_t_discord("platform.discord.command.cwd.arg_path", _DISCORD_APP_COMMAND_TEXT_LIMIT),
+        )
+        @discord.app_commands.autocomplete(path=_autocomplete_path)
+        async def _cwd_handler(interaction: discord.Interaction, path: str = ""):
+            if not await self._check_slash_authorization(interaction, "/cwd"):
+                return
+            await self._run_simple_slash(interaction, f"/cwd {path}".strip())
+
+        tree.command(name="cwd", description=description)(_cwd_handler)
+
     def _register_thread_slash(self, tree, name: str, description: str) -> None:
         @tree.command(name=name, description=description)
         @discord.app_commands.describe(
@@ -4487,7 +4540,10 @@ class DiscordAdapter(DiscordAuthorizationMixin, DiscordMediaMixin, DiscordThread
         tree = self._client.tree
         for name, description, args, template, followup in _native_slash_commands():
             if template is None:
-                self._register_thread_slash(tree, name, description)
+                if name == "cwd":
+                    self._register_cwd_slash(tree, description)
+                else:
+                    self._register_thread_slash(tree, name, description)
                 continue
             tree.command(name=name, description=description)(
                 self._slash_proxy(name, args, template, followup, strip=name != "insights")

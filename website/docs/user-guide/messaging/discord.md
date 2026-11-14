@@ -403,7 +403,7 @@ group_sessions_per_user: true     # Isolate sessions per user in shared channels
 
 **Type:** map of channel/thread ID → path — **Default:** `{}`
 
-The host directory a **new** session in that chat starts in — one thread per project, each running in its own repo. Keys are Discord channel or thread IDs (they are globally unique, so DMs and threads both work); a thread also inherits its parent channel's entry, like `channel_skill_bindings` does. Ongoing sessions are never moved mid-conversation, `/new` returns the chat to `terminal.cwd` until the next fresh session re-applies the binding, and the same per-chat store `/cwd` writes is used — so `/cwd` inside the conversation shows or overrides the mapped directory. Requires the local terminal backend.
+The host directory a **new** session in that chat starts in — one thread per project, each running in its own repo. Keys are Discord channel or thread IDs (they are globally unique, so DMs and threads both work); a thread also inherits its parent channel's entry, like `channel_skill_bindings` does. Ongoing sessions are never moved mid-conversation, `/new` returns the chat to `terminal.cwd` until the next fresh session re-applies the binding, and the same per-chat store `/cwd` writes is used — so `/cwd` inside the conversation shows or overrides the mapped directory (`/cwd list` numbers your projects and recent repos; the Discord slash command type-aheads over the same candidates). Requires the local terminal backend.
 
 ```yaml
 platforms:

@@ -934,7 +934,7 @@ For example, a topic with `skill: arxiv` will have the arxiv skill pre-loaded wh
 
 ### Workspace binding
 
-Topics with a `workspace` field start each **new** session's terminal in that host directory — topic "Website" works in `~/code/site`, topic "Research" in `~/code/papers`, each isolated. Ongoing sessions are unaffected (a binding never teleports a conversation mid-work), and `/new` returns the topic to the default directory until the next fresh session re-applies it. To set or inspect the directory inside a conversation, use `/cwd` — both write the same per-chat binding. Requires the local terminal backend.
+Topics with a `workspace` field start each **new** session's terminal in that host directory — topic "Website" works in `~/code/site`, topic "Research" in `~/code/papers`, each isolated. Ongoing sessions are unaffected (a binding never teleports a conversation mid-work), and `/new` returns the topic to the default directory until the next fresh session re-applies it. To set or inspect the directory inside a conversation, use `/cwd` — both write the same per-chat binding (`/cwd list` numbers your projects and recently used repos; a partial path like `/cwd ~/co` expands on a unique match). Requires the local terminal backend.
 
 :::tip
 Topics created outside of the config (e.g., by manually calling the Telegram API) are discovered automatically when a `forum_topic_created` service message arrives. You can also add topics to the config while the gateway is running — they'll be picked up on the next cache miss.
