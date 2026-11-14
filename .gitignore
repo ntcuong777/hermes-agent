@@ -339,3 +339,8 @@ infografico/
 /pm/.lock.json.lock
 
 apps/desktop/.dist-build*
+
+# A "default" profile home seeded inside the checkout (a hermes run with cwd == checkout
+# and no HERMES_HOME makes <cwd>/default the home, as in docker deployments): runtime
+# state, never code — same class as the flat-install artifacts ignored above.
+/default/
