@@ -6,9 +6,12 @@ raises, so behaviour is unchanged when the section is absent or malformed."""
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict
 
 from hermes_constants import hermes_home_key
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_BYTES = 50_000       # terminal_tool.MAX_OUTPUT_CHARS
 DEFAULT_MAX_LINES = 2000         # file_operations.MAX_LINES
@@ -73,5 +76,6 @@ def redact_spill_enabled() -> bool:
         section = (load_config_readonly() or {}).get("tool_output")
         value = section.get("redact_spill") if isinstance(section, dict) else None
     except Exception:
+        logger.debug("tool_output.redact_spill config read failed; keeping the default", exc_info=True)
         return True
     return value if isinstance(value, bool) else True

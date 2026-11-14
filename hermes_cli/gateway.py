@@ -1458,25 +1458,6 @@ def _recover_pending_systemd_restart(system: bool = False, previous_pid: int | N
     return False
 
 
-def _parse_launchd_pid_from_list_output(output: str) -> int | None:
-    """PID from ``launchctl list <label>`` (``"PID" = <n>;``); None if absent (registered, not running)
-    or non-positive (crashed)."""
-    for line in output.splitlines():
-        stripped = line.strip()
-        if stripped.startswith(('"PID"', "PID")) and "=" in stripped:
-            return _positive_pid(stripped.split("=", 1)[1].strip().rstrip(";").strip('"'))
-    return None
-
-
-def _parse_launchd_pid_from_print_output(output: str) -> int | None:
-    """Live PID from ``launchctl print`` (first ``pid = <N>`` line wins); None if absent or non-positive."""
-    for line in output.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("pid = "):
-            return _positive_pid(stripped[len("pid = "):].strip())
-    return None
-
-
 def _launchd_print_service_pid(domain: str, label: str) -> tuple[bool, int | None]:
     """``(loaded, pid)`` for ``domain/label`` via ``launchctl print`` (domain-explicit; ``launchctl list``
     infers it from caller context). ``TimeoutExpired`` propagates: a wedged launchctl is not "unloaded".
@@ -3915,6 +3896,7 @@ def systemd_status(deep: bool = False, system: bool = False, full: bool = False)
 
 
 from hermes_cli.gateway_launchd import (
+    _parse_launchd_pid_from_list_output, _parse_launchd_pid_from_print_output,
     get_launchd_label,
     _probe_launchd_domain_for_label,
     _launchd_domain,

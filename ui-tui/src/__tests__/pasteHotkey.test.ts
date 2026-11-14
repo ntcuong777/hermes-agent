@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { isPasteHotkey } from '../components/textInput.js'
+import { isPasteHotkey } from '../components/textInputGestures.js'
 
 const key = (over: Partial<{ ctrl: boolean; meta: boolean; super: boolean; shift: boolean }> = {}) => ({
   ctrl: false,

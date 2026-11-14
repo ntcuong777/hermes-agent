@@ -65,6 +65,9 @@ class _Harness:
             async def close(self):
                 pass
 
+            def awaits_profile_start(self, req, held):
+                return None  # no session start in flight; ws.py holds nothing
+
         class FakeWS:
             scope = {"hermes.session_authority": object()}
 
@@ -173,7 +176,7 @@ async def test_a_disconnect_still_waits_for_the_compress_in_flight(monkeypatch):
     h.start()
     await h.send(_mutate(1, "compress"))
     await h.disconnect()
-    await asyncio.sleep(0.3)
+    await asyncio.sleep(0.3)  # health: allow HX013 -- the window IS the assertion: it proves the teardown did not park the connection while the compress was still in flight
     assert not h.task.done(), "teardown ran while the compress was still in flight"
     h.release.set()
     await asyncio.wait_for(h.task, 5)

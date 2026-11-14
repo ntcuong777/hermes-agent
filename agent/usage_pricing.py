@@ -614,6 +614,7 @@ def _configured_pricing() -> dict:
 
         raw = (load_config_readonly() or {}).get("pricing")
     except Exception:
+        logger.debug("pricing config read failed; falling back to the bundled table", exc_info=True)
         return {}
     return raw if isinstance(raw, dict) else {}
 

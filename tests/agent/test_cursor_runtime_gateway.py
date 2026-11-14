@@ -15,6 +15,8 @@ import time
 
 import pytest
 
+from tests.waiting import wait_until
+
 import agent.cursor_runtime as cr
 import run_agent
 from tools import approval as approval_mod
@@ -189,8 +191,7 @@ def test_stopping_during_a_pending_approval_fails_closed_and_a_late_answer_chang
     approval_mod.resolve_gateway_approval(
         "chat-S", "once"
     )  # the user answers after the stop
-    time.sleep(0.3)
-    assert (victim / "keep.txt").read_text() == "keep"
+    wait_until(lambda: (victim / "keep.txt").read_text() == "keep", timeout=10)
 
 
 def test_successive_chats_keep_their_own_worker_state(tmp_path, monkeypatch):

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { shouldPassThroughToGlobalHandler, shouldPreserveCtrlJNewline } from '../components/textInput.js'
+import { shouldPreserveCtrlJNewline } from '../components/textInput.js'
+import { shouldPassThroughToGlobalHandler } from '../components/textInputGestures.js'
 import { DEFAULT_VOICE_RECORD_KEY, parseVoiceRecordKey } from '../lib/platform.js'
 
 const key = (overrides: Record<string, unknown> = {}) => ({ ctrl: false, meta: false, ...overrides }) as any

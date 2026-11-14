@@ -11,7 +11,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Awaitable, Callable, Optional
 
-from gateway.platforms.base import coerce_plaintext_gateway_command, resolve_channel_prompt
+from gateway.platforms.base import resolve_channel_prompt
+from gateway.platforms.base_plaintext_command import coerce_plaintext_gateway_command
 from gateway.platforms.event import MessageEvent
 from gateway.session_identity import replace_source
 

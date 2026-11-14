@@ -207,16 +207,16 @@ class TestServicePidSweepExclusion:
 
 class TestParseLaunchdPidFromPrintOutput:
     def test_running_service(self):
-        from hermes_cli.gateway import _parse_launchd_pid_from_print_output
+        from hermes_cli.gateway_launchd import _parse_launchd_pid_from_print_output
 
         assert _parse_launchd_pid_from_print_output(_PRINT_OUTPUT_RUNNING) == 59038
 
     def test_no_pid_line(self):
-        from hermes_cli.gateway import _parse_launchd_pid_from_print_output
+        from hermes_cli.gateway_launchd import _parse_launchd_pid_from_print_output
 
         assert _parse_launchd_pid_from_print_output("state = not running\n") is None
 
     def test_nonpositive_pid_is_ignored(self):
-        from hermes_cli.gateway import _parse_launchd_pid_from_print_output
+        from hermes_cli.gateway_launchd import _parse_launchd_pid_from_print_output
 
         assert _parse_launchd_pid_from_print_output("\tpid = -1\n") is None

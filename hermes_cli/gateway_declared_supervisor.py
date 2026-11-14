@@ -13,6 +13,10 @@ shell look like a supervised gateway to the self-targeting guards (``is_supervis
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def declared_external_supervisor() -> str | None:
     """The service ``gateway.external_supervisor`` says owns the gateway, else None."""
@@ -21,6 +25,7 @@ def declared_external_supervisor() -> str | None:
 
         section = load_config_readonly().get("gateway")
     except Exception:  # a config that will not load must not break setup or install
+        logger.debug("gateway.external_supervisor config read failed", exc_info=True)
         return None
     value = section.get("external_supervisor") if isinstance(section, dict) else None
     if value is True:

@@ -126,10 +126,10 @@ def _worker_command() -> list[str]:
     from hermes_cli.config import load_config
 
     cfg = load_config().get("cursor") or {}
-    worker = os.environ.get("HERMES_CURSOR_WORKER") or cfg.get("worker")
+    worker = os.environ.get("HERMES_CURSOR_WORKER") or cfg.get("worker")  # health: allow HX002 -- the nix packaging injects the packaged worker (sessionVariables / gateway unit) and cannot write each profile's config.yaml; cursor.worker stays the manual path
     if worker:
         return [str(worker)]
-    runtime_dir = os.environ.get("HERMES_CURSOR_RUNTIME_DIR") or cfg.get("runtime_dir")
+    runtime_dir = os.environ.get("HERMES_CURSOR_RUNTIME_DIR") or cfg.get("runtime_dir")  # health: allow HX002 -- same packaging injection for the source-checkout runtime dir
     if not runtime_dir:
         raise CursorRuntimeError(
             "Cursor worker not configured: set HERMES_CURSOR_WORKER (or cursor.worker), "
@@ -561,6 +561,7 @@ def _looks_failed(name: Any, text: str) -> bool:
 
         return bool(_detect_tool_failure(str(name or ""), text)[0])
     except Exception:
+        logger.debug("tool failure detection failed; treating result as success", exc_info=True)
         return False
 
 
@@ -573,6 +574,7 @@ def _turn_timeout() -> float:
             or _DEFAULT_TURN_TIMEOUT_SECONDS
         )
     except Exception:
+        logger.debug("cursor.turn_timeout config read failed; using default", exc_info=True)
         return _DEFAULT_TURN_TIMEOUT_SECONDS
 
 
@@ -587,6 +589,7 @@ def _stall_timeout() -> float:
             or _DEFAULT_STALL_TIMEOUT_SECONDS
         )
     except Exception:
+        logger.debug("cursor.stall_timeout config read failed; using default", exc_info=True)
         return _DEFAULT_STALL_TIMEOUT_SECONDS
 
 

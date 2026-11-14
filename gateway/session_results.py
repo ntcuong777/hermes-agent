@@ -144,7 +144,7 @@ def close_discarded_turn(db, conn, row, notice=None, *, replace_after=None, disp
     stacking a second boundary (#134889 GW-21). An earlier turn's boundary stays.
 
     ``display_metadata`` (``{error, error_surface}``) rides the boundary so a reopened chat redraws
-    the turn's error card from history (``agent.conversation_loop._failed_turn_display_metadata``)."""
+    the turn's error card from history (``agent.conversation_loop_failed_turn._failed_turn_display_metadata``)."""
     import time
     from agent.turn_failure_copy import FAILED_TURN_DISPLAY_KIND, PARTIAL_FAILED_TURN_NOTICE
     from hermes_state_local_lineage import local_physical_target

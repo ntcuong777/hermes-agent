@@ -67,26 +67,42 @@ def _collect(worker: _cr._Worker, turn_id: str, deadline: float) -> str:
             return text
 
 
+def _fold_event(message: dict[str, Any], parts: list[str]) -> None:
+    text = message.get("text")
+    if message.get("kind") == "text" and isinstance(text, str):
+        parts.append(text)
+
+
+def _reject_tool(message: dict[str, Any], parts: list[str]) -> None:
+    raise CursorRuntimeError(
+        "The Cursor model attempted a tool in a tool-less summary turn."
+    )
+
+
+def _reject_failed(message: dict[str, Any], parts: list[str]) -> None:
+    raise CursorRuntimeError(_cr._failure_text(message.get("code")))
+
+
+def _finished_reply(message: dict[str, Any], parts: list[str]) -> str:
+    if message.get("status") != "finished":
+        raise CursorRuntimeError(f"summary turn ended {message.get('status')}")
+    reply = "".join(parts).strip()
+    if not reply:
+        raise CursorRuntimeError("summary turn returned no text")
+    return reply
+
+
+_FINISHED_HANDLERS = {
+    "event": _fold_event,
+    "tool-request": _reject_tool,
+    "failed": _reject_failed,
+    "done": _finished_reply,
+}
+
+
 def _finished_text(message: dict[str, Any], parts: list[str]) -> Optional[str]:
     """Fold one worker line into ``parts``; the reply text once the turn is finished, else None."""
-    kind = message.get("type")
-    if kind == "event":
-        text = message.get("text")
-        if message.get("kind") == "text" and isinstance(text, str):
-            parts.append(text)
-    elif kind == "tool-request":
-        raise CursorRuntimeError(
-            "The Cursor model attempted a tool in a tool-less summary turn."
-        )
-    elif kind == "failed":
-        raise CursorRuntimeError(_cr._failure_text(message.get("code")))
-    elif kind == "done":
-        if message.get("status") != "finished":
-            raise CursorRuntimeError(
-                f"summary turn ended {message.get('status')}"
-            )
-        reply = "".join(parts).strip()
-        if not reply:
-            raise CursorRuntimeError("summary turn returned no text")
-        return reply
+    handler = _FINISHED_HANDLERS.get(message.get("type"))
+    if handler is not None:
+        return handler(message, parts)
     return None

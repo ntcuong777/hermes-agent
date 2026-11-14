@@ -195,6 +195,7 @@ def _is_registered_tool(name: str) -> bool:
         from tools.registry import registry
         return registry.get_entry(name) is not None
     except Exception:
+        logger.debug("tool registry probe failed for %s", name, exc_info=True)
         return False
 
 

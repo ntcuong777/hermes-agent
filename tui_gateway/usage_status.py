@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Window kinds the bar shows. ``model``-scoped windows (an Opus-only weekly cap) never say the
 # login itself is near its limit, so the bar leaves them to ``/usage``.
@@ -129,6 +132,7 @@ def _carried(agent: Any, counter: float) -> tuple[float, str]:
         try:
             stored, status = lineage_cost(db, session_id)
         except Exception:
+            logger.debug("carried-cost read failed for %s", session_id, exc_info=True)
             return result
         result = (max(0.0, stored - counter), status)
     with contextlib.suppress(Exception):

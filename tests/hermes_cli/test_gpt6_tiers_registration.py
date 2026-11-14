@@ -18,7 +18,7 @@ from agent.model_metadata import (
 )
 from agent.reasoning_effort import CODEX_GPT56_EFFORTS, codex_supported_efforts
 from hermes_cli.codex_models import _finalize_codex_models
-from hermes_cli.model_switch import _model_sort_key
+from hermes_cli.model_switch_model_ids import _model_sort_key
 
 GPT6_TIERS = ("gpt-6-sol", "gpt-6-luna")  # terra: never published by OpenAI, not on OpenRouter/Codex (2026-09-22)
 

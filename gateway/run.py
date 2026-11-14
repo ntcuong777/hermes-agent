@@ -414,55 +414,6 @@ _ENDPOINT_UNREACHABLE_MARKERS = (
 _GATEWAY_ENDPOINT_UNREACHABLE_RE = re.compile(
     "(" + "|".join(_ENDPOINT_UNREACHABLE_MARKERS) + ")", re.IGNORECASE)
 
-def _ensure_windows_gateway_venv_imports() -> None:
-    """Make detached Windows gateway runs see the Hermes venv packages.
-
-    Patched before MCP discovery so tool injection does not depend on launchers preserving PYTHONPATH."""
-    if sys.platform != "win32":
-        return
-
-    project_root = Path(project_root_str())
-    from pm.environments import committed_venv, venv_python_version
-
-    # A PM install's store Python was already activated onto the committed generation by
-    # hermes_bootstrap; overlaying the leftover pre-PM venv loads a foreign ABI (#122183).
-    if committed_venv(project_root) is not None:
-        return
-    candidates = [Path(v) for v in (os.environ.get("VIRTUAL_ENV"),) if v] + [project_root / "venv"]
-
-    seen: set[str] = set()
-    for venv_dir in candidates:
-        try:
-            resolved_venv = venv_dir.resolve()
-        except OSError:
-            resolved_venv = venv_dir
-        venv_key = str(resolved_venv).lower()
-        if venv_key in seen:
-            continue
-        seen.add(venv_key)
-
-        site_packages = resolved_venv / "Lib" / "site-packages"
-        if not site_packages.exists():
-            continue
-        # Built for another (or an unreadable) Python: its compiled modules crash this one (#139085).
-        if (found := venv_python_version(resolved_venv)) != sys.version_info[:2]:
-            logger.debug("Skipping venv overlay %s: Python %s, gateway %s", resolved_venv, found or "unknown", sys.version_info[:2])
-            continue
-        project_entry = str(project_root)
-        site_entry = str(site_packages)
-        if project_entry not in sys.path:
-            sys.path.insert(0, project_entry)
-        # addsitedir semantics matter: pywin32 (MCP SDK on Windows) needs .pth processing for pywintypes.
-        site.addsitedir(site_entry)
-        if site_entry in sys.path:
-            sys.path.remove(site_entry)
-        insert_at = 1 if sys.path and sys.path[0] == project_entry else 0
-        sys.path.insert(insert_at, site_entry)
-
-        os.environ["VIRTUAL_ENV"] = str(resolved_venv)
-        return
-
-
 def _gateway_platform_value(platform: Any) -> str:
     """Return a normalized gateway platform value for enums or raw strings."""
     return str(getattr(platform, "value", platform) or "").strip().lower()
@@ -4994,6 +4945,7 @@ def _refresh_host_gateway_record(runner) -> None:
 # Bootstrap phases bound on the facade: ``_host_attach_or_none`` reads the replace step through this
 # module, and the lifecycle tests patch/drive these phases as ``gateway.run`` attributes.
 from gateway.run_bootstrap import (
+    _ensure_windows_gateway_venv_imports,
     _start_gateway_make_shutdown_signal_handler, _start_gateway_replace_existing_instance,
     _start_gateway_shutdown_tail, _start_gateway_start_cron_and_housekeeping,
 )

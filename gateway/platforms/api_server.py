@@ -594,20 +594,6 @@ def _request_turn_author(body: dict[str, Any]) -> Optional[dict[str, Any]]:
     return parse_turn_author(raw)
 
 
-_USAGE_TOKEN_KEYS = ("input_tokens", "output_tokens", "total_tokens")
-
-
-def _chat_usage_payload(usage: dict[str, Any]) -> dict[str, int]:
-    """OpenAI Chat Completions ``usage`` block (prompt/completion/total) from the agent's usage."""
-    values = (usage.get(key, 0) for key in _USAGE_TOKEN_KEYS)
-    return dict(zip(("prompt_tokens", "completion_tokens", "total_tokens"), values))
-
-
-def _responses_usage_payload(usage: dict[str, Any]) -> dict[str, int]:
-    """OpenAI Responses ``usage`` block from the agent's usage dict."""
-    return {key: usage.get(key, 0) for key in _USAGE_TOKEN_KEYS}
-
-
 async def _abandon_agent_task(
     agent_ref, agent_task, reason: str, *,
     reap_source: str = "api_server_sse_disconnect", await_cancel: bool = True) -> None:
@@ -1314,8 +1300,8 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
     @staticmethod
     def _resolve_model_name(explicit: str) -> str:
         """Advertised /v1/models name: explicit override > active profile name > "hermes-agent"
-        (precedence owned by ``hermes_cli.model_switch.resolve_effective_model``)."""
-        from hermes_cli.model_switch import resolve_effective_model
+        (precedence owned by ``hermes_cli.model_switch_model_ids.resolve_effective_model``)."""
+        from hermes_cli.model_switch_model_ids import resolve_effective_model
         profile_name = ""
         with suppress(Exception):
             from hermes_cli.profiles import get_active_profile_name
@@ -2128,8 +2114,8 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         current_provider = _clean_request_string(runtime_kwargs.get("provider"))
         session_override = None if confirmed_runtime_lock else self._session_model_override_for(session_key)
         # Model-string precedence (override > session-persisted > global) is owned by
-        # hermes_cli.model_switch.resolve_effective_model.
-        from hermes_cli.model_switch import resolve_effective_model
+        # hermes_cli.model_switch_model_ids.resolve_effective_model.
+        from hermes_cli.model_switch_model_ids import resolve_effective_model
         if session_override:
             model = resolve_effective_model(session_override, None, model)
             self._apply_provider_runtime(

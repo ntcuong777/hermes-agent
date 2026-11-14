@@ -898,6 +898,81 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     return openList(revision)
   }
 
+  // Wheel scrolling: modifier-held wheel is precision mode (one row per frame,
+  // no accel); otherwise momentum-accelerated rows from the wheel state.
+  const handleWheelInput = (key: Key) => {
+    const dir: -1 | 1 = key.wheelUp ? -1 : 1
+    const now = Date.now()
+    // Modifier-held wheel = precision mode: one row per frame, no accel.
+    // Smooth mice / trackpads emit tiny same-frame bursts; coalesce those
+    // without the old 80ms throttle that made opt-scroll feel stepped.
+    // SGR/X10 mouse encoding only carries shift/meta/ctrl bits; Cmd on
+    // macOS is intercepted by the terminal, so we honor Option (meta) on
+    // Mac / Alt (meta) on Win+Linux / Ctrl as a portable fallback. Shift
+    // is reserved for selection extension.
+    const hasModifier = key.meta || key.ctrl
+    const precision = computePrecisionWheelStep(precisionWheelRef.current, dir, hasModifier, now)
+
+    if (precision.active) {
+      // Entering precision mode must discard any accelerated wheel state;
+      // otherwise the next normal wheel event inherits stale momentum.
+      if (precision.entered) {
+        wheelAccelRef.current = initWheelAccelForHost()
+      }
+
+      return precision.rows ? scrollTranscript(dir * wheelStep) : undefined
+    }
+
+    // 0 = direction-flip bounce deferred; skip the no-op scroll.
+    const rows = computeWheelStep(wheelAccelRef.current, dir, now)
+
+    return rows ? scrollTranscript(dir * rows * wheelStep) : undefined
+  }
+
+  // Ctrl+C on the composer: the stop-the-machine chord — a running turn wins
+  // over whatever is typed (interrupt), the draft survives it, a manual
+  // /compress in flight holds the reflex chord, and only then clear / exit.
+  const handleComposerCtrlC = (live: ReturnType<typeof getUiState>) => {
+    const ctrlC = resolveCtrlCComposerAction({
+      busy: live.busy,
+      hasDraft: Boolean(cState.input || cState.inputBuf.length),
+      hasSession: Boolean(live.sid),
+      compressPending: live.manualCompacting
+    })
+
+    if (ctrlC === 'clear') {
+      cancelPendingRewind(actions.sys)
+
+      return cActions.clearIn()
+    }
+
+    if (ctrlC === 'hold') {
+      return actions.sys(t('canonical.controls.compressPending'))
+    }
+
+    if (ctrlC === 'interrupt' && live.sid) {
+      return turnController.interruptTurn({
+        appendMessage: actions.appendMessage,
+        gw: gateway.gw,
+        sid: live.sid,
+        sys: actions.sys
+      })
+    }
+
+    // An armed edit whose text was erased: this press cancels it and never exits.
+    if (cancelPendingRewind(actions.sys)) {
+      return
+    }
+
+    return handleIdleHotkeyExit(actions, DASHBOARD_TUI_MODE, () => {
+      gateway.gw.publishLocalEvent({
+        payload: { reason: 'idle_exit_hotkey' },
+        session_id: live.sid ?? undefined,
+        type: 'dashboard.new_session_requested'
+      })
+    })
+  }
+
   // Double-Esc discards the draft, matching Claude Code / Gemini CLI. It
   // sits above the isBlocked early-return so a prompt overlay cannot swallow
   // it. Ctrl+C now clears a non-empty composer even mid-stream; Esc Esc is
@@ -1028,32 +1103,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     }
 
     if (key.wheelUp || key.wheelDown) {
-      const dir: -1 | 1 = key.wheelUp ? -1 : 1
-      const now = Date.now()
-      // Modifier-held wheel = precision mode: one row per frame, no accel.
-      // Smooth mice / trackpads emit tiny same-frame bursts; coalesce those
-      // without the old 80ms throttle that made opt-scroll feel stepped.
-      // SGR/X10 mouse encoding only carries shift/meta/ctrl bits; Cmd on
-      // macOS is intercepted by the terminal, so we honor Option (meta) on
-      // Mac / Alt (meta) on Win+Linux / Ctrl as a portable fallback. Shift
-      // is reserved for selection extension.
-      const hasModifier = key.meta || key.ctrl
-      const precision = computePrecisionWheelStep(precisionWheelRef.current, dir, hasModifier, now)
-
-      if (precision.active) {
-        // Entering precision mode must discard any accelerated wheel state;
-        // otherwise the next normal wheel event inherits stale momentum.
-        if (precision.entered) {
-          wheelAccelRef.current = initWheelAccelForHost()
-        }
-
-        return precision.rows ? scrollTranscript(dir * wheelStep) : undefined
-      }
-
-      // 0 = direction-flip bounce deferred; skip the no-op scroll.
-      const rows = computeWheelStep(wheelAccelRef.current, dir, now)
-
-      return rows ? scrollTranscript(dir * rows * wheelStep) : undefined
+      return handleWheelInput(key)
     }
 
     if (key.shift && key.upArrow) {
@@ -1171,44 +1221,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     }
 
     if (key.ctrl && ch.toLowerCase() === 'c') {
-      const ctrlC = resolveCtrlCComposerAction({
-        busy: live.busy,
-        hasDraft: Boolean(cState.input || cState.inputBuf.length),
-        hasSession: Boolean(live.sid),
-        compressPending: live.manualCompacting
-      })
-
-      if (ctrlC === 'clear') {
-        cancelPendingRewind(actions.sys)
-
-        return cActions.clearIn()
-      }
-
-      if (ctrlC === 'hold') {
-        return actions.sys(t('canonical.controls.compressPending'))
-      }
-
-      if (ctrlC === 'interrupt' && live.sid) {
-        return turnController.interruptTurn({
-          appendMessage: actions.appendMessage,
-          gw: gateway.gw,
-          sid: live.sid,
-          sys: actions.sys
-        })
-      }
-
-      // An armed edit whose text was erased: this press cancels it and never exits.
-      if (cancelPendingRewind(actions.sys)) {
-        return
-      }
-
-      return handleIdleHotkeyExit(actions, DASHBOARD_TUI_MODE, () => {
-        gateway.gw.publishLocalEvent({
-          payload: { reason: 'idle_exit_hotkey' },
-          session_id: live.sid ?? undefined,
-          type: 'dashboard.new_session_requested'
-        })
-      })
+      return handleComposerCtrlC(live)
     }
 
     // Ctrl+D is the terminal EOF convention: exit only from an empty composer, on every

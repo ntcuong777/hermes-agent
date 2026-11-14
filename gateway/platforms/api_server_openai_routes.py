@@ -18,6 +18,19 @@ from typing import Any, Dict, List, Optional
 
 from agent.i18n import t
 
+_USAGE_TOKEN_KEYS = ("input_tokens", "output_tokens", "total_tokens")
+
+
+def _chat_usage_payload(usage: dict[str, Any]) -> dict[str, int]:
+    """OpenAI Chat Completions ``usage`` block (prompt/completion/total) from the agent's usage."""
+    values = (usage.get(key, 0) for key in _USAGE_TOKEN_KEYS)
+    return dict(zip(("prompt_tokens", "completion_tokens", "total_tokens"), values))
+
+
+def _responses_usage_payload(usage: dict[str, Any]) -> dict[str, int]:
+    """OpenAI Responses ``usage`` block from the agent's usage dict."""
+    return {key: usage.get(key, 0) for key in _USAGE_TOKEN_KEYS}
+
 try:
     from aiohttp import web
 except ImportError:  # pragma: no cover - mirrors api_server's optional import
@@ -369,7 +382,7 @@ class _ResponsesStream:
         if error is not None:
             env["error"] = ({"code": "agent_error", "message": error} if self.durable_key
                             else {"message": error, "type": "server_error"})
-        env["usage"] = self._api._responses_usage_payload(self.usage)
+        env["usage"] = _responses_usage_payload(self.usage)
         return env
 
     def _history_with_user(self) -> list[dict[str, Any]]:
@@ -865,7 +878,7 @@ class OpenAICompatRoutesMixin:
     async def _handle_chat_completions(self, request: web.Request) -> web.Response:
         """POST /v1/chat/completions — OpenAI Chat Completions format."""
         from gateway.platforms.api_server import (
-            ThreadSafeAsyncQueue, _api_request_profile, _chat_usage_payload, _coerce_request_bool,
+            ThreadSafeAsyncQueue, _api_request_profile, _coerce_request_bool,
             _content_has_visible_payload, _derive_chat_session_id, _error_response, _invalid_request,
             _openai_error, _redact_api_error_text, _resolve_media_to_data_urls)
         # Bound total in-flight agent runs (configurable; #7483).
@@ -1159,7 +1172,7 @@ class OpenAICompatRoutesMixin:
         """Stream ``chat.completion.chunk`` frames from the agent's delta queue. On client
         disconnect the agent is interrupted (stops LLM calls), then its task wrapper cancelled."""
         from gateway.platforms.api_server import (
-            _abandon_agent_task, _chat_usage_payload, _resolve_media_to_data_urls, _sse_frame)
+            _abandon_agent_task, _resolve_media_to_data_urls, _sse_frame)
         response = await self._prepare_sse_response(request, session_id, gateway_session_key)
 
         def _chunk(delta: dict[str, Any], finish_reason=None, **extra) -> dict[str, Any]:
@@ -1369,7 +1382,7 @@ class OpenAICompatRoutesMixin:
         from gateway.platforms.api_server import (
             ThreadSafeAsyncQueue, _coerce_request_bool,
             _error_response, _invalid_request, _redact_api_error_text,
-            _resolve_media_to_data_urls, _responses_usage_payload)
+            _resolve_media_to_data_urls)
         # Bound total in-flight agent runs (configurable; #7483).
         limited = self._concurrency_limited_response()
         if limited is not None:

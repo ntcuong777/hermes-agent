@@ -119,7 +119,7 @@ def _write_meta_sidecar(meta: dict[str, dict[str, Any]]) -> None:
 
         path = Path(get_hermes_home()) / _META_SIDECAR
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"at": int(time.time()), "models": meta}))
+        path.write_text(json.dumps({"at": int(time.time()), "models": meta}), encoding="utf-8")
     except OSError:
         pass
 

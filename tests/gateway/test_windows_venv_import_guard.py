@@ -22,7 +22,7 @@ def test_committed_generation_blocks_the_legacy_venv_overlay(tmp_path, monkeypat
     to prepend ``<root>/venv`` (or ``VIRTUAL_ENV``) regardless, loading a cp311
     ``pydantic_core`` into 3.14.
     """
-    import gateway.run as gateway_run
+    import gateway.run_bootstrap as gateway_run
 
     root = tmp_path / "root"
     (root / "gateway").mkdir(parents=True)
@@ -59,7 +59,7 @@ def test_legacy_venv_of_unknown_or_foreign_abi_is_never_overlaid(tmp_path, monke
     ``addsitedir``-ed a cp311 tree into a 3.14 gateway, which then died importing
     ``pydantic_core`` when the Group Chat worker imported ``tui_gateway.server``.
     A venv whose Python version can't be read fails closed the same way; both skips are logged."""
-    import gateway.run as gateway_run
+    import gateway.run_bootstrap as gateway_run
 
     root = tmp_path / "root"
     (root / "gateway").mkdir(parents=True)
@@ -86,7 +86,7 @@ def test_legacy_venv_of_unknown_or_foreign_abi_is_never_overlaid(tmp_path, monke
 @pytest.mark.platforms("windows")
 def test_same_abi_venv_is_still_overlaid(tmp_path, monkeypatch):
     """A pre-PM venv built for the running interpreter keeps its overlay."""
-    import gateway.run as gateway_run
+    import gateway.run_bootstrap as gateway_run
 
     root = tmp_path / "root"
     (root / "gateway").mkdir(parents=True)
@@ -114,7 +114,7 @@ def test_venv_import_setup_scopes_to_sys_path_not_global_environ(
     there poisoned every child process spawned from the gateway session —
     non-Hermes Python tools resolved Hermes' venv packages ahead of their own.
     """
-    import gateway.run as gateway_run
+    import gateway.run_bootstrap as gateway_run
 
     root = tmp_path / "root"
     (root / "gateway").mkdir(parents=True)

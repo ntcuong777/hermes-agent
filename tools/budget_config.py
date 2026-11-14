@@ -1,10 +1,13 @@
 """Configurable budget constants for tool result persistence.
 Per-tool resolution: pinned > config overrides > registry > default."""
 
+import logging
 from dataclasses import dataclass, field
 from typing import Dict
 
 from agent.model_metadata import CHARS_PER_TOKEN
+
+logger = logging.getLogger(__name__)
 
 # Never overridden; read_file=inf prevents infinite persist->read->persist loops.
 PINNED_THRESHOLDS: dict[str, float] = {"read_file": float("inf")}
@@ -55,7 +58,7 @@ def configured_budget_int(key: str, default: int) -> int:
         if raw is not None and int(raw) > 0:
             return int(raw)
     except Exception:
-        pass
+        logger.debug("tool_budget config read failed; using the default for %s", key, exc_info=True)
     return default
 
 

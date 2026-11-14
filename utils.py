@@ -560,7 +560,8 @@ def atomic_roundtrip_yaml_update(path: str | Path, key_path: str, value: Any) ->
     # blind splitting — same navigation as ``hermes config set``'s ``_set_nested``; otherwise
     # /model + TUI persistence wrote ``glm-5: {'3': ...}`` phantom siblings.
     # See #91607.
-    from hermes_cli.config import _greedy_literal_match, _split_key_path
+    from hermes_cli.config import _split_key_path
+    from hermes_cli.config_key_paths import _greedy_literal_match
 
     path = Path(path)
     from hermes_constants import mkdir_under_hermes_home

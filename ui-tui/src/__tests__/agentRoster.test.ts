@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 
 import { $agentSnapshot, applyAgentSnapshot, mergeAgentRoster } from '../app/agentRoster.js'
-import { shouldPassThroughToGlobalHandler } from '../components/textInput.js'
+import { shouldPassThroughToGlobalHandler } from '../components/textInputGestures.js'
 import type { SubagentProgress } from '../types.js'
 
 it('never rolls event progress back when an older live snapshot arrives', () => {

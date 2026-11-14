@@ -284,6 +284,7 @@ def _resolve_prompt_sections_total_cap() -> int:
         plugins_cfg = (load_config_readonly() or {}).get("plugins")
         raw = plugins_cfg.get("prompt_sections_total_chars") if isinstance(plugins_cfg, dict) else None
     except Exception:
+        logger.debug("plugins config read failed; using the built-in section cap", exc_info=True)
         return default
     if raw is None:
         return default

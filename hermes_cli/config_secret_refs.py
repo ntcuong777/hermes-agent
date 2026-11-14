@@ -253,7 +253,7 @@ def _literal_path(parts: list[str], user_config: dict) -> list[str]:
     """``parts`` regrouped the way ``_set_nested`` walks them: an existing literal key containing
     dots (``providers["lab.example"]``) is one segment, so ``providers.lab.example.api_key`` is
     classified as the provider block it writes, not as an unknown 4-part path."""
-    from hermes_cli.config import _greedy_literal_match
+    from hermes_cli.config_key_paths import _greedy_literal_match
     out: list[str] = []
     node: Any = user_config
     i = 0

@@ -342,5 +342,6 @@ class GatewayInboundHooksMixin:
             from hermes_cli.plugins import get_plugin_commands
             entry = get_plugin_commands().get(command.replace("_", "-"))
         except Exception:
+            logger.debug("busy plugin lookup failed for %s", command, exc_info=True)
             return None
         return entry.get("handler") if isinstance(entry, dict) and entry.get("run_while_busy") else None

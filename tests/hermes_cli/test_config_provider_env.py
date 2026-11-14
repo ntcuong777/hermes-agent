@@ -89,10 +89,10 @@ def test_fill_runs_on_first_read_core_wins_provider_replaces_platform_first_prov
 def test_discovery_completion_adds_registered_plugin_providers(table, monkeypatch):
     import providers
 
-    from hermes_cli import config_defaults
+    from hermes_cli import config_defaults_env
 
     monkeypatch.setattr(providers, "bundled_profiles", lambda: [_profile("alpha", "ALPHA_API_KEY")])
-    monkeypatch.setattr(config_defaults, "OPTIONAL_ENV_VARS", table)
+    monkeypatch.setattr(config_defaults_env, "OPTIONAL_ENV_VARS", table)
     monkeypatch.setattr(providers, "_REGISTRY", {"alpha": _profile("alpha", "ALPHA_API_KEY"),
                                                  "plug": _profile("plug", "PLUG_API_KEY", "ALPHA_API_KEY")})
     monkeypatch.setattr(providers, "_SOURCES", {"alpha": "bundled", "plug": "runtime"})

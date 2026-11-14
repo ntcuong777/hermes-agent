@@ -691,7 +691,7 @@ class GatewayInboundMixin(
                 try:
                     return True, await self._hm_run_plugin_handler(_busy_plugin, event, source)
                 except Exception as e:
-                    logger.warning("Plugin command dispatch failed while busy: %s", e)
+                    logger.warning("Plugin command dispatch failed while busy: %s", e, exc_info=True)
                     return True, f"/{_evt_cmd} failed: {e}"
 
         # Telegram photo bursts arrive as near-simultaneous updates — never interrupt for a

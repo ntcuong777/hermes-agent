@@ -50,7 +50,7 @@ def worker_end(db, conn, session_id, payload):
 
 
 def worker_lifecycle(db, conn, session_id, payload):
-    from hermes_state_sessions import classify_session_status
+    from hermes_state_session_status import classify_session_status
     if payload:
         raise RuntimeStoreError('invalid_params')
     row = conn.execute("SELECT role,tool_calls IS NOT NULL AS has_tool_calls,finish_reason "

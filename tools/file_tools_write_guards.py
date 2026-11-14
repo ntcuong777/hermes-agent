@@ -11,6 +11,7 @@ whole-file overwrite of content this task never saw or that changed since.
 """
 
 import fnmatch
+import logging
 import os
 from pathlib import Path
 
@@ -26,6 +27,8 @@ from tools.file_tools_paths import (
     _expand_tilde, _resolve_path_for_task, _ssh_path_escapes_home, _terminal_env_type_for_task)
 from tools.file_tools_read_tracking import _has_full_write_baseline, _is_own_blind_patch, _read_mtime_drifted
 import itertools
+
+logger = logging.getLogger(__name__)
 
 # Prefixes matched after realpath. macOS: /private/var mirrors /var — block the
 # sensitive subtrees only; a blanket "/private/var/" refuses every temp-file
@@ -156,6 +159,7 @@ def _system_path_allow_roots() -> tuple[str, ...]:
         from hermes_cli.config import load_config, cfg_get
         raw = cfg_get(load_config(), "security", "write_allow_roots", default=[])
     except Exception:
+        logger.debug("write_allow_roots config read failed; no roots (fail closed)", exc_info=True)
         return ()
     if not isinstance(raw, list):
         return ()

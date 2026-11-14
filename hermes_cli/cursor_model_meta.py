@@ -24,7 +24,7 @@ def _sidecar_path() -> Path:
 def load_model_meta() -> dict[str, dict[str, Any]]:
     """The sidecar's ``{id: {context, fast, max}}`` rows, or {} when absent/unreadable."""
     try:
-        data = json.loads(_sidecar_path().read_text())
+        data = json.loads(_sidecar_path().read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return {}
     models = data.get("models") if isinstance(data, dict) else None

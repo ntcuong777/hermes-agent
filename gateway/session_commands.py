@@ -419,81 +419,20 @@ def _session_workspace(runner, source):
         reset_session_cwd(cwd_token)
 
 
-async def execute_command(connection, ref, params, *, dispatch=False):
+def _command_capability(verdict, canonical, definition, runner_command) -> str:
+    """The capability a command needs: reads stay read; approval-listed commands gate on approve;
+    anything that runs (a definition or a plugin runner) is control; unknown text is submit."""
+    return ('session:read' if verdict == 'read' else
+            'session:approve' if canonical in _APPROVAL_COMMANDS else
+            'session:control' if definition or runner_command else 'session:submit')
+
+
+async def _run_in_band(connection, ref, live, home, canonical, arg, definition, before):
+    """Run a recognized command against the live runner (busy dispatch, prompt command, or handler)
+    and shape its response; the settle/publish epilogue approval.respond and cron share."""
     authority, actor = connection.authority, connection.actor
-    authority.authorize(actor, ref, 'session:read')
-    name, arg = _parse(params, dispatch)
-    from hermes_cli.commands import resolve_command
-    from hermes_cli.profiles import profile_matches_home
-    home = Path(authority.profile_id)
-    if params.get('profile') and not profile_matches_home(params['profile'], home):
-        raise RuntimeStoreError('profile_mismatch')
-
-    from gateway.run import _profile_runtime_scope
-    def resolve():
-        with _profile_runtime_scope(home):
-            return _resolve_alias(name, arg)
-    name, arg = await asyncio.to_thread(resolve)
-    definition = resolve_command(name)
-    canonical = definition.name if definition else name
-    verdict = command_verdict(canonical, arg) if definition else None
-
-    fired = []
-
-    async def before():  # pre_command, once, for a recognized command that is about to run
-        if not fired:
-            fired.append(canonical)
-            await _pre_command_before(authority, ref, canonical, name.lower(), arg)
-    if definition is not None and (tui := await _tui_read(authority, actor, ref, canonical, arg, before)) is not None:
-        return tui
-    runner_command = None
-    if definition is None:
-        def lookup():
-            with _profile_runtime_scope(home):
-                return _runner_command(name)
-        runner_command = await asyncio.to_thread(lookup)
-    capability = ('session:read' if verdict == 'read' else
-                  'session:approve' if canonical in _APPROVAL_COMMANDS else
-                  'session:control' if definition or runner_command else 'session:submit')
-    authority.authorize(actor, ref, capability)
-    live = authority.sessions[ref.session_id]
-    if verdict == 'refused' or (verdict == 'control' and canonical in _OWNER_COMMANDS
-                                and ref.session_id in connection.subscriptions):
-        raise RuntimeStoreError('unsupported_command', detail=REFUSAL_HINTS.get(canonical))
-    from gateway.session_history_mount import is_history_mount, read_only
-    if is_history_mount(live):
-        raise read_only()  # no policy or agent to run even a read command against
-    from gateway.session_local import authorize_local_source
-    if authorize_local_source(authority.runner, live.source) is not True:
-        raise RuntimeStoreError('permission_denied')
-    if capability != 'session:read':
-        authority._require_admission_open()
-    if definition is not None and (canonical in _INFO_READS or canonical in _OWNER_COMMANDS
-                                   or authority._handle(ref).execution_state == 'idle'):
-        await before()  # mid-run the busy dispatcher fires it once it accepts the command (``BUSY_ACCEPTED``)
-    if runner_command is not None:
-        from gateway.plugin_command_choice import viewer_choices
-        with (_profile_runtime_scope(home), _session_workspace(authority.runner, live.source),
-              viewer_choices(live, ref.session_id)):
-            output = await _run_runner_command(authority.runner, live, name, arg, *runner_command)
-        # Composer directives must reach local clients, not become a printed Python dict.
-        if isinstance(output, dict) and output.get('type') in {'prefill', 'stash-saved'}:
-            return output
-        return {'type': 'exec', 'output': _text(output)}
-    if definition is None:
-        def build():  # in the session's folder: its trusted project skills, as its catalog lists them
-            with _profile_runtime_scope(home), _session_workspace(authority.runner, live.source):
-                return _skill_directive(name, arg, live.route)
-        return await asyncio.to_thread(build)
-
-    if canonical in _INFO_READS:
-        from gateway.session_info_reads import run_info_read
-        return await run_info_read(authority, live, canonical)
-    if canonical in _OWNER_COMMANDS:
-        from gateway.session_cron_commands import run_cron
-        return await run_cron(authority, arg)
-
     from gateway.platforms.base import MessageEvent
+    from gateway.run import _profile_runtime_scope
     from gateway.session_command_sink import capture
     typed = '/' + canonical + (' ' + arg if arg else '')
     event = MessageEvent(text=typed, source=live.source)
@@ -534,6 +473,82 @@ async def execute_command(connection, ref, params, *, dispatch=False):
         return {'type': 'send', 'message': prompt, 'display': sink.display or typed,
                 **({'notice': notice} if notice else {})}
     return {'type': 'exec', 'output': '\n'.join(filter(None, [*sink.notices, _text(output)]))}
+
+
+async def execute_command(connection, ref, params, *, dispatch=False):
+    authority, actor = connection.authority, connection.actor
+    authority.authorize(actor, ref, 'session:read')
+    name, arg = _parse(params, dispatch)
+    from hermes_cli.commands import resolve_command
+    from hermes_cli.profiles import profile_matches_home
+    home = Path(authority.profile_id)
+    if params.get('profile') and not profile_matches_home(params['profile'], home):
+        raise RuntimeStoreError('profile_mismatch')
+
+    from gateway.run import _profile_runtime_scope
+    def resolve():
+        with _profile_runtime_scope(home):
+            return _resolve_alias(name, arg)
+    name, arg = await asyncio.to_thread(resolve)
+    definition = resolve_command(name)
+    canonical = definition.name if definition else name
+    verdict = command_verdict(canonical, arg) if definition else None
+
+    fired = []
+
+    async def before():  # pre_command, once, for a recognized command that is about to run
+        if not fired:
+            fired.append(canonical)
+            await _pre_command_before(authority, ref, canonical, name.lower(), arg)
+    if definition is not None and (tui := await _tui_read(authority, actor, ref, canonical, arg, before)) is not None:
+        return tui
+    runner_command = None
+    if definition is None:
+        def lookup():
+            with _profile_runtime_scope(home):
+                return _runner_command(name)
+        runner_command = await asyncio.to_thread(lookup)
+    capability = _command_capability(verdict, canonical, definition, runner_command)
+    authority.authorize(actor, ref, capability)
+    live = authority.sessions[ref.session_id]
+    if verdict == 'refused' or (verdict == 'control' and canonical in _OWNER_COMMANDS
+                                and ref.session_id in connection.subscriptions):
+        raise RuntimeStoreError('unsupported_command', detail=REFUSAL_HINTS.get(canonical))
+    from gateway.session_history_mount import is_history_mount, read_only
+    if is_history_mount(live):
+        raise read_only()  # no policy or agent to run even a read command against
+    from gateway.session_local import authorize_local_source
+    if authorize_local_source(authority.runner, live.source) is not True:
+        raise RuntimeStoreError('permission_denied')
+    if capability != 'session:read':
+        authority._require_admission_open()
+    if definition is not None and (canonical in _INFO_READS or canonical in _OWNER_COMMANDS
+                                   or authority._handle(ref).execution_state == 'idle'):
+        await before()  # mid-run the busy dispatcher fires it once it accepts the command (``BUSY_ACCEPTED``)
+    if runner_command is not None:
+        from gateway.plugin_command_choice import viewer_choices
+        with (_profile_runtime_scope(home), _session_workspace(authority.runner, live.source),
+              viewer_choices(live, ref.session_id)):
+            output = await _run_runner_command(authority.runner, live, name, arg, *runner_command)
+        # Composer directives must reach local clients, not become a printed Python dict.
+        if isinstance(output, dict) and output.get('type') in {'prefill', 'stash-saved'}:
+            return output
+        return {'type': 'exec', 'output': _text(output)}
+    if definition is None:
+        def build():  # in the session's folder: its trusted project skills, as its catalog lists them
+            with _profile_runtime_scope(home), _session_workspace(authority.runner, live.source):
+                return _skill_directive(name, arg, live.route)
+        return await asyncio.to_thread(build)
+
+    if canonical in _INFO_READS:
+        from gateway.session_info_reads import run_info_read
+        return await run_info_read(authority, live, canonical)
+    if canonical in _OWNER_COMMANDS:
+        from gateway.session_cron_commands import run_cron
+        return await run_cron(authority, arg)
+    return await _run_in_band(connection, ref, live, home, canonical, arg, definition, before)
+
+
 
 
 def _text(output):

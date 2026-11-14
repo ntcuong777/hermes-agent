@@ -46,6 +46,7 @@ from hermes_constants import LAUNCH_ONLY_ENV_KEYS, get_hermes_home, is_launch_on
 from utils import atomic_replace, fast_safe_load, file_cache_version, file_signature, mkstemp_beside
 from hermes_cli.config_set_scalars import _SCALAR_WORDS, _coerce_float, _coerce_int, _quoted_bool
 from hermes_cli.config_issues import ConfigIssue, _issue
+from hermes_cli.config_key_paths import _greedy_literal_match, _phantom_sibling
 from hermes_cli.config_backend import (
     ConfigWriteError, config_cache_version, config_destination, config_exists, config_version,
     get_config_backend, probe_config_readable, read_config_doc, supports_file_tooling,
@@ -585,7 +586,8 @@ def ensure_hermes_home():
 
 # ---- Config loading/saving ----
 
-from hermes_cli.config_defaults import DEFAULT_CONFIG, OPTIONAL_ENV_VARS
+from hermes_cli.config_defaults import DEFAULT_CONFIG
+from hermes_cli.config_defaults_env import OPTIONAL_ENV_VARS
 from hermes_cli import config_provider_env as _config_provider_env
 from hermes_cli.config_provider_env import core_declared_env_names
 from hermes_cli.config_model_section import _normalize_root_model_keys  # re-exported: frozen compat name
@@ -669,37 +671,6 @@ def _split_key_path(key: str) -> list[str]:
         i += 1
     parts.append("".join(current))
     return parts
-
-
-def _greedy_literal_match(container: dict, parts: list) -> Optional[tuple[str, int]]:
-    """Return ``(literal_key, n_consumed)`` for the longest dotted literal key present in
-    *container*, or None. With no multi-segment literal this is the historic plain-split walk.
-
-    Dots in config key names are the norm, not the exception — model IDs (``grok-4.6``, ``glm-5.3``), Matrix
-    room IDs (``!room:chat.example.cc``), and versioned provider names all embed dots. Users typing
-    ``providers.myprov.models.grok-4.6.context_length`` do not know the escape syntax exists, so when
-    navigating an EXISTING mapping we prefer an existing literal key equal to the dot-join of the next N
-    path segments (longest match wins) over blindly splitting. See #84064 / #80006 / 91095 / #91607 /
-    #99124.
-    """
-    if not isinstance(container, dict) or not parts:
-        return None
-    return next(
-        ((".".join(parts[:n]), n) for n in range(len(parts), 0, -1) if ".".join(parts[:n]) in container),
-        None)
-
-
-def _phantom_sibling(container: dict, part: str) -> Optional[str]:
-    """Existing literal dotted key that creating an intermediate mapping ``part`` would shadow
-    (``grok-4`` beside ``grok-4.5``) — the write would produce a phantom sibling the runtime never
-    reads, so callers fail loudly instead.
-
-    Called when a write is about to CREATE a new intermediate mapping named ``part``. See #84064.
-    """
-    if not isinstance(container, dict):
-        return None
-    prefix = part + "."
-    return next((k for k in container if isinstance(k, str) and k.startswith(prefix)), None)
 
 
 def _set_nested(config, dotted_key: str, value):

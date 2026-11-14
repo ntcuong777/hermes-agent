@@ -398,7 +398,7 @@ _USER_ENV_CATEGORIES = frozenset({"provider", "tool", "messaging", "skill"})
 
 
 def _provider_key(home: _Root) -> bool:
-    from hermes_cli.config_defaults import OPTIONAL_ENV_VARS
+    from hermes_cli.config_defaults_env import OPTIONAL_ENV_VARS
 
     from agent.secret_scope import load_env_file
 

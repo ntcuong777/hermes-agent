@@ -29,6 +29,7 @@ import { reconnectAction } from '@/store/gateway-reconnect'
 import { notifyError } from '@/store/notifications'
 import {
   answerApproval,
+  type ApprovalMcpContext,
   type ApprovalRequest,
   clearApprovalRequest,
   replayPendingApproval,
@@ -235,6 +236,190 @@ interface ApprovalCardProps {
   stack: CardStackAction
 }
 
+interface ApprovalCardHeaderProps {
+  mcp?: ApprovalMcpContext
+  showsDescription: boolean
+  total: number
+  position: number
+}
+
+function ApprovalCardHeader({ mcp, showsDescription, total, position }: ApprovalCardHeaderProps) {
+  const { t } = useI18n()
+  const copy = t.assistant.approval
+
+  return (
+    <div className="flex items-center gap-2 px-2.5 pt-2 text-xs text-(--ui-text-secondary)">
+      <Codicon name={mcp ? 'server' : 'terminal'} size="0.875rem" />
+      <span>{mcp ? copy.mcpToolCall : showsDescription ? copy.commandDetails : copy.command}</span>
+      {mcp && (
+        <span className="truncate font-medium text-(--ui-text-primary)">
+          {mcp.server} · {mcp.tool}
+        </span>
+      )}
+      {total > 1 && (
+        <span className="ml-auto text-[0.6875rem] tabular-nums text-(--ui-text-tertiary)">
+          {position} / {total}
+        </span>
+      )}
+    </div>
+  )
+}
+
+interface ApprovalCardDetailsProps {
+  mcp?: ApprovalMcpContext
+  details: string
+}
+
+function ApprovalCardDetails({ mcp, details }: ApprovalCardDetailsProps) {
+  const { t } = useI18n()
+  const copy = t.assistant.approval
+
+  if (mcp) {
+    return (
+      <>
+        {mcp.toolDescription && (
+          <p className="px-2.5 pt-1.5 text-xs leading-relaxed text-(--ui-text-secondary)">
+            {mcp.toolDescription}
+          </p>
+        )}
+        {mcp.arguments && (
+          <>
+            <div className="px-2.5 pt-1.5 text-[0.6875rem] uppercase tracking-wide text-(--ui-text-tertiary)">
+              {copy.mcpArguments}
+            </div>
+            <pre className="m-0 max-h-40 overflow-auto whitespace-pre-wrap break-words px-2.5 py-1.5 font-mono text-xs leading-relaxed text-(--ui-text-primary)">
+              {mcp.arguments}
+            </pre>
+          </>
+        )}
+        {!mcp.arguments && details.length > 0 && (
+          <pre className="m-0 max-h-40 overflow-auto whitespace-pre-wrap break-words px-2.5 py-2 font-mono text-xs leading-relaxed text-(--ui-text-primary)">
+            {details}
+          </pre>
+        )}
+      </>
+    )
+  }
+
+  return (
+    details.length > 0 && (
+      <pre className="m-0 max-h-40 overflow-auto whitespace-pre-wrap break-words px-2.5 py-2 font-mono text-xs leading-relaxed text-(--ui-text-primary)">
+        {details}
+      </pre>
+    )
+  )
+}
+
+interface ApprovalCardActionsProps {
+  busy: boolean
+  submitting: ApprovalChoice | null
+  respond: (choice: ApprovalChoice) => Promise<void>
+  hasMoreOptions: boolean
+  allowSession: boolean
+  allowAlways: boolean
+  openAlwaysConfirm: () => void
+}
+
+function ApprovalCardActions({
+  busy,
+  submitting,
+  respond,
+  hasMoreOptions,
+  allowSession,
+  allowAlways,
+  openAlwaysConfirm
+}: ApprovalCardActionsProps) {
+  const { t } = useI18n()
+  const copy = t.assistant.approval
+
+  return (
+    <div className="flex items-center justify-end gap-1.5 px-2 pb-2 pt-1" data-slot="tool-approval-actions">
+      <Button data-approval-deny="" disabled={busy} onClick={() => void respond('deny')} size="sm" variant="text">
+        {submitting === 'deny' ? <Loader2 className="size-3 animate-spin" /> : copy.reject}
+      </Button>
+      {hasMoreOptions && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button aria-label={copy.moreOptions} disabled={busy} size="sm" variant="secondary">
+              {copy.alwaysAllowMenu}
+              <ChevronDown className="size-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-44">
+            {allowSession && (
+              <DropdownMenuItem onSelect={() => void respond('session')}>{copy.allowSession}</DropdownMenuItem>
+            )}
+            {allowAlways && (
+              <DropdownMenuItem
+                onSelect={() => {
+                  // Defer one tick so the menu fully unmounts before the dialog
+                  // mounts — otherwise Radix's focus-return races the dialog and
+                  // dismisses it via onInteractOutside.
+                  setTimeout(openAlwaysConfirm, 0)
+                }}
+              >
+                {copy.alwaysAllowMenu}
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onSelect={() => void respond('deny')} variant="destructive">
+              {copy.reject}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+      <Button data-approval-run="" disabled={busy} onClick={() => void respond('once')} size="sm">
+        {submitting === 'once' ? <Loader2 className="size-3 animate-spin" /> : copy.run}
+        <span className="opacity-60">↵</span>
+      </Button>
+    </div>
+  )
+}
+
+interface ApprovalAlwaysDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  request: ApprovalRequest
+  respond: (choice: ApprovalChoice) => Promise<void>
+}
+
+function ApprovalAlwaysDialog({ open, onOpenChange, request, respond }: ApprovalAlwaysDialogProps) {
+  const { t } = useI18n()
+  const copy = t.assistant.approval
+
+  return (
+    <Dialog onOpenChange={onOpenChange} open={open}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{copy.alwaysTitle}</DialogTitle>
+          <DialogDescription>{copy.alwaysDescription(request.description)}</DialogDescription>
+        </DialogHeader>
+
+        {request.command.trim() && (
+          <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-md border border-(--ui-stroke-tertiary) bg-(--ui-chat-surface-background) px-2.5 py-1.5 font-mono text-xs leading-snug text-foreground">
+            {request.command.trim()}
+          </pre>
+        )}
+
+        <DialogFooter>
+          <Button onClick={() => onOpenChange(false)} size="sm" variant="ghost">
+            {t.common.cancel}
+          </Button>
+          <Button
+            onClick={() => {
+              onOpenChange(false)
+              void respond('always')
+            }}
+            size="sm"
+            variant="destructive"
+          >
+            {copy.alwaysAllow}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 const ApprovalCard: FC<ApprovalCardProps> = ({ request, total, position, stack }) => {
   const { t } = useI18n()
   const copy = t.assistant.approval
@@ -335,120 +520,24 @@ const ApprovalCard: FC<ApprovalCardProps> = ({ request, total, position, stack }
       onPointerDownCapture={rememberFocusOrigin}
       ref={cardRef}
     >
-      <div className="flex items-center gap-2 px-2.5 pt-2 text-xs text-(--ui-text-secondary)">
-        <Codicon name={mcp ? 'server' : 'terminal'} size="0.875rem" />
-        <span>{mcp ? copy.mcpToolCall : showsDescription ? copy.commandDetails : copy.command}</span>
-        {mcp && (
-          <span className="truncate font-medium text-(--ui-text-primary)">
-            {mcp.server} · {mcp.tool}
-          </span>
-        )}
-        {total > 1 && (
-          <span className="ml-auto text-[0.6875rem] tabular-nums text-(--ui-text-tertiary)">
-            {position} / {total}
-          </span>
-        )}
-      </div>
-      {mcp ? (
-        <>
-          {mcp.toolDescription && (
-            <p className="px-2.5 pt-1.5 text-xs leading-relaxed text-(--ui-text-secondary)">
-              {mcp.toolDescription}
-            </p>
-          )}
-          {mcp.arguments && (
-            <>
-              <div className="px-2.5 pt-1.5 text-[0.6875rem] uppercase tracking-wide text-(--ui-text-tertiary)">
-                {copy.mcpArguments}
-              </div>
-              <pre className="m-0 max-h-40 overflow-auto whitespace-pre-wrap break-words px-2.5 py-1.5 font-mono text-xs leading-relaxed text-(--ui-text-primary)">
-                {mcp.arguments}
-              </pre>
-            </>
-          )}
-          {!mcp.arguments && details.length > 0 && (
-            <pre className="m-0 max-h-40 overflow-auto whitespace-pre-wrap break-words px-2.5 py-2 font-mono text-xs leading-relaxed text-(--ui-text-primary)">
-              {details}
-            </pre>
-          )}
-        </>
-      ) : (
-        details.length > 0 && (
-          <pre className="m-0 max-h-40 overflow-auto whitespace-pre-wrap break-words px-2.5 py-2 font-mono text-xs leading-relaxed text-(--ui-text-primary)">
-            {details}
-          </pre>
-        )
-      )}
-      <div className="flex items-center justify-end gap-1.5 px-2 pb-2 pt-1" data-slot="tool-approval-actions">
-        <Button data-approval-deny="" disabled={busy} onClick={() => void respond('deny')} size="sm" variant="text">
-          {submitting === 'deny' ? <Loader2 className="size-3 animate-spin" /> : copy.reject}
-        </Button>
-        {hasMoreOptions && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button aria-label={copy.moreOptions} disabled={busy} size="sm" variant="secondary">
-                {copy.alwaysAllowMenu}
-                <ChevronDown className="size-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-44">
-              {allowSession && (
-                <DropdownMenuItem onSelect={() => void respond('session')}>{copy.allowSession}</DropdownMenuItem>
-              )}
-              {allowAlways && (
-                <DropdownMenuItem
-                  onSelect={() => {
-                    // Defer one tick so the menu fully unmounts before the dialog
-                    // mounts — otherwise Radix's focus-return races the dialog and
-                    // dismisses it via onInteractOutside.
-                    setTimeout(() => setConfirmAlways(true), 0)
-                  }}
-                >
-                  {copy.alwaysAllowMenu}
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuItem onSelect={() => void respond('deny')} variant="destructive">
-                {copy.reject}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-        <Button data-approval-run="" disabled={busy} onClick={() => void respond('once')} size="sm">
-          {submitting === 'once' ? <Loader2 className="size-3 animate-spin" /> : copy.run}
-          <span className="opacity-60">↵</span>
-        </Button>
-      </div>
+      <ApprovalCardHeader mcp={mcp} position={position} showsDescription={showsDescription} total={total} />
+      <ApprovalCardDetails details={details} mcp={mcp} />
+      <ApprovalCardActions
+        allowAlways={allowAlways}
+        allowSession={allowSession}
+        busy={busy}
+        hasMoreOptions={hasMoreOptions}
+        openAlwaysConfirm={() => setConfirmAlways(true)}
+        respond={respond}
+        submitting={submitting}
+      />
 
-      <Dialog onOpenChange={setConfirmAlways} open={confirmAlways}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{copy.alwaysTitle}</DialogTitle>
-            <DialogDescription>{copy.alwaysDescription(request.description)}</DialogDescription>
-          </DialogHeader>
-
-          {request.command.trim() && (
-            <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-md border border-(--ui-stroke-tertiary) bg-(--ui-chat-surface-background) px-2.5 py-1.5 font-mono text-xs leading-snug text-foreground">
-              {request.command.trim()}
-            </pre>
-          )}
-
-          <DialogFooter>
-            <Button onClick={() => setConfirmAlways(false)} size="sm" variant="ghost">
-              {t.common.cancel}
-            </Button>
-            <Button
-              onClick={() => {
-                setConfirmAlways(false)
-                void respond('always')
-              }}
-              size="sm"
-              variant="destructive"
-            >
-              {copy.alwaysAllow}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ApprovalAlwaysDialog
+        onOpenChange={setConfirmAlways}
+        open={confirmAlways}
+        request={request}
+        respond={respond}
+      />
     </article>
   )
 }

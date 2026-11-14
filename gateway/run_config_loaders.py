@@ -267,12 +267,12 @@ class GatewayConfigLoadersMixin:
     ) -> str:
         """Resolve model for this channel: channel_overrides else global default.
 
-        Precedence lives in :func:`hermes_cli.model_switch.resolve_effective_model` (shared with the
+        Precedence lives in :func:`hermes_cli.model_switch_model_ids.resolve_effective_model` (shared with the
         API server so the surfaces cannot diverge). No session tier here: session /model overrides
         are applied later by ``_apply_session_model_override``.
         """
         from gateway.run import _resolve_gateway_model
-        from hermes_cli.model_switch import resolve_effective_model
+        from hermes_cli.model_switch_model_ids import resolve_effective_model
         return resolve_effective_model(
             None,  # session tier applied downstream (_apply_session_model_override)
             self._channel_override(platform, chat_id, thread_id, parent_id, source),

@@ -107,17 +107,28 @@ class AgentInputs:
         pm_site = (self.pm_runtime / marker["sitePackages"]).resolve()
         if not pm_python.is_file() or not pm_site.is_dir():
             raise ValueError("prepared PM runtime is incomplete")
-        if self.stamp is not None:
-            stamp = json.loads(self.stamp.read_text(encoding="utf-8-sig"))
-            if stamp.get("distribution") in ("nix", "docker") and stamp.get("pmRuntime") != str(self.pm_runtime):
-                raise ValueError("install stamp must reference the supplied independent PM runtime")
-        if self.placement == "contained":
-            for path in (self.python, self.site_packages, self.environment, self.pm_runtime, self.tools):
-                if path is not None and not path.resolve().is_relative_to(out):
-                    raise ValueError(f"contained input must be prepared inside output: {path}")
-        if self.placement == "references" and self.command_dir is None:
-            raise ValueError("referenced placement requires command_dir")
+        _require_stamp_pm_runtime(self)
+        _validate_placement(self, out)
         validate_frontends(self.frontends)
+
+
+def _validate_placement(agent: AgentInputs, out: Path) -> None:
+    """The per-placement rules: contained inputs live inside the output; references need command_dir."""
+    if agent.placement == "contained":
+        for path in (agent.python, agent.site_packages, agent.environment, agent.pm_runtime, agent.tools):
+            if path is not None and not path.resolve().is_relative_to(out):
+                raise ValueError(f"contained input must be prepared inside output: {path}")
+    if agent.placement == "references" and agent.command_dir is None:
+        raise ValueError("referenced placement requires command_dir")
+
+
+def _require_stamp_pm_runtime(agent: AgentInputs) -> None:
+    """An independent-PM install stamp (nix, docker) must reference exactly the runtime this build supplies."""
+    if agent.stamp is None:
+        return
+    stamp = json.loads(agent.stamp.read_text(encoding="utf-8-sig"))
+    if stamp.get("distribution") in ("nix", "docker") and stamp.get("pmRuntime") != str(agent.pm_runtime):
+        raise ValueError("install stamp must reference the supplied independent PM runtime")
 
 
 def validate_frontends(frontends: dict[str, Path]) -> None:

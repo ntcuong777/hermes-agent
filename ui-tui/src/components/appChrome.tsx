@@ -533,6 +533,197 @@ export function GoodVibesHeart({ tick, t }: { tick: number; t: Theme }) {
   return <Text color={color}>♥</Text>
 }
 
+// Display width of the tail separator, shared by every budgeted segment.
+const SEP_WIDTH = stringWidth(' │ ')
+
+// Colour helpers for the tail segments that tint by value.
+const compressionColor = (count: number, t: Theme) =>
+  count >= 10 ? t.color.error : count >= 5 ? t.color.warn : t.color.muted
+
+const cacheHitColor = (pct: number, t: Theme) =>
+  pct >= 70 ? t.color.statusGood : pct >= 40 ? t.color.statusWarn : t.color.muted
+
+const voiceColor = (label: string, t: Theme) =>
+  label.startsWith('●') ? t.color.error : label.startsWith('◉') ? t.color.warn : t.color.muted
+
+interface StatusRuleOptInSegments {
+  costText: string
+  quotaColor: string
+  quotaText: string
+  showCost: boolean
+  showQuota: boolean
+  showStash: boolean
+  stashText: string
+}
+
+// Session cost, the active account's quota and the stash: opt-in
+// (display.status_bar.fields must list them), and ranked right under the
+// context bar, above the clock and perf read-outs, because they are meant to
+// be seen at all times, not only when there is room left over.
+const optInSegments = ({
+  cols,
+  fits,
+  optIn,
+  stashCounts,
+  t,
+  usage
+}: {
+  cols: number
+  fits: (w: number) => boolean
+  optIn: (name: string) => boolean
+  stashCounts?: { global: number; session: number }
+  t: Theme
+  usage: Usage
+}): StatusRuleOptInSegments => {
+  const costText = optIn('cost') ? costLabel(usage) : ''
+  const quotaText = optIn('quota') ? quotaLabel(usage.quota) : ''
+  const showCost = cols >= 60 && !!costText && fits(SEP_WIDTH + stringWidth(costText))
+  const showQuota = cols >= 76 && !!quotaText && fits(SEP_WIDTH + stringWidth(`◔ ${quotaText}`))
+  const stashText = optIn('stash') && stashCounts ? stashLabel(stashCounts) : ''
+  const showStash = cols >= 60 && !!stashText && fits(SEP_WIDTH + stringWidth(stashText))
+  const quotaSev = quotaSeverity(usage.quota)
+  const quotaColor = quotaSev === 'bad' ? t.color.statusBad : quotaSev === 'warn' ? t.color.statusWarn : t.color.muted
+
+  return { costText, quotaColor, quotaText, showCost, showQuota, showStash, stashText }
+}
+
+interface StatusRuleDurationSegments {
+  compressions: number
+  showCompressions: boolean
+  showDuration: boolean
+  showIdle: boolean
+}
+
+// Duration clock, idle clock and compression count. The idle clock hides while
+// busy (the FaceTicker's elapsed tail covers the live turn) and before the
+// first turn completes; it shares the duration breakpoint and width
+// reservation.
+const durationSegments = ({
+  busy,
+  fits,
+  lastTurnEndedAt,
+  ok,
+  segs,
+  sessionStartedAt,
+  T,
+  usage
+}: {
+  busy: boolean
+  fits: (w: number) => boolean
+  lastTurnEndedAt?: null | number
+  ok: (name: string) => boolean
+  segs: StatusBarSegments
+  sessionStartedAt?: null | number
+  T: ReturnType<typeof messages>
+  usage: Usage
+}): StatusRuleDurationSegments => {
+  const compressions = typeof usage.compressions === 'number' ? usage.compressions : 0
+  const showDuration = segs.duration && ok('duration') && !!sessionStartedAt && fits(SEP_WIDTH + MAX_DURATION_WIDTH)
+
+  const showIdle =
+    segs.duration && !busy && lastTurnEndedAt != null && fits(SEP_WIDTH + stringWidth('✓ ') + MAX_DURATION_WIDTH)
+
+  const showCompressions =
+    segs.compressions &&
+    ok('compressions') &&
+    compressions > 0 &&
+    fits(SEP_WIDTH + stringWidth(T.status.compressions(compressions)))
+
+  return { compressions, showCompressions, showDuration, showIdle }
+}
+
+interface StatusRulePerfSegments {
+  cacheHitText: string
+  latencyText: string
+  showCacheHit: boolean
+  showLatency: boolean
+  showTps: boolean
+  tpsText: string
+}
+
+// Cache-hit % + rolling latency / tokens-per-sec — mirrored from the classic
+// CLI bar (PR #98250). The server omits the keys when no data exists (zero
+// cache reads, Codex app-server with no latency), so these self-hide.
+const perfSegments = ({
+  fits,
+  ok,
+  segs,
+  usage
+}: {
+  fits: (w: number) => boolean
+  ok: (name: string) => boolean
+  segs: StatusBarSegments
+  usage: Usage
+}): StatusRulePerfSegments => {
+  const cacheHitText = typeof usage.cache_hit_pct === 'number' ? `◎ ${usage.cache_hit_pct}%` : ''
+
+  const showCacheHit =
+    segs.cacheHit && ok('cache_hit') && !!cacheHitText && fits(SEP_WIDTH + stringWidth(cacheHitText))
+
+  const latencyText = typeof usage.avg_latency_s === 'number' ? `◷ ${usage.avg_latency_s.toFixed(1)}s` : ''
+  const showLatency = segs.latency && ok('latency') && !!latencyText && fits(SEP_WIDTH + stringWidth(latencyText))
+  const tpsText = typeof usage.avg_tps === 'number' ? `↑ ${Math.round(usage.avg_tps)} t/s` : ''
+  const showTps = segs.tps && ok('tps') && !!tpsText && fits(SEP_WIDTH + stringWidth(tpsText))
+
+  return { cacheHitText, latencyText, showCacheHit, showLatency, showTps, tpsText }
+}
+
+interface StatusRuleSubagentSegments {
+  devCreditsText: string
+  resumeHintText: string
+  showDevCredits: boolean
+  showResumeHint: boolean
+  showSubagents: boolean
+  subagentCount: number
+}
+
+// Subagent tail segments plus the dev-gated credits read-out (lowest priority —
+// it consumes tail budget LAST and drops first on a narrow terminal).
+const subagentSegments = ({
+  busy,
+  fits,
+  ok,
+  segs,
+  T,
+  usage
+}: {
+  busy: boolean
+  fits: (w: number) => boolean
+  ok: (name: string) => boolean
+  segs: StatusBarSegments
+  T: ReturnType<typeof messages>
+  usage: Usage
+}): StatusRuleSubagentSegments => {
+  const subagentCount = typeof usage.active_subagents === 'number' ? usage.active_subagents : 0
+
+  // Parked-background reassurance: a top-level delegate_task runs in the
+  // background, so the turn ends (idle) while the subagent keeps working and its
+  // result re-enters as a fresh turn later. When idle with work still in flight,
+  // spell out that the agent resumes on its own — no spinner, nothing to poll.
+  // Width-budgeted like every tail segment, so it drops first on a tight
+  // terminal where ⛓ already carries the signal.
+  const resumeHintText =
+    subagentCount === 1 ? T.status.resumesWhenSubagentFinishes : T.status.resumesWhenSubagentsFinish(subagentCount)
+
+  const showSubagents =
+    segs.subagents && ok('bg_subagents') && subagentCount > 0 && fits(SEP_WIDTH + stringWidth(`⛓ ${subagentCount}`))
+
+  const showResumeHint = !busy && subagentCount > 0 && fits(SEP_WIDTH + stringWidth(resumeHintText))
+
+  // Dev-only readout (HERMES_DEV_CREDITS). The server omits the key entirely unless the
+  // flag is on, so this segment self-hides for normal users. micros→cents is allowed money
+  // math (display formatting) — never parseFloat a *_usd. Signed: a mid-session top-up that
+  // raises remaining nets a negative Δ (honest).
+  const devCreditsText =
+    typeof usage.dev_credits_spent_micros === 'number'
+      ? `Δ ${(usage.dev_credits_spent_micros / 10000).toFixed(1)}¢`
+      : ''
+
+  const showDevCredits = !!devCreditsText && fits(SEP_WIDTH + stringWidth(devCreditsText))
+
+  return { devCreditsText, resumeHintText, showDevCredits, showResumeHint, showSubagents, subagentCount }
+}
+
 export function StatusRule({
   battery,
   focusView,
@@ -571,6 +762,7 @@ export function StatusRule({
   // display.status_bar.fields visibility gate (same key + names as the
   // classic CLI bar). null = user hasn't customized → everything shows.
   const ok = (name: string) => statusBarFields === null || statusBarFields.has(name)
+  const optIn = (name: string) => statusBarFields !== null && statusBarFields.has(name)
 
   // On narrow terminals the context read-out collapses to a bare token count
   // (`12k tok`) and the visual fill bar is dropped entirely.
@@ -632,8 +824,8 @@ export function StatusRule({
   // if it fits in the space left after the pinned essentials, evaluated in
   // descending priority order — bar, duration, compressions, voice, session
   // count, bg, cost. Lower-priority segments drop first and nothing truncates
-  // mid-segment, so status/model/context are never crushed.
-  const SEP = stringWidth(' │ ')
+  // mid-segment, so status/model/context are never crushed. The helper calls
+  // below must stay in that priority order: each consumes tail budget.
   let tailBudget = Math.max(0, leftWidth - essentialWidth)
 
   const fits = (w: number) => {
@@ -647,76 +839,49 @@ export function StatusRule({
   }
 
   const sessionCountText = liveSessionCount > 0 ? statusSessionCountLabel(liveSessionCount) : ''
-  const compressions = typeof usage.compressions === 'number' ? usage.compressions : 0
 
-  // Dev-only readout (HERMES_DEV_CREDITS). The server omits the key entirely unless the
-  // flag is on, so this segment self-hides for normal users. micros→cents is allowed money
-  // math (display formatting) — never parseFloat a *_usd. Signed: a mid-session top-up that
-  // raises remaining nets a negative Δ (honest).
-  const devCreditsText =
-    typeof usage.dev_credits_spent_micros === 'number'
-      ? `Δ ${(usage.dev_credits_spent_micros / 10000).toFixed(1)}¢`
-      : ''
+  const showBar = !!bar && fits(SEP_WIDTH + stringWidth(`[${bar}] ${pct != null ? `${contextMark}${pct}%` : ''}`))
 
-  const showBar = !!bar && fits(SEP + stringWidth(`[${bar}] ${pct != null ? `${contextMark}${pct}%` : ''}`))
+  const { costText, quotaColor, quotaText, showCost, showQuota, showStash, stashText } = optInSegments({
+    cols,
+    fits,
+    optIn,
+    stashCounts,
+    t,
+    usage
+  })
 
-  // Session cost and the active account's quota: opt-in (display.status_bar.fields must list them), and
-  // ranked right under the context bar, above the clock and perf read-outs, because they are meant to be
-  // seen at all times, not only when there is room left over.
-  const optIn = (name: string) => statusBarFields !== null && statusBarFields.has(name)
-  const costText = optIn('cost') ? costLabel(usage) : ''
-  const quotaText = optIn('quota') ? quotaLabel(usage.quota) : ''
-  const showCost = cols >= 60 && !!costText && fits(SEP + stringWidth(costText))
-  const showQuota = cols >= 76 && !!quotaText && fits(SEP + stringWidth(`◔ ${quotaText}`))
-  const stashText = optIn('stash') && stashCounts ? stashLabel(stashCounts) : ''
-  const showStash = cols >= 60 && !!stashText && fits(SEP + stringWidth(stashText))
-  const quotaSev = quotaSeverity(usage.quota)
-  const quotaColor = quotaSev === 'bad' ? t.color.statusBad : quotaSev === 'warn' ? t.color.statusWarn : t.color.muted
-  const showDuration = segs.duration && ok('duration') && !!sessionStartedAt && fits(SEP + MAX_DURATION_WIDTH)
+  const { compressions, showCompressions, showDuration, showIdle } = durationSegments({
+    busy,
+    fits,
+    lastTurnEndedAt,
+    ok,
+    segs,
+    sessionStartedAt,
+    T,
+    usage
+  })
 
-  // Idle clock — time since the last final agent response. Hidden while busy
-  // (the FaceTicker's elapsed tail covers the live turn) and before the first
-  // turn completes. Shares the duration breakpoint and width reservation.
-  const showIdle =
-    segs.duration && !busy && lastTurnEndedAt != null && fits(SEP + stringWidth('✓ ') + MAX_DURATION_WIDTH)
+  const { cacheHitText, latencyText, showCacheHit, showLatency, showTps, tpsText } = perfSegments({
+    fits,
+    ok,
+    segs,
+    usage
+  })
 
-  const showCompressions =
-    segs.compressions &&
-    ok('compressions') &&
-    compressions > 0 &&
-    fits(SEP + stringWidth(T.status.compressions(compressions)))
+  const showVoice = segs.voice && ok('voice') && !!voiceLabel && fits(SEP_WIDTH + stringWidth(voiceLabel))
+  const showSessionCount = !!sessionCountText && fits(SEP_WIDTH + stringWidth(sessionCountText))
+  const showBg = segs.bg && ok('bg_tasks') && bgCount > 0 && fits(SEP_WIDTH + stringWidth(T.status.bgTasks(bgCount)))
 
-  // Cache-hit % + rolling latency / tokens-per-sec — mirrored from the classic
-  // CLI bar (PR #98250). The server omits the keys when no data exists (zero
-  // cache reads, Codex app-server with no latency), so these self-hide.
-  const cacheHitText = typeof usage.cache_hit_pct === 'number' ? `◎ ${usage.cache_hit_pct}%` : ''
-  const showCacheHit = segs.cacheHit && ok('cache_hit') && !!cacheHitText && fits(SEP + stringWidth(cacheHitText))
-  const latencyText = typeof usage.avg_latency_s === 'number' ? `◷ ${usage.avg_latency_s.toFixed(1)}s` : ''
-  const showLatency = segs.latency && ok('latency') && !!latencyText && fits(SEP + stringWidth(latencyText))
-  const tpsText = typeof usage.avg_tps === 'number' ? `↑ ${Math.round(usage.avg_tps)} t/s` : ''
-  const showTps = segs.tps && ok('tps') && !!tpsText && fits(SEP + stringWidth(tpsText))
-
-  const showVoice = segs.voice && ok('voice') && !!voiceLabel && fits(SEP + stringWidth(voiceLabel))
-  const showSessionCount = !!sessionCountText && fits(SEP + stringWidth(sessionCountText))
-  const showBg = segs.bg && ok('bg_tasks') && bgCount > 0 && fits(SEP + stringWidth(T.status.bgTasks(bgCount)))
-  const subagentCount = typeof usage.active_subagents === 'number' ? usage.active_subagents : 0
-
-  const showSubagents =
-    segs.subagents && ok('bg_subagents') && subagentCount > 0 && fits(SEP + stringWidth(`⛓ ${subagentCount}`))
-
-  // Parked-background reassurance: a top-level delegate_task runs in the
-  // background, so the turn ends (idle) while the subagent keeps working and its
-  // result re-enters as a fresh turn later. When idle with work still in flight,
-  // spell out that the agent resumes on its own — no spinner, nothing to poll.
-  // Width-budgeted like every tail segment, so it drops first on a tight
-  // terminal where ⛓ already carries the signal.
-  const resumeHintText =
-    subagentCount === 1 ? T.status.resumesWhenSubagentFinishes : T.status.resumesWhenSubagentsFinish(subagentCount)
-
-  const showResumeHint = !busy && subagentCount > 0 && fits(SEP + stringWidth(resumeHintText))
-  // Dev-gated readout (HERMES_DEV_CREDITS), lowest priority,
-  // so it consumes tail budget LAST and drops first on a narrow terminal.
-  const showDevCredits = !!devCreditsText && fits(SEP + stringWidth(devCreditsText))
+  const { devCreditsText, resumeHintText, showDevCredits, showResumeHint, showSubagents, subagentCount } =
+    subagentSegments({
+      busy,
+      fits,
+      ok,
+      segs,
+      T,
+      usage
+    })
 
   // Focus-view badge. Pinned (not tail-budgeted) on purpose: the whole point of
   // the indicator is that the user can never be in reduced-output mode without
@@ -838,25 +1003,13 @@ export function StatusRule({
         {showCompressions ? (
           <Text color={t.color.muted} wrap="truncate-end">
             {' │ '}
-            <Text color={compressions >= 10 ? t.color.error : compressions >= 5 ? t.color.warn : t.color.muted}>
-              {T.status.compressions(compressions)}
-            </Text>
+            <Text color={compressionColor(compressions, t)}>{T.status.compressions(compressions)}</Text>
           </Text>
         ) : null}
         {showCacheHit ? (
           <Text color={t.color.muted} wrap="truncate-end">
             {' │ '}
-            <Text
-              color={
-                usage.cache_hit_pct! >= 70
-                  ? t.color.statusGood
-                  : usage.cache_hit_pct! >= 40
-                    ? t.color.statusWarn
-                    : t.color.muted
-              }
-            >
-              {cacheHitText}
-            </Text>
+            <Text color={cacheHitColor(usage.cache_hit_pct!, t)}>{cacheHitText}</Text>
           </Text>
         ) : null}
         {showLatency ? (
@@ -872,12 +1025,7 @@ export function StatusRule({
           </Text>
         ) : null}
         {showVoice ? (
-          <Text
-            color={
-              voiceLabel!.startsWith('●') ? t.color.error : voiceLabel!.startsWith('◉') ? t.color.warn : t.color.muted
-            }
-            wrap="truncate-end"
-          >
+          <Text color={voiceColor(voiceLabel!, t)} wrap="truncate-end">
             {' │ '}
             {voiceLabel}
           </Text>

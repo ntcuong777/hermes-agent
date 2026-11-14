@@ -27,6 +27,25 @@ def _gw():
     return gateway
 
 
+def _parse_launchd_pid_from_list_output(output: str) -> int | None:
+    """PID from ``launchctl list <label>`` (``"PID" = <n>;``); None if absent (registered, not running)
+    or non-positive (crashed)."""
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(('"PID"', "PID")) and "=" in stripped:
+            return _gw()._positive_pid(stripped.split("=", 1)[1].strip().rstrip(";").strip('"'))
+    return None
+
+
+def _parse_launchd_pid_from_print_output(output: str) -> int | None:
+    """Live PID from ``launchctl print`` (first ``pid = <N>`` line wins); None if absent or non-positive."""
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("pid = "):
+            return _gw()._positive_pid(stripped[len("pid = "):].strip())
+    return None
+
+
 def get_launchd_label() -> str:
     """Return the launchd service label, scoped per profile."""
     suffix = _gw()._profile_suffix()
@@ -154,7 +173,7 @@ def _launchctl_supervised_pid(label: str) -> int | None:
         return None
     if result.returncode != 0:
         return None
-    return _gw()._parse_launchd_pid_from_list_output(result.stdout)
+    return _parse_launchd_pid_from_list_output(result.stdout)
 
 
 def _launchctl_label_supervising_process(label: str) -> bool:
@@ -1017,7 +1036,7 @@ def launchd_status(deep: bool = False):
         list_output = ""
 
     # `launchctl list` exits 0 for any registered definition (even `state = not running`); only a PID proves a process.
-    launchd_pid = _gw()._parse_launchd_pid_from_list_output(list_output) if service_listed else None
+    launchd_pid = _parse_launchd_pid_from_list_output(list_output) if service_listed else None
 
     # Hermes PID may be a detached fallback process; when launchd IS supervising both PIDs match — don't double-count.
     from gateway.status import get_running_pid

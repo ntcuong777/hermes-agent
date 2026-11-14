@@ -353,6 +353,9 @@ class PluginDispatchMixin:
             try:
                 ret = self._invoke_hook_callback(cb, payload)
             except (Exception, SystemExit) as exc:
+                # _report_hook_failure owns the deduplicated WARNING (#111922); the traceback
+                # belongs at DEBUG so every failure is diagnosable without re-spamming.
+                logger.debug("hook '%s' callback chain failure", hook_name, exc_info=exc)
                 self._report_hook_failure(hook_name, cb, payload, exc)
                 continue
             if ret is None:

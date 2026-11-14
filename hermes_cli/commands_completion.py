@@ -14,6 +14,8 @@ from collections.abc import Callable, Iterable, Mapping
 from itertools import chain
 from typing import Any, Dict, Optional, Tuple
 
+logger = logging.getLogger(__name__)
+
 from prompt_toolkit.auto_suggest import AutoSuggest, Suggestion
 from prompt_toolkit.completion import Completer, Completion
 
@@ -97,6 +99,7 @@ def _plugin_subcommand_completions(base_cmd: str, sub_text: str):
             return
         yield from _prefix_completions(((s, None) for s in rows), partial)
     except Exception:
+        logger.debug("plugin subcommand completion failed", exc_info=True)
         return
 
 

@@ -404,10 +404,10 @@ def test_automation_turn_transcript_notice_is_the_neutral_copy(tmp_path):
 def _core_closed_turn(tmp_path, monkeypatch, *, principal='person', earlier_failed=False):
     """A claimed admission whose agent was interrupted by the restart before any assistant text:
     the real AIAgent persists the user row and the real core closer
-    (``agent/conversation_loop.py::_close_durable_failed_turn``) writes its failed-turn boundary.
+    (``agent/conversation_loop_failed_turn.py::_close_durable_failed_turn``) writes its failed-turn boundary.
     ``earlier_failed``: a previous turn already ended on a failed-turn boundary before this claim."""
     monkeypatch.setenv('HERMES_HOME', str(tmp_path))
-    from agent.conversation_loop import _close_durable_failed_turn
+    from agent.conversation_loop_failed_turn import _close_durable_failed_turn
     from agent.turn_failure_copy import FAILED_TURN_DISPLAY_KIND, FAILED_TURN_NOTICE
     from gateway.session_authority import LiveSession, SessionAuthority
     from gateway.session_contract import SessionRef

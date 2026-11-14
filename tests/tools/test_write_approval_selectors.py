@@ -41,7 +41,7 @@ def stage(content, summary=None, **extra):
     record = wa.stage_write(
         "memory", payload, summary=summary or content[:40], origin="foreground"
     )
-    time.sleep(0.02)  # records are ordered by created_at
+    time.sleep(0.02)  # health: allow HX013 -- the delay IS the behaviour under test: it separates the two records' created_at stamps so the ordering assertions are deterministic
     return record
 
 
