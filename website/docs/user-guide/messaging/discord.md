@@ -399,6 +399,37 @@ discord:
 group_sessions_per_user: true     # Isolate sessions per user in shared channels
 ```
 
+#### `platforms.discord.extra.session_mirror_channel`
+
+**Type:** channel ID (string) — **Default:** unset (off)
+
+The **session mirror**: every NEW machine-local session (CLI, TUI, api — anything that is not a
+Discord conversation) automatically gets a **thread** in this channel, bound to that session via
+the same `/resume <id> --all` pipeline a typed command uses. Your desk sessions become Discord
+threads the moment they start: open the thread and you are talking to that session; `/resume`
+inside a thread switches it to a different session.
+
+Requirements and edges:
+
+- **Cross-origin resume is admin-only** by IDOR design (`allow_admin_from`). List your Discord
+  user ID under `platforms.discord.extra.allow_admin_from` — without it the mirror stays idle
+  (one warning in the gateway log).
+- **A session still open at the desk keeps its own writer.** The thread binds the same session;
+  close the desk session (or `hermes --tui` → `/resume` back) before driving it hard from
+  Discord, the same way Desktop's resume works.
+- The first read after a gateway (re)start only **seeds**: existing sessions do not spawn
+  threads again, only sessions that appear afterwards do.
+- Only titled sessions with at least one message mirror (untitled shells are skipped; a session
+  gets its AI title moments after starting and appears on the next poll, ~30s).
+
+```yaml
+platforms:
+  discord:
+    extra:
+      session_mirror_channel: "1571082911984132157"
+      allow_admin_from: ["202"]   # your Discord user ID
+```
+
 #### `platforms.discord.extra.thread_workspaces`
 
 **Type:** map of channel/thread ID → path — **Default:** `{}`
