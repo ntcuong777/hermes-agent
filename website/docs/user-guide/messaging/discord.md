@@ -407,7 +407,11 @@ The **session mirror**: every NEW machine-local session (CLI and TUI — the `lo
 api-server sessions are not mirrored) automatically gets a **thread** in this channel, bound to
 that session via the same `/resume <id> --all` pipeline a typed command uses. Your desk sessions
 become Discord threads the moment they start: open the thread and you are talking to that
-session; `/resume` inside a thread switches it to a different session.
+session; `/resume` inside a thread switches it to a different session. Thread names carry the
+machine tag (`[hostname] title`), so several machines' bots can share ONE mirror channel and
+stay distinguishable. Titles sync BOTH ways while the gateway lives: a `/title` change on the
+machine renames the thread, and renaming the thread in Discord retitles the session (a session
+with durable work in flight is mirrored once it settles, not mid-turn).
 
 Requirements and edges:
 
@@ -424,8 +428,10 @@ Requirements and edges:
   threads again, only sessions that appear afterwards do. A session started during the restart
   window is therefore not mirrored.
 - Only titled sessions with at least one message mirror (untitled shells are skipped; a session
-  gets its AI title moments after starting and appears on the next poll, ~30s). Later `/title`
-  renames do not rename the thread.
+  gets its AI title moments after starting and appears on the next poll, ~30s). Automation runs
+  (cron jobs) are machine-local sessions too — expect titled cron sessions to appear here.
+- Rename sync lives in memory: a gateway restart clears it until the next title change or
+  thread rename on a mirrored session.
 
 ```yaml
 platforms:

@@ -4,7 +4,8 @@ by the same `/resume <id> --all` pipeline a typed command uses. The synthetic tu
 (non-internal) event acting as the configured `group_allow_admin_from` admin — a thread source
 resolves the group scope, so the DM-scope key does not count, and the mirror fails closed without
 it. First tick after a (re)start only seeds; a session with unsettled durable work (a live turn)
-is retried on later ticks instead of being bound mid-turn.
+is retried on later ticks instead of being bound mid-turn. Titles sync both ways: a `/title` on
+the machine renames the thread, a thread rename in Discord retitles the session.
 """
 
 from types import SimpleNamespace
@@ -37,13 +38,14 @@ def _channel():
 
 def _wired_adapter(monkeypatch, rows, *, channel=None, extra=None):
     """Adapter whose mirror reads `rows` from a stubbed session db honouring the `sources`
-    filter, against a REAL _mirror resolution (config extra + client cache). `rows` may be
-    replaced between ticks via `holder["rows"]`."""
+    filter, against a REAL mirror resolution (config extra + client cache). `rows` may be
+    replaced between ticks via `holder["rows"]`; `titles` captures session retitle writes."""
     base = {"session_mirror_channel": "555", "group_allow_admin_from": ["admin-1"]}
     base.update(extra or {})
     adapter = _adapter(base)
-    seen = set()
+    seen: dict = {}
     holder = {"rows": list(rows)}
+    titles: list = []
 
     async def tick(post_new):
         await adapter_session_mirror.tick(adapter, seen, post_new=post_new)
@@ -52,7 +54,9 @@ def _wired_adapter(monkeypatch, rows, *, channel=None, extra=None):
         sources = kw.get("sources")
         return [r for r in holder["rows"] if not sources or r.get("source", "local") in sources]
 
-    store = SimpleNamespace(_db_for_key=lambda key: SimpleNamespace(list_sessions_rich=db))
+    dbs: dict = {}
+    store = SimpleNamespace(_db_for_key=lambda key: dbs.setdefault(key, SimpleNamespace(
+        list_sessions_rich=db, set_session_title=lambda sid, name: titles.append((sid, name)))))
     adapter.gateway_runner = SimpleNamespace(
         session_store=store, _session_key_for_source=lambda source: "agent:main:discord:dm:555",
         _profile_name_for_source=lambda source, adapter_profile=None: "main")
@@ -61,43 +65,44 @@ def _wired_adapter(monkeypatch, rows, *, channel=None, extra=None):
         channel = _channel()
     adapter._client = MagicMock()
     adapter._client.get_channel = lambda cid: channel if str(cid) == "555" else None
-    return adapter, tick, seen, channel, holder
+    return adapter, tick, seen, channel, holder, titles
 
 
 @pytest.mark.asyncio
 async def test_seeding_tick_creates_no_threads_and_fills_seen(monkeypatch):
-    adapter, tick, seen, channel, _holder = _wired_adapter(
+    adapter, tick, seen, channel, _holder, _titles = _wired_adapter(
         monkeypatch, [_row("s1", "Fix the gate"), _row("s2", "Review PR")])
 
     await tick(post_new=False)
 
     channel.create_thread.assert_not_called()
     adapter.handle_message.assert_not_called()
-    assert seen == {"s1", "s2"}
+    assert seen == {"s1": (None, "Fix the gate"), "s2": (None, "Review PR")}
 
 
 @pytest.mark.asyncio
 async def test_new_session_opens_a_thread_and_resumes_into_it(monkeypatch):
-    adapter, tick, seen, channel, holder = _wired_adapter(monkeypatch, [])
+    adapter, tick, seen, channel, _holder, _titles = _wired_adapter(monkeypatch, [])
     await tick(post_new=False)  # seed on an empty machine
 
-    holder["rows"] = [_row("s1", "Fix the gate")]  # a session started at the desk
+    _holder["rows"] = [_row("s1", "Fix the gate")]  # a session started at the desk
     await tick(post_new=True)
 
     channel.create_thread.assert_awaited_once()
-    assert "Fix the gate" in channel.create_thread.await_args.kwargs["name"]
+    name = channel.create_thread.await_args.kwargs["name"]
+    assert "Fix the gate" in name and name.startswith("[")  # the machine tag prefixes the title
     adapter.handle_message.assert_awaited_once()
     event = adapter.handle_message.await_args.args[0]
     assert event.text == "/resume s1 --all"
     assert event.internal is False  # the IDOR gate stays real: no impersonation by internal bypass
     assert event.source.user_id == "admin-1"
     assert event.source.thread_id == "999"
-    assert seen == {"s1"}
+    assert seen == {"s1": ("999", "Fix the gate")}
 
 
 @pytest.mark.asyncio
 async def test_state_only_changes_and_removals_post_nothing(monkeypatch):
-    adapter, tick, _seen, channel, _holder = _wired_adapter(monkeypatch, [_row("s1", "Fix the gate")])
+    adapter, tick, _seen, channel, _holder, _titles = _wired_adapter(monkeypatch, [_row("s1", "Fix the gate")])
     await tick(post_new=False)
 
     await tick(post_new=True)  # same session: no post
@@ -109,9 +114,9 @@ async def test_state_only_changes_and_removals_post_nothing(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_untitled_discord_sourced_rows_are_skipped(monkeypatch):
+async def test_untitled_and_discord_sourced_rows_are_skipped(monkeypatch):
     """Untitled rows never mirror; Discord conversations are excluded by the sources filter."""
-    _adapter_obj, tick, seen, channel, holder = _wired_adapter(monkeypatch, [])
+    _adapter_obj, tick, seen, channel, holder, _titles = _wired_adapter(monkeypatch, [])
     await tick(post_new=False)  # seed on an empty machine
 
     holder["rows"] = [_row("s1", ""), _row("s2", "Fix the gate"), _row("s3", "Fix the gate", source="discord")]
@@ -119,14 +124,14 @@ async def test_untitled_discord_sourced_rows_are_skipped(monkeypatch):
 
     # s1 has no title, s3 is a Discord conversation: only s2 opens a thread.
     channel.create_thread.assert_awaited_once()
-    assert seen == {"s2"}
+    assert seen == {"s2": ("999", "Fix the gate")}
 
 
 @pytest.mark.asyncio
 async def test_unsettled_session_is_not_bound_but_retried(monkeypatch):
     """A session with durable work (a live turn) is left alone this tick — the settled guard —
     and mirrored on a later tick once it settles."""
-    adapter, tick, seen, channel, holder = _wired_adapter(monkeypatch, [])
+    adapter, tick, seen, channel, holder, _titles = _wired_adapter(monkeypatch, [])
     await tick(post_new=False)
 
     holder["rows"] = [_row("s1", "Fix the gate")]
@@ -137,17 +142,17 @@ async def test_unsettled_session_is_not_bound_but_retried(monkeypatch):
     await tick(post_new=True)
     channel.create_thread.assert_not_called()  # not bound mid-turn
     adapter.handle_message.assert_not_called()
-    assert seen == set()  # retried later
+    assert seen == {}  # retried later
 
     monkeypatch.setattr(adapter_session_mirror, "check_settled", AsyncMock())
     await tick(post_new=True)
     channel.create_thread.assert_awaited_once()  # settles -> mirrored
-    assert seen == {"s1"}
+    assert seen == {"s1": ("999", "Fix the gate")}
 
 
 @pytest.mark.asyncio
 async def test_thread_creation_failure_marks_seen_no_retry_storm(monkeypatch):
-    _adapter_obj, tick, _seen, channel, holder = _wired_adapter(monkeypatch, [])
+    _adapter_obj, tick, _seen, channel, holder, _titles = _wired_adapter(monkeypatch, [])
     await tick(post_new=False)
     holder["rows"] = [_row("s1", "Fix the gate")]
     channel.create_thread = AsyncMock(side_effect=RuntimeError("missing permissions"))
@@ -162,7 +167,7 @@ async def test_missing_group_admin_list_fails_closed(monkeypatch):
     """No group_allow_admin_from -> the mirror idles: cross-origin /resume is admin-only and a
     thread source resolves the GROUP list, so the DM-scope key does not count."""
     channel = _channel()
-    adapter, tick, _seen, _ch, _holder = _wired_adapter(
+    adapter, tick, _seen, _ch, _holder, _titles = _wired_adapter(
         monkeypatch, [_row("s1", "Fix the gate")], channel=channel,
         extra={"group_allow_admin_from": []})
     await tick(post_new=False)
@@ -178,6 +183,49 @@ async def test_no_mirror_channel_configured_stays_idle(monkeypatch):
     adapter.handle_message = AsyncMock()
     adapter._client = MagicMock()
     adapter._client.get_channel = lambda cid: None  # nothing cached: channel None
-    seen: set = set()
+    seen: dict = {}
     await adapter_session_mirror.tick(adapter, seen, post_new=True)
     adapter.handle_message.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_machine_retitle_renames_the_thread(monkeypatch):
+    """A /title change on the machine renames the mirrored thread (machine → Discord sync)."""
+    _adapter_obj, tick, _seen, channel, holder, _titles = _wired_adapter(monkeypatch, [])
+    thread = SimpleNamespace(id=999, name="[cuong-page-mac] Fix the gate", edit=AsyncMock())
+    channel.create_thread = AsyncMock(return_value=thread)
+    channel.get_thread = lambda tid: thread  # the poller resolves the thread through the channel
+    await tick(post_new=False)
+    holder["rows"] = [_row("s1", "Fix the gate")]
+    await tick(post_new=True)
+
+    holder["rows"] = [_row("s1", "Fix the gate (done)")]
+    await tick(post_new=True)
+
+    thread.edit.assert_awaited_once()
+    assert "Fix the gate (done)" in thread.edit.await_args.kwargs["name"]
+
+
+@pytest.mark.asyncio
+async def test_discord_thread_rename_renames_the_session(monkeypatch):
+    """The reverse direction: renaming the thread in Discord retitles the session (Discord →
+    machine), through the same on_thread_update handler Discord drives. Same name = no write."""
+    adapter, tick, _seen, _channel, _holder, titles = _wired_adapter(monkeypatch, [])
+    await tick(post_new=False)
+    _holder["rows"] = [_row("s1", "Fix the gate")]
+    await tick(post_new=True)
+
+    thread = SimpleNamespace(id=999, name="[cuong-page-mac] ship it")
+    await adapter_session_mirror.sync_thread_title(adapter, thread)
+    assert titles == [("s1", "[cuong-page-mac] ship it")]
+
+    await adapter_session_mirror.sync_thread_title(adapter, thread)
+    assert len(titles) == 1  # idempotent
+
+
+@pytest.mark.asyncio
+async def test_unbound_thread_rename_is_ignored(monkeypatch):
+    """Threads the mirror never created are not renamed into sessions."""
+    adapter, _tick, _seen, _channel, _holder, titles = _wired_adapter(monkeypatch, [])
+    await adapter_session_mirror.sync_thread_title(adapter, SimpleNamespace(id=777, name="not ours"))
+    assert titles == []

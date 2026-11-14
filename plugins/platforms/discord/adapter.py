@@ -1473,6 +1473,13 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
                     adapter_self._ensure_missed_message_backfill_task()
 
             @self._client.event
+            async def on_thread_update(thread):
+                # The session mirror's reverse rename: a thread rename in Discord renames the
+                # mirrored session. Sessions the mirror never bound are ignored by the sync.
+                from plugins.platforms.discord.adapter_session_mirror import sync_thread_title
+                await sync_thread_title(adapter_self, thread)
+
+            @self._client.event
             async def on_socket_event_type(event_type: str):
                 # Dispatch-side liveness stamp (#109521 incident 2): an ESTAB socket can keep
                 # ACKing heartbeats (op 11, no event type) while zero DISPATCH events are parsed,

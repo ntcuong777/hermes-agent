@@ -5,6 +5,10 @@ machine that is NOT a Discord conversation (CLI, TUI — the `local` origin) get
 bound to the session by dispatching the same `/resume <id> --all` pipeline a typed command uses.
 The thread is the control surface: the agent answers in it, `/resume` inside switches it.
 
+Thread names carry the machine tag (`[hostname] title`) so several bots sharing one mirror
+channel stay distinguishable, and titles sync BOTH ways while the gateway lives: a `/title`
+change on the machine renames the thread, a thread rename in Discord renames the session.
+
 Two gates the mirror honours rather than bypasses:
 - Cross-origin resume is admin-only by IDOR design (gateway/slash_access.py). A thread source
   resolves the GROUP scope, so the admin id comes from `group_allow_admin_from` — the mirror
@@ -19,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import socket
 from typing import Any
 
 from gateway.platforms.event import MessageEvent, MessageType
@@ -27,6 +32,10 @@ from gateway.session_handoff import check_settled
 logger = logging.getLogger(__name__)
 
 POLL_SECONDS = 30.0
+
+
+def _machine_tag() -> str:
+    return (socket.gethostname() or "").split(".")[0]
 
 
 def mirror_channel(adapter: Any):
@@ -53,9 +62,22 @@ def mirror_admin_id(adapter: Any) -> str | None:
     return cleaned[0] if cleaned else None
 
 
-async def tick(adapter: Any, seen: set, *, post_new: bool) -> None:
-    """One roster read: seed the seen-set (the first tick after a restart posts nothing —
-    existing sessions are not news) and open a bound thread for each session that appeared."""
+def _threads(adapter: Any) -> dict:
+    """sid -> (thread_id, last synced title); lives on the adapter so the thread-rename
+    handler can read it. Cleared on restart: rename sync resumes on the next change."""
+    mapping = getattr(adapter, "_mirror_threads", None)
+    if mapping is None:
+        mapping = {}
+        adapter._mirror_threads = mapping
+    return mapping
+
+
+async def tick(adapter: Any, seen: dict, *, post_new: bool) -> None:
+    """One roster read: seed the seen-map (the first tick after a restart posts nothing —
+    existing sessions are not news), open a bound thread for each session that appeared, and
+    rename already-mirrored threads whose session was retitled. `seen` maps sid → (thread_id,
+    title); pre-existing sessions carry a None thread id, so their rename sync starts once they
+    are re-mirrored after a restart."""
     channel = mirror_channel(adapter)
     admin = mirror_admin_id(adapter)
     if channel is None or not admin:
@@ -78,39 +100,80 @@ async def tick(adapter: Any, seen: set, *, post_new: bool) -> None:
     rows = db.list_sessions_rich(
         sources=["local"], limit=25, order_by_last_active=True,
         min_message_count=1, include_children=False)
-    current = {str(r.get("id") or ""): r for r in rows if r.get("title") and r.get("id")}
+    current = {str(r.get("id") or ""): str(r.get("title") or "") for r in rows
+               if r.get("title") and r.get("id")}
     if not post_new:  # the seeding tick after a (re)start: existing sessions are not news
-        seen.update(current)
+        seen.update({sid: (None, title) for sid, title in current.items()})
         return
-    for sid, row in current.items():
-        if sid in seen:
-            continue
-        title = str(row.get("title") or "")[:100]
-        try:
-            await check_settled(db, sid)
-        except Exception as exc:  # health: allow BLE001 -- a busy session is retried on a later tick, never fatal
-            logger.info("[%s] Session mirror: %s is not settled yet (%s); retried later", adapter.name, sid, exc)
-            continue
-        try:
-            thread = await channel.create_thread(
-                name=title or f"session {sid[:8]}", reason="Hermes session mirror")
-        except Exception:  # health: allow BLE001 -- marked seen: a broken channel must not retry-storm every tick
-            logger.warning("[%s] Session mirror: could not create a thread for %s", adapter.name, sid, exc_info=True)
-            seen.add(sid)
-            continue
-        seen.add(sid)
-        mirror_source = adapter.build_source(
-            chat_id=str(thread.id), chat_name=title, chat_type="thread", user_id=admin,
-            user_name="session mirror", thread_id=str(thread.id), message_id="0",
-            guild_id=getattr(getattr(channel, "guild", None), "id", None))
-        await adapter.handle_message(MessageEvent(
-            text=f"/resume {sid} --all", message_type=MessageType.COMMAND, source=mirror_source,
-            user_id=admin, user_name="session mirror", message_id=str(thread.id)))
+    tag = _machine_tag()
+    threads = _threads(adapter)
+    for sid, title in current.items():
+        thread_id, synced_title = seen.get(sid, (None, None))
+        if sid not in seen:  # new session: open the bound thread (seeded entries are known, not news)
+            try:
+                await check_settled(db, sid)
+            except Exception as exc:  # health: allow BLE001 -- a busy session is retried on a later tick, never fatal
+                logger.info("[%s] Session mirror: %s is not settled yet (%s); retried later", adapter.name, sid, exc)
+                continue
+            name = f"[{tag}] {title or f'session {sid[:8]}'}"[:100]
+            try:
+                thread = await channel.create_thread(name=name, reason="Hermes session mirror")
+            except Exception:  # health: allow BLE001 -- marked seen: a broken channel must not retry-storm every tick
+                logger.warning("[%s] Session mirror: could not create a thread for %s", adapter.name, sid, exc_info=True)
+                seen[sid] = (None, title)
+                continue
+            seen[sid] = (str(thread.id), title)
+            threads[sid] = (str(thread.id), title)
+            mirror_source = adapter.build_source(
+                chat_id=str(thread.id), chat_name=title, chat_type="thread", user_id=admin,
+                user_name="session mirror", thread_id=str(thread.id), message_id="0",
+                guild_id=getattr(getattr(channel, "guild", None), "id", None))
+            await adapter.handle_message(MessageEvent(
+                text=f"/resume {sid} --all", message_type=MessageType.COMMAND, source=mirror_source,
+                user_id=admin, user_name="session mirror", message_id=str(thread.id)))
+        elif thread_id is not None and title != synced_title:
+            # the session was retitled on the machine: sync out (skipped for seeded entries,
+            # whose thread this process never created)
+            try:
+                thread = channel.get_thread(thread_id) or await adapter._client.fetch_channel(int(thread_id))
+                await thread.edit(name=f"[{tag}] {title}"[:100])
+                seen[sid] = (thread_id, title)
+                threads[sid] = (thread_id, title)
+            except Exception:  # health: allow BLE001 -- a refused rename must not stop the roster read
+                logger.info("[%s] Session mirror: could not rename the thread of %s", adapter.name, sid, exc_info=True)
+
+
+async def sync_thread_title(adapter: Any, thread: Any) -> None:
+    """A thread rename IN DISCORD renames the session (the reverse direction of the poller's
+    title sync), for sessions this gateway has mirrored. Idempotent: the poller's own renames
+    echo back through on_thread_update, and a same-name write is skipped."""
+    sid = next((s for s, (tid, _t) in _threads(adapter).items() if tid == str(thread.id)), None)
+    if sid is None:
+        return
+    name = (getattr(thread, "name", "") or "").strip()
+    if not name or _threads(adapter).get(sid, (None, None))[1] == name:
+        return
+    runner = getattr(adapter, "gateway_runner", None)
+    store = getattr(runner, "session_store", None)
+    if store is None:
+        return
+    try:
+        source = adapter.build_source(
+            chat_id=str(thread.id), chat_type="thread", thread_id=str(thread.id), message_id="0")
+        db = store._db_for_key(runner._session_key_for_source(source))
+    except Exception:  # health: allow BLE001 -- a rename sync must not break the adapter's event loop
+        return
+    try:
+        await asyncio.to_thread(db.set_session_title, sid, name)
+    except Exception:  # health: allow BLE001 -- sanitize/abuse refusals keep the old title, silently
+        logger.info("[%s] Session mirror: Discord rename %r not applied to %s", adapter.name, name, sid, exc_info=True)
+        return
+    _threads(adapter)[sid] = (str(thread.id), name)
 
 
 async def loop(adapter: Any) -> None:
     await asyncio.sleep(10)  # let the connect settle before the first (seeding) read
-    seen: set = set()
+    seen: dict = {}
     seeded = False
     while True:
         try:
