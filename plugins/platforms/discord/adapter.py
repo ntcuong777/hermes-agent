@@ -1279,6 +1279,7 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
             "websocket_event_max_silence_seconds", 14400.0,
         )
         self._liveness_task: Optional[asyncio.Task] = None
+        self._mirror_task: Optional[asyncio.Task] = None
         self._liveness_notification_task: Optional[asyncio.Task] = None
         # True while disconnect() intentionally closes discord.py (done callback: shutdown vs crash).
         self._disconnecting = False
@@ -1890,107 +1891,12 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
             return
         self._liveness_task = asyncio.create_task(self._liveness_loop())
 
-    # ── Session mirror: machine sessions appear as threads ────────────────────
-    # `session_mirror_channel` (platform extra) names a channel; every NEW titled
-    # session of this machine that is NOT a Discord conversation (CLI, TUI, api)
-    # gets a thread there, bound to the session via the same `/resume <id> --all`
-    # pipeline a typed command uses. The synthetic turn carries an explicitly
-    # configured admin id: cross-origin resume is admin-only by IDOR design
-    # (gateway/slash_access.py), and the mirror must not bypass it.
-
-    _MIRROR_POLL_SECONDS = 30.0
-    _mirror_task: Optional[asyncio.Task] = None
-    _mirror_disabled_logged = False
-
-    def _mirror_config(self) -> tuple[Any, str | None]:
-        """(mirror channel or None, configured admin id or None). Both must exist for
-        the mirror to run; a missing admin id fails the feature closed with one log."""
-        raw = self.config.extra.get("session_mirror_channel") if isinstance(self.config.extra, dict) else None
-        channel = None
-        if raw and self._client:
-            try:
-                channel = self._client.get_channel(int(raw))
-            except (TypeError, ValueError):
-                channel = None
-        admin = None
-        try:
-            from gateway.slash_access import policy_for_source
-            policy = policy_for_source(getattr(self.gateway_runner, "config", None), None)
-            if policy.enabled:
-                ids = sorted(policy.admin_user_ids)
-                admin = ids[0] if ids else None
-        except Exception:  # health: allow BLE001 -- the mirror is additive; policy problems must not break connect
-            admin = None
-        return channel, admin
-
-    def _mirror_seen_key(self, row: dict) -> str:
-        return str(row.get("id") or "")
-
-    async def _session_mirror_tick(self, seen: set, *, post_new: bool) -> None:
-        """One roster read: seed the seen-set (first tick after a restart posts nothing)
-        and open a bound thread for each session that appeared since."""
-        channel, admin = self._mirror_config()
-        if channel is None or not admin:
-            if not self._mirror_disabled_logged:
-                self._mirror_disabled_logged = True
-                logger.warning(
-                    "[%s] Session mirror idle: set platforms.discord.extra.session_mirror_channel "
-                    "to a channel ID and list your Discord ID under allow_admin_from "
-                    "(cross-origin /resume is admin-only)", self.name)
-            return
-        runner = getattr(self, "gateway_runner", None)
-        store = getattr(runner, "session_store", None)
-        if store is None:
-            return
-        source = self.build_source(
-            chat_id=str(channel.id), chat_name=getattr(channel, "name", None), chat_type="dm",
-            user_id=admin, message_id="0")
-        session_key = runner._session_key_for_source(source)
-        db = store._db_for_key(session_key)
-        rows = db.list_sessions_rich(
-            sources=["local"], limit=25, order_by_last_active=True,
-            min_message_count=1, include_children=False)
-        current = {self._mirror_seen_key(r): r for r in rows if r.get("title")}
-        if not post_new:  # the seeding tick after a (re)start: existing sessions are not news
-            seen.update(current)
-            return
-        for sid, row in current.items():
-            if sid in seen:
-                continue
-            title = str(row.get("title") or "")[:100]
-            try:
-                thread = await channel.create_thread(
-                    name=title or f"session {sid[:8]}", reason="Hermes session mirror")
-            except Exception:  # health: allow BLE001 -- one unreadable channel must not stop the mirror
-                logger.warning("[%s] Session mirror: could not create a thread for %s", self.name, sid, exc_info=True)
-                continue
-            seen.add(sid)
-            mirror_source = self.build_source(
-                chat_id=str(thread.id), chat_name=title, chat_type="thread", user_id=admin,
-                user_name="session mirror", thread_id=str(thread.id), message_id="0",
-                guild_id=getattr(getattr(channel, "guild", None), "id", None))
-            await self.handle_message(MessageEvent(
-                text=f"/resume {sid} --all", message_type=MessageType.COMMAND, source=mirror_source,
-                user_id=admin, user_name="session mirror", message_id=str(thread.id), internal=True))
-
-    async def _session_mirror_loop(self) -> None:
-        await asyncio.sleep(10)  # let the connect settle before the first (seeding) read
-        seen: set = set()
-        seeded = False
-        while True:
-            try:
-                await self._session_mirror_tick(seen, post_new=seeded)
-                seeded = True
-            except asyncio.CancelledError:
-                raise
-            except Exception:  # health: allow BLE001 -- the mirror is ambient; a bad tick must not kill the loop
-                logger.warning("[%s] Session mirror tick failed", self.name, exc_info=True)
-            await asyncio.sleep(self._MIRROR_POLL_SECONDS)
-
     def _start_session_mirror(self) -> None:
-        if self._mirror_task and not self._mirror_task.done():
-            return
-        self._mirror_task = asyncio.create_task(self._session_mirror_loop())
+        """Session mirror (adapter_session_mirror.py): new machine-local sessions get a thread in
+        `session_mirror_channel`, bound via `/resume <id> --all`. Idle unless the channel AND the
+        group-scope admin list (`group_allow_admin_from`) are configured; see that module."""
+        from plugins.platforms.discord.adapter_session_mirror import start as start_mirror
+        start_mirror(self)
 
 
     # Reasons from ``_read_websocket_health`` that mean the transport is confirmed dead,
