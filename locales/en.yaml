@@ -505,7 +505,6 @@ gateway:
     list_item: "{index}. `{path}`"
     list_footer: "Or set any directory with `/cwd <path>`."
     list_empty: "No known workspaces yet — set one with `/cwd <path>` (projects and recently used repos will be listed here)."
-    list_range: "❌ Pick a number between 1 and {count} (see `/cwd list`)."
     list_ambiguous: "❓ Several workspaces match:\n{matches}\n\nType more of the path."
     no_chat_id: "Could not determine chat ID."
     mode_not_enabled: "Multi-session topic mode is not currently enabled for this chat."

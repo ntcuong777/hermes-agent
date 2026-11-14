@@ -56,8 +56,9 @@ def test_cwd_native_spec_uses_the_autocomplete_registration():
 
 
 def test_register_cwd_slash_adds_the_command(monkeypatch):
-    """The template-None spec routes /cwd to _register_cwd_slash, which registers exactly one
-    command named cwd on the tree — the pre-snapshot slot, so _auto_register never duplicates it."""
+    """The template-None spec routes /cwd to _register_cwd_slash via the registrar dict, which
+    registers exactly one command named cwd on the tree — the pre-snapshot slot, so
+    _auto_register never duplicates it."""
     from types import SimpleNamespace
     adapter = _adapter()
     registered: dict = {}
@@ -65,11 +66,14 @@ def test_register_cwd_slash_adds_the_command(monkeypatch):
         command=lambda name, description: (lambda fn: registered.update(name=name, fn=fn)),
         add_command=lambda cmd: registered.setdefault("added", cmd),
     )
-    adapter._register_cwd_slash(tree, "Show or set workspace")
+    adapter._register_cwd_slash(tree, "cwd", "Show or set workspace")
     assert registered["name"] == "cwd" and callable(registered["fn"])
+    assert set(adapter._TEMPLATE_NONE_REGISTRARS) == {"cwd"}
 
 
-def test_autocomplete_choices_filter_cap_and_cache(monkeypatch):
+def test_build_cwd_choices_filter_cap_and_cache(monkeypatch):
+    """Sync build behind the async autocomplete: matcher reuse, 25 cap, one TTL-cached build
+    serves many keystrokes."""
     adapter = _adapter()
     many = [f"/w/d{n}" for n in range(40)]
     calls = []
@@ -78,10 +82,10 @@ def test_autocomplete_choices_filter_cap_and_cache(monkeypatch):
         calls.append(1)
         return many
     monkeypatch.setattr("gateway.workspace_candidates.candidate_workspaces", _counting)
-    monkeypatch.delattr(adapter, "_cwd_candidates_cache", raising=False)
+    monkeypatch.setattr(adapter, "_cwd_candidates_cache", None)
 
-    assert len(adapter._cwd_autocomplete_choices("")) == 25  # broad query hits the cap
-    d3 = adapter._cwd_autocomplete_choices("d3")
+    assert len(adapter._build_cwd_choices("")) == 25  # broad query hits the cap
+    d3 = adapter._build_cwd_choices("d3")
     assert len(d3) == 11 and all("d3" in c.name for c in d3)  # d3 + d30..d39
-    assert adapter._cwd_autocomplete_choices("zzz-none") == []
+    assert adapter._build_cwd_choices("zzz-none") == []
     assert len(calls) == 1  # TTL cache: one build serves all three keystrokes

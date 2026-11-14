@@ -370,6 +370,8 @@
     "plugins/platforms/discord/adapter.py gateway.platforms.base._prefix_within_utf16_limit": 2,
     "plugins/platforms/discord/adapter.py gateway.run._async_profile_runtime_scope": 2,
     "plugins/platforms/discord/adapter.py gateway.warning_notifications.present_notification": 1,
+    "plugins/platforms/discord/adapter.py gateway.workspace_candidates.candidate_workspaces": 1,
+    "plugins/platforms/discord/adapter.py gateway.workspace_candidates.match_workspace_prefix": 1,
     "plugins/platforms/discord/adapter.py hermes_cli._subprocess_compat.windows_hide_flags": 1,
     "plugins/platforms/discord/adapter.py hermes_cli.commands.COMMAND_REGISTRY": 1,
     "plugins/platforms/discord/adapter.py hermes_cli.commands._is_gateway_available": 1,

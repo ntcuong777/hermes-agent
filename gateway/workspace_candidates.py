@@ -23,10 +23,7 @@ CANDIDATE_CAP = 25
 
 
 def _isdir(path: str) -> bool:
-    try:
-        return bool(path) and os.path.isdir(os.path.abspath(os.path.expanduser(path)))
-    except OSError:
-        return False
+    return bool(path) and os.path.isdir(os.path.abspath(os.path.expanduser(path)))
 
 
 def _candidate_paths(session_db) -> list[str]:
@@ -50,9 +47,12 @@ def _candidate_paths(session_db) -> list[str]:
         logger.debug("workspace candidates: projects.db unavailable", exc_info=True)
     try:
         import tui_gateway.server as gateway
-        payload = gateway._discover_repos_payload(session_db, backfill=False, include_cached=True)
+        # Cache the discovery policy: with scanning disabled the dashboard hides the cached repos
+        # too, and this list must agree with what the picker shows.
+        payload = gateway._discover_repos_payload(
+            session_db, backfill=False, include_cached=bool(gateway._repo_discovery_policy()["enabled"]))
         repos = [str(r.get("root") or "") for r in payload if r.get("root")]
-    except Exception:  # health: allow BLE001 -- headless installs without the TUI server still keep projects
+    except Exception:  # health: allow BLE001 -- _discover_repos_payload does real db/git I/O; its failures must not fail the command
         logger.debug("workspace candidates: repo discovery unavailable", exc_info=True)
     return projects, repos
 

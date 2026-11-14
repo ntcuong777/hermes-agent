@@ -1056,14 +1056,14 @@ class GatewaySessionCommandsMixin:
                 _ensure_terminal_env_bridged()
                 current = _tenv("TERMINAL_CWD") or "~"
             return t("gateway.cwd.current", cwd=current)
-        if args.lower() in {"list", "ls"}:
-            return await asyncio.to_thread(self._cwd_candidates_reply, session_key)
         lowered = args.lower()
-        if lowered.isdigit():
+        if lowered in {"list", "ls"}:
+            return await asyncio.to_thread(self._cwd_candidates_reply, session_key)
+        if lowered.isdecimal():
             return await asyncio.to_thread(self._cwd_pick_candidate, session_key, int(lowered))
         from gateway.session_terminal_cwd import set_chat_workspace
         from gateway.workspace_candidates import match_workspace_prefix
-        candidates, _db = await asyncio.to_thread(self._cwd_candidates_with_db, session_key)
+        candidates = await asyncio.to_thread(self._cwd_candidates, session_key)
         matches, note = match_workspace_prefix(candidates, args)
         if note == "unique":
             args = matches[0]
@@ -1080,18 +1080,18 @@ class GatewaySessionCommandsMixin:
         logger.warning("/cwd could not bind workspace for %s: %s", session_key, reason)
         return t("gateway.cwd.failed")
 
-    def _cwd_candidates_with_db(self, session_key: str):
-        """(candidates, session_db) for prefix matching; either side may come back empty."""
+    def _cwd_candidates(self, session_key: str) -> list[str]:
+        """The profile's candidate workspaces; a store problem degrades to an empty list."""
         from gateway.workspace_candidates import candidate_workspaces
         try:
             db = self.session_store._db_for_key(session_key)
         except Exception:  # health: allow BLE001 -- advisory listing; store problems must not fail /cwd
             db = None
-        return candidate_workspaces(db), db
+        return candidate_workspaces(db)
 
     def _cwd_candidates_reply(self, session_key: str) -> str:
-        from gateway.workspace_candidates import candidate_workspaces, CANDIDATE_CAP
-        candidates, _db = self._cwd_candidates_with_db(session_key)
+        from gateway.workspace_candidates import CANDIDATE_CAP
+        candidates = self._cwd_candidates(session_key)
         if not candidates:
             return t("gateway.cwd.list_empty")
         lines = [t("gateway.cwd.list_header")]
@@ -1101,11 +1101,12 @@ class GatewaySessionCommandsMixin:
         return "\n".join(lines)
 
     def _cwd_pick_candidate(self, session_key: str, number: int) -> str:
-        """Resolve ``/cwd <n>`` against the same deterministic order ``/cwd list`` printed."""
+        """Resolve ``/cwd <n>`` against the same deterministic order ``/cwd list`` printed; an out
+        of range number gets the list again, not a pointer to it."""
         from gateway.session_terminal_cwd import set_chat_workspace
-        candidates, _db = self._cwd_candidates_with_db(session_key)
+        candidates = self._cwd_candidates(session_key)
         if not 1 <= number <= len(candidates):
-            return t("gateway.cwd.list_range", count=len(candidates))
+            return self._cwd_candidates_reply(session_key)
         resolved, reason = set_chat_workspace(self, session_key, candidates[number - 1])
         if resolved:
             return t("gateway.cwd.set", cwd=resolved)
