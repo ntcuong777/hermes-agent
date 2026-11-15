@@ -1193,13 +1193,14 @@ def _human_decision(spec: _GateSpec, *, command: str, description: str,
 
     # CLI interactive: single combined prompt, wrapped in the pre/post plugin hooks.
     return _cli_prompt_decision(spec, command, description, pattern_key, pattern_keys, session_key,
-                                deny, grant, allow_permanent=allow_permanent, smart_denied=smart_denied,
-                                approval_callback=approval_callback)
+                                deny, grant, allow_permanent=allow_permanent, allow_session=not one_shot,
+                                smart_denied=smart_denied, approval_callback=approval_callback)
 
 
 def _cli_prompt_decision(spec: _GateSpec, command: str, description: str, pattern_key: str,
                          pattern_keys: list[str], session_key: str, deny, grant, *,
-                         allow_permanent: bool, smart_denied: bool, approval_callback) -> dict:
+                         allow_permanent: bool, allow_session: bool, smart_denied: bool,
+                         approval_callback) -> dict:
     """The synchronous CLI prompt and its pre/post plugin hooks, resolved into the gate result."""
     from agent.redact import redact_approval_display
 
@@ -1211,7 +1212,7 @@ def _cli_prompt_decision(spec: _GateSpec, command: str, description: str, patter
                        pattern_keys=list(pattern_keys), session_key=session_key, surface="cli")
     approval_context._fire_approval_hook("pre_approval_request", **hook_kwargs)
     choice = prompt_dangerous_approval(prompt_command, prompt_description, allow_permanent=allow_permanent,
-                                       allow_session=not one_shot, smart_denied=smart_denied,
+                                       allow_session=allow_session, smart_denied=smart_denied,
                                        approval_callback=approval_callback)
     approval_context._fire_approval_hook("post_approval_response", **hook_kwargs, choice=choice)
     if choice == "timeout":
