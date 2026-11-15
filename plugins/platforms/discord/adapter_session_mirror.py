@@ -67,8 +67,18 @@ def _load_map(adapter: Any) -> dict:
     try:
         data = json.loads(_map_path(adapter).read_text(encoding="utf-8"))
         if isinstance(data, dict):
-            loaded = {str(k): (str(v[0]), str(v[1])) for k, v in data.items()
-                      if isinstance(v, list) and len(v) == 2}
+            for k, v in data.items():
+                if not (isinstance(v, list) and len(v) == 2):
+                    continue
+                # v[0] null (JSON) means "no thread yet": keep it None — and repair the literal
+                # string "None" older builds wrote via str(None), or every `is None` check
+                # downstream would miss it and the session would strand unbound forever.
+                thread_id = v[0]
+                if thread_id is None or thread_id == "None":
+                    thread_id = None
+                else:
+                    thread_id = str(thread_id)
+                loaded[str(k)] = (thread_id, str(v[1]))
     except FileNotFoundError:
         pass
     except Exception:  # health: allow BLE001 -- a corrupt map must not break the adapter; it rebuilds

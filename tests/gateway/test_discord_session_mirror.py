@@ -424,3 +424,25 @@ async def test_sessions_all_for_admin_lists_local_sessions(monkeypatch):
     rows = await adapter._list_titled_sessions(source, "agent:main:discord:dm:555", allow_all=True)
     assert captured["source"] is None  # widen drops the platform filter
     assert rows and rows[0]["title"] == "TUI session"
+
+
+@pytest.mark.asyncio
+async def test_persisted_null_thread_id_stays_none_not_the_string(monkeypatch):
+    """Pins the loader bug: a map file holding JSON null thread ids (seeded sessions) must load
+    as None — str(None) == "None" made every downstream `is None` check miss them, so backfill
+    never fired for exactly the old sessions it exists for."""
+    import json as _json
+    from hermes_constants import get_hermes_home
+
+    map_path = get_hermes_home() / "cache" / "session-mirror-threads.json"
+    map_path.parent.mkdir(parents=True, exist_ok=True)
+    map_path.write_text(_json.dumps({
+        "local-old": [None, "Old one"],
+        "local-corrupted": ["None", "Corrupted by an older build"],
+        "local-bound": ["15713709", "Bound one"],
+    }), encoding="utf-8")
+
+    seen = adapter_session_mirror._load_map(_adapter())
+    assert seen["local-old"] == (None, "Old one")
+    assert seen["local-corrupted"] == (None, "Corrupted by an older build")  # repaired
+    assert seen["local-bound"] == ("15713709", "Bound one")
