@@ -398,3 +398,29 @@ async def test_backfilled_sessions_are_not_recreated_on_later_ticks(monkeypatch)
     await tick(post_new=True)
     await tick(post_new=False)
     channel.create_thread.assert_awaited_once()  # bound: no duplicates on later ticks
+
+
+@pytest.mark.asyncio
+async def test_sessions_all_for_admin_lists_local_sessions(monkeypatch):
+    """`/sessions all` for an admin must cross the platform filter — the whole point of --all is
+    reaching machine-local (TUI/CLI) sessions from Discord; a platform-scoped query hid them."""
+    adapter, _tick, _channel, _holder, _titles = _wired_adapter(monkeypatch, [])
+    from gateway.slash_commands_session import GatewaySessionCommandsMixin
+    adapter._list_titled_sessions = GatewaySessionCommandsMixin._list_titled_sessions.__get__(adapter)
+    captured = {}
+
+    async def fake_list(source=None, session_key=None, limit=10, order_by_last_active=True):
+        captured["source"] = source
+        return [_row("local-1", "TUI session", source="local")]
+
+    adapter._session_db = SimpleNamespace(list_sessions_rich=fake_list)
+    monkeypatch.setattr(type(adapter), "_resume_caller_is_admin",
+                        lambda self, source: True, raising=False)
+    async def _always_visible(self, source, row, allow_all):
+        return True
+    monkeypatch.setattr(type(adapter), "_resume_row_visible", _always_visible, raising=False)
+    source = SimpleNamespace(platform=__import__("gateway.config", fromlist=["Platform"]).Platform.DISCORD,
+                             user_id="admin-1")
+    rows = await adapter._list_titled_sessions(source, "agent:main:discord:dm:555", allow_all=True)
+    assert captured["source"] is None  # widen drops the platform filter
+    assert rows and rows[0]["title"] == "TUI session"
