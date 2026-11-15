@@ -25,6 +25,7 @@
   "/cron": "terminal",
   "/ctx": null,
   "/curator": "advanced",
+  "/cwd": null,
   "/debug": null,
   "/deny": null,
   "/diff": null,

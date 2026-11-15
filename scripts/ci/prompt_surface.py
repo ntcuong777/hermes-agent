@@ -112,11 +112,18 @@ class _ImportFailures(logging.Handler):
             self.failures.append(record.getMessage())
 
 
-def _scrub(text: str, home: Path) -> str:
+def _scrub(text: str, home: Path, raw_home: Path | None = None) -> str:
     import platform as _platform
-    for raw, token in sorted({
+    variants = {
         str(home / ".hermes"): "<HERMES_HOME>",
         str(home): "<HOME>",
+    }
+    # macOS resolves HOME (/var/folders/… → /private/var/folders/…), but probes may embed the
+    # unresolved TMPDIR spelling; scrub both or the symlinked half leaks into the snapshot.
+    if raw_home is not None and str(raw_home) != str(home):
+        variants[str(Path(raw_home) / ".hermes")] = "<HERMES_HOME>"
+        variants[str(raw_home)] = "<HOME>"
+    for raw, token in sorted({**variants,
         f"{_platform.system()} ({_platform.release()})": "<HOST_OS>",
     }.items(), key=lambda kv: -len(kv[0])):
         text = text.replace(raw, token)
@@ -132,7 +139,8 @@ def _enabled_toolsets(platform: str) -> list[str]:
     return sorted(_get_platform_tools(load_config(), platform))
 
 
-def _render_surface(home: Path, platform: str, model: str, code: bool) -> tuple[dict[str, str], dict]:
+def _render_surface(home: Path, platform: str, model: str, code: bool,
+                    raw_home: Path | None = None) -> tuple[dict[str, str], dict]:
     from hermes_cli.config import load_config, save_config
     from agent.system_prompt import build_system_prompt_parts
     from run_agent import AIAgent
@@ -147,13 +155,14 @@ def _render_surface(home: Path, platform: str, model: str, code: bool) -> tuple[
         quiet_mode=True, save_trajectories=False, platform=platform, skip_context_files=True,
         session_id=SESSION_ID, enabled_toolsets=_enabled_toolsets(platform),
     )
-    tiers = {tier: _scrub(text, home) for tier, text in build_system_prompt_parts(agent).items()}
-    tools = json.loads(_scrub(json.dumps(agent.tools), home))
+    tiers = {tier: _scrub(text, home, raw_home) for tier, text in build_system_prompt_parts(agent).items()}
+    tools = json.loads(_scrub(json.dumps(agent.tools), home, raw_home))
     return tiers, {t["function"]["name"]: t["function"] for t in tools}
 
 
 def _render_child(out: Path) -> int:
     home = Path(os.environ["HOME"]).resolve()
+    raw_home = Path(os.environ["HOME"])
     (home / "plain").mkdir(parents=True, exist_ok=True)
     (home / "code").mkdir(parents=True, exist_ok=True)
     (home / "code" / "pyproject.toml").write_text('[project]\nname = "demo"\n', encoding="utf-8")
@@ -166,7 +175,8 @@ def _render_child(out: Path) -> int:
 
     prompts, tools_by_surface = {}, {}
     for surface, platform, family, code in SURFACES:
-        prompts[surface], tools_by_surface[surface] = _render_surface(home, platform, MODELS[family], code)
+        prompts[surface], tools_by_surface[surface] = _render_surface(
+            home, platform, MODELS[family], code, raw_home)
     if failures.failures:
         print("\n".join(failures.failures), file=sys.stderr)
         return 1

@@ -101,7 +101,9 @@ After difficult/iterative tasks, offer to save as a skill. If a skill you loaded
     - claude-code: Delegate coding to Claude Code CLI (features, PRs).
     - codex: Delegate coding to OpenAI Codex CLI (features, PRs).
     - computer-use: Drive the desktop background-first; escalate on signal.
+    - cursor: Delegate coding to the Cursor Agent CLI (features, PRs).
     - hermes-agent: Use, configure, theme, extend, and orchestrate Hermes Agent.
+    - pi: Delegate coding to the Pi coding agent CLI (features, PRs).
   creative:
     - architecture-diagram: Dark-themed SVG architecture/cloud/infra diagrams as HTML.
     - ascii-video: ASCII video: convert video/audio to colored ASCII MP4/GIF.
