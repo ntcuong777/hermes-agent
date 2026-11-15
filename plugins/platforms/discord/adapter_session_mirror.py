@@ -305,6 +305,8 @@ async def sync_thread_title(adapter: Any, thread: Any) -> None:
 
 async def loop(adapter: Any) -> None:
     await asyncio.sleep(_SETTLE_SECONDS)  # let the connect settle before the first read
+    logger.info("[%s] Session mirror task started: channel=%r admin=%s",
+                adapter.name, mirror_channel(adapter), mirror_admin_id(adapter) or "NOT CONFIGURED")
     # A persisted map means this boot continues a previous mirror: sessions that appeared during
     # the downtime are genuinely new and get threads. A fresh install (no map) seeds only, so the
     # first boot does not mass-thread every historical session.
