@@ -132,7 +132,9 @@ _HOST_MANDATED_API_MODES = {
 
 # codex_app_server is opt-in: hand the whole turn to a `codex app-server` subprocess (Codex's own
 # tool runtime), gated on `model.openai_runtime == "codex_app_server"` AND provider in {openai, openai-codex}.
-_VALID_API_MODES = {"chat_completions", "codex_responses", "anthropic_messages", "bedrock_converse", "codex_app_server"}
+# cursor_sdk: the whole turn runs on the Cursor SDK worker (agent/cursor_runtime.py) whenever the
+# `cursor` provider is picked (model.cursor_runtime: chat pins the plain wire).
+_VALID_API_MODES = {"chat_completions", "codex_responses", "anthropic_messages", "bedrock_converse", "codex_app_server", "cursor_sdk"}
 
 
 def _detect_api_mode_for_url(base_url: str) -> Optional[str]:
@@ -348,6 +350,18 @@ def _maybe_apply_codex_app_server_runtime(*, provider: str, api_mode: str, model
             or (provider == "custom" and codex_model_provider_id(requested_provider)):
         return "codex_app_server"
     return api_mode
+
+
+def _maybe_apply_cursor_sdk_runtime(*, provider: str, api_mode: str, model_cfg: Optional[dict[str, Any]],
+                                    requested_provider: str = "") -> str:
+    """Rewrite to "cursor_sdk" for the ``cursor`` provider: choosing the provider IS the switch, so no other model
+    changes (``model.cursor_runtime: chat`` pins the plain wire). The whole turn then runs on the Cursor SDK
+    worker (agent/cursor_runtime.py), which authenticates with CURSOR_API_KEY, not the resolved credential."""
+    if provider != "cursor" and requested_provider != "cursor":
+        return api_mode
+    if str((model_cfg or {}).get("cursor_runtime") or "").strip().lower() == "chat":
+        return api_mode
+    return "cursor_sdk"
 
 
 # ── base_url / credential helpers ──────────────────────────────────────────────────────────
@@ -1252,7 +1266,9 @@ def resolve_runtime_provider(*, requested: Optional[str] = None, explicit_api_ke
     if api_mode != runtime.get("api_mode"):
         logger.info("model.openai_runtime=codex_app_server overrides the %s runtime (source=%s); its credential/endpoint "
                     "is not used — the app-server authenticates with its own login", runtime.get("provider"), runtime.get("source"))
-    runtime["api_mode"] = api_mode
+    runtime["api_mode"] = _maybe_apply_cursor_sdk_runtime(
+        provider=runtime.get("provider", ""), api_mode=api_mode, model_cfg=_get_model_config(),
+        requested_provider=requested_alias)
     from hermes_cli.runtime_provider_missing_key import raise_if_declared_key_missing
     raise_if_declared_key_missing(requested_provider, runtime, _get_model_config(), _FROZEN_RUNTIME_CONFIG.get(),
                                   explicit_api_key=explicit_api_key)

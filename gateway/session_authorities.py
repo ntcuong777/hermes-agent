@@ -201,8 +201,14 @@ def authority_for_home(runner, home):
 
 
 def authority_for_profile_id(runner, profile_id):
-    # A profile id IS its home path: a bare name would resolve against the cwd and write a home there.
+    # A profile id IS its home path: a bare name would resolve against the cwd and write a home
+    # there, so bare labels only ever resolve through the homes this process serves — a legacy
+    # persisted id or a canonical profile name (``default``) matches its served home; anything
+    # else raises.
     if not Path(profile_id).is_absolute():
+        for authority in all_authorities(runner):
+            if served_profile_name(Path(authority.profile_id)) == str(profile_id):
+                return authority
         raise ValueError(f"profile id must be an absolute home path, got {profile_id!r}")
     return authority_for_home(runner, Path(profile_id))
 

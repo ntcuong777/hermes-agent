@@ -9,10 +9,10 @@ from typing import Any
 
 def _effective_model_candidate(value: Any) -> str:
     """Extract a model-name candidate from a str / dict / attr-object."""
+    from hermes_cli.model_switch import _clean
     if isinstance(value, str):
         return value.strip()
     if isinstance(value, dict):
-        from hermes_cli.model_switch import _clean
         return _clean(value.get("model"))
     model_attr = getattr(value, "model", None)
     return _clean(model_attr) if model_attr is not None else ""

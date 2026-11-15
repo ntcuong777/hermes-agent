@@ -1172,7 +1172,7 @@ class OpenAICompatRoutesMixin:
         """Stream ``chat.completion.chunk`` frames from the agent's delta queue. On client
         disconnect the agent is interrupted (stops LLM calls), then its task wrapper cancelled."""
         from gateway.platforms.api_server import (
-            _abandon_agent_task, _chat_usage_payload, _redact_api_error_text, _resolve_media_to_data_urls,
+            _abandon_agent_task, _redact_api_error_text, _resolve_media_to_data_urls,
             _sse_frame)
         response = await self._prepare_sse_response(request, session_id, gateway_session_key)
 

@@ -51,7 +51,8 @@ def test_an_add_that_cannot_fit_is_rejected_before_the_person_is_asked(store, pr
     result = _call(store, action="add", content="y" * 20)
 
     assert result["success"] is False
-    assert "chars: free at least" in result["error"]
+    # Both over-budget wordings (single-add and batch dry-run) tell the model how much to free.
+    assert "free at least" in result["error"]
     assert prompts == []
     assert wa.pending_count(wa.MEMORY) == 0
 

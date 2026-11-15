@@ -65,6 +65,10 @@ class _CanonicalOwner:
 
     def __init__(self) -> None:
         self.settled, self.calls = False, []
+        # The turn-start re-stamp reads the live session's controls (run_turn_runner); recorded
+        # separately so ``calls`` stays "operations that touched the parent's generation".
+        self.sessions = {"s1": SimpleNamespace(
+            controls=SimpleNamespace(snapshot=lambda *a: None))}
 
     def check_approval_generation(self, session_id, generation):
         self.calls.append("check")

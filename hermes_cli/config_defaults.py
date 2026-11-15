@@ -5,6 +5,9 @@ docs of config.yaml.
 """
 
 from hermes_cli.config_defaults_auxiliary import _aux
+# Old-updater compat: pre-PM updaters load OPTIONAL_ENV_VARS from this module after the checkout
+# swap; the implementation moved to config_defaults_env and the re-export keeps the surface.
+from hermes_cli.config_defaults_env import OPTIONAL_ENV_VARS
 from hermes_cli.config_defaults_voice import VOICE_DEFAULTS
 
 #: Image every container terminal backend (docker/modal/daytona, the singularity plugin) uses unless the

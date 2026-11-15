@@ -1503,10 +1503,11 @@ class TestExecuteToolCalls:
             "model_tools.handle_function_call", return_value="search result"
         ) as mock_hfc:
             agent._execute_tool_calls(mock_msg, messages, "task-1")
-            # enabled_tools passes the agent's own valid_tool_names
+            # enabled_tools carries the agent's own valid_tool_names (plus the deferred
+            # tools the session can reach through tool_call — see sandbox_tool_names).
             args, kwargs = mock_hfc.call_args
             assert args[:3] == ("web_search", {"q": "test"}, "task-1")
-            assert set(kwargs.get("enabled_tools", [])) == agent.valid_tool_names
+            assert agent.valid_tool_names <= set(kwargs.get("enabled_tools", []))
         assert len(messages) == 1
         assert messages[0]["role"] == "tool"
         assert "search result" in messages[0]["content"]

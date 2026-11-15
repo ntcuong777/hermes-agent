@@ -412,7 +412,13 @@ _SLACK_VIA_HERMES_ONLY = frozenset({
     # Recovery-only, after a restart lost a turn: `/hermes discard` reaches it.
     "discard",
     # One-time answer to the low-disk prompt; `/hermes autoprune on` reaches it.
-    "autoprune"})
+    "autoprune",
+    # Telegram-only surface (multi-session topics); Slack has no topics to manage.
+    "topic",
+    # One-off setup lookup; `/hermes sethome` reaches it.
+    "sethome",
+    # Rare install inventory listing; `/hermes bundles` reaches it.
+    "bundles"})
 
 
 def _sanitize_slack_name(raw: str) -> str:

@@ -80,4 +80,9 @@ def test_unroutable_call_is_still_rejected(arguments, kwargs):
 
     assert verdict.action == "continue"
     assert tc.function.name == "process_manage"
-    assert errors and errors[0].startswith("Tool 'process_manage' does not exist")
+    # With tool_call sent (the unparseable-args default), the name IS reachable through the
+    # bridge, so the error points there instead of claiming the tool does not exist.
+    assert errors and (
+        errors[0].startswith("Tool 'process_manage' does not exist")
+        or errors[0].startswith("Tool 'process_manage' is available but not sent in full")
+    )

@@ -135,7 +135,8 @@ def _worker_command() -> list[str]:
             "Cursor worker not configured: set HERMES_CURSOR_WORKER (or cursor.worker), "
             "or cursor.runtime_dir for a source checkout"
         )
-    node = cfg.get("node") or shutil.which("node") or "node"
+    from hermes_constants import find_node_executable
+    node = cfg.get("node") or find_node_executable("node") or "node"
     return [str(node), str(Path(str(runtime_dir)) / "worker-main.ts")]
 
 
