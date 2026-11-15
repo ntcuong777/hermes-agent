@@ -257,6 +257,15 @@ let
       export NIX_NPM_REGISTRY=''${NIX_NPM_REGISTRY:-https://registry.npmjs.org/}
       export PATH=${pmNode}/bin:$PATH
     '';
+    # pnpm creates the store's v11/links directory only where its
+    # package-import method needs it (APFS clone vs ext4 hardlink), so a
+    # darwin fetch leaves an empty links/ that a linux fetch doesn't — one
+    # extra tarball member, one different store hash per platform.  The
+    # fetcher already drops the sibling projects/ dir for the same reason;
+    # drop links/ too so the pinned hash matches every platform.
+    preFixup = ''
+      rm -rf $storePath/{v3,v10,v11}/links
+    '';
     hash = lib.fileContents ./pnpm-deps-hash;
   };
 
