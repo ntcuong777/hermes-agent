@@ -1164,6 +1164,17 @@ class _PreToolCallDirective:
     message: Optional[str] = None
     rule_key: Optional[str] = None
     modified_args: Optional[dict[str, Any]] = None
+    # An ``approve`` a plugin marked as an exception yolo must not soften (``yolo_exempt``).
+    yolo_exempt: bool = False
+
+
+def _is_yolo_exempt(result: dict[str, Any]) -> bool:
+    """Whether an ``approve`` result opts out of the yolo bypass (``"yolo_exempt": True``).
+
+    Fail closed: absent, ``None`` or ``False`` mean routine; ANY other value (``True``, ``"yes"``,
+    a malformed non-bool) is treated as exempt, so a garbled marker can never turn an exception
+    into a silent yolo auto-approval."""
+    return result.get("yolo_exempt", None) not in (None, False)
 
 
 def set_thread_tool_whitelist(
@@ -1185,10 +1196,12 @@ def _get_pre_tool_call_directive_details(
 ) -> _PreToolCallDirective:
     """Check ``pre_tool_call`` hooks for ``{"action": "block", "message"}`` (veto; message becomes
     the tool result) or ``{"action": "approve", "message", "rule_key"?}`` (escalate ANY tool to the
-    human-approval gate; ``rule_key`` picks the ``[a]lways`` allowlist grain). Precedence is
+    human-approval gate; ``rule_key`` picks the ``[a]lways`` allowlist grain; ``yolo_exempt``
+    marks an exception that must reach a human even under ``--yolo`` / ``/yolo``). Precedence is
     ``block`` > ``approve`` > none, not registration order: any plugin's valid veto wins over an
-    earlier plugin's request for human confirmation (#87420); among approves the first valid one
-    wins. Irrelevant returns are ignored."""
+    earlier plugin's request for human confirmation (#87420); among approves the first
+    yolo-exempt one wins, else the first valid one, so a routine approve listed earlier can never
+    let yolo skip a later plugin's exception. Irrelevant returns are ignored."""
     allowed = getattr(_thread_tool_whitelist, "allowed", None)
     if allowed is not None and tool_name not in allowed:
         fmt = getattr(_thread_tool_whitelist, "fmt", "Tool '{tool_name}' denied")
@@ -1200,7 +1213,7 @@ def _get_pre_tool_call_directive_details(
         api_request_id=api_request_id, middleware_trace=list(middleware_trace or []), conversation_id=conversation_id,
     )
     modified_args: Optional[dict[str, Any]] = None
-    first_approve: Optional[tuple[Optional[str], Optional[str]]] = None  # (message, rule_key)
+    first_approve: Optional[tuple[Optional[str], Optional[str], bool]] = None  # (message, rule_key, exempt)
     for result in hook_results:
         if not isinstance(result, dict):
             continue
@@ -1223,13 +1236,15 @@ def _get_pre_tool_call_directive_details(
             continue
         if action == "block":
             return _PreToolCallDirective(action="block", message=message, modified_args=modified_args)
-        # approve is held back until the whole list has been scanned for a veto.
-        if first_approve is None:
+        # approve is held back until the whole list has been scanned for a veto; a yolo-exempt
+        # approve displaces an earlier routine one.
+        exempt = _is_yolo_exempt(result)
+        if first_approve is None or (exempt and not first_approve[2]):
             rule_key = result.get("rule_key")
-            first_approve = (message, (rule_key.strip() or None) if isinstance(rule_key, str) else None)
+            first_approve = (message, (rule_key.strip() or None) if isinstance(rule_key, str) else None, exempt)
     if first_approve is not None:
         return _PreToolCallDirective(action="approve", message=first_approve[0], rule_key=first_approve[1],
-                                     modified_args=modified_args)
+                                     modified_args=modified_args, yolo_exempt=first_approve[2])
     return _PreToolCallDirective(modified_args=modified_args)
 
 
@@ -1279,8 +1294,10 @@ def _resolve_block_from_details(
             # The flagged call's arguments ride along: for an mcp__ tool the approval card then
             # shows the structured MCP context (server/tool/redacted arguments) instead of the
             # bare "<mcp__server__tool> (plugin approval rule)" label.
+            # Passed only when set, so a gate stub (or older signature) without the kwarg keeps working.
+            exempt_kwargs = {"yolo_exempt": True} if details.yolo_exempt else {}
             result = request_tool_approval(tool_name, details.message or "", rule_key=details.rule_key or tool_name,
-                                           args=args)
+                                           args=args, **exempt_kwargs)
         finally:
             if approval_tokens is not None:
                 with suppress(Exception):

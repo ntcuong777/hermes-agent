@@ -2714,3 +2714,57 @@ class TestAsyncHookOnCallerLoop:
             results = asyncio.run(mgr.ainvoke_hook("pre_gateway_dispatch", event="e", gateway="g"))
         assert results == [{"seen": "e"}, {"seen_async": "e"}]
         assert "async plugin blew up" in caplog.text
+
+
+class TestPreToolCallYoloExempt:
+    """``yolo_exempt`` on an approve verdict: parsed fail-closed and handed to the gate."""
+
+    def _details(self, monkeypatch, results):
+        from hermes_cli.plugins import _get_pre_tool_call_directive_details
+        monkeypatch.setattr("hermes_cli.plugins.invoke_hook", lambda hook_name, **kwargs: results)
+        return _get_pre_tool_call_directive_details("terminal", {})
+
+    @pytest.mark.parametrize("marker,expected", [
+        (None, False), (False, False), (True, True), ("yes", True), (1, True), ({}, True),
+    ])
+    def test_marker_parsing_fails_closed(self, monkeypatch, marker, expected):
+        verdict = {"action": "approve", "message": "m"}
+        if marker is not None:
+            verdict["yolo_exempt"] = marker
+        assert self._details(monkeypatch, [verdict]).yolo_exempt is expected
+
+    def test_absent_marker_is_routine(self, monkeypatch):
+        assert self._details(monkeypatch, [{"action": "approve"}]).yolo_exempt is False
+
+    def test_later_exempt_approve_displaces_earlier_routine(self, monkeypatch):
+        details = self._details(monkeypatch, [
+            {"action": "approve", "message": "routine", "rule_key": "r"},
+            {"action": "approve", "message": "exception", "rule_key": "e", "yolo_exempt": True},
+            {"action": "approve", "message": "later", "rule_key": "l", "yolo_exempt": True},
+        ])
+        assert (details.action, details.message, details.rule_key, details.yolo_exempt) == (
+            "approve", "exception", "e", True)
+
+    def test_block_still_beats_exempt_approve(self, monkeypatch):
+        details = self._details(monkeypatch, [
+            {"action": "approve", "message": "exception", "yolo_exempt": True},
+            {"action": "block", "message": "veto"},
+        ])
+        assert (details.action, details.message, details.yolo_exempt) == ("block", "veto", False)
+
+    @pytest.mark.parametrize("verdict,kwargs", [
+        ({"action": "approve", "message": "m", "rule_key": "k", "yolo_exempt": True}, {"yolo_exempt": True}),
+        ({"action": "approve", "message": "m", "rule_key": "k"}, {}),
+    ])
+    def test_gate_receives_marker_only_when_set(self, monkeypatch, verdict, kwargs):
+        from hermes_cli.plugins import resolve_pre_tool_block
+        seen = {}
+        monkeypatch.setattr("hermes_cli.plugins.invoke_hook", lambda hook_name, **kw: [verdict])
+
+        def _gate(tool_name, reason, **kw):
+            seen.update({k: v for k, v in kw.items() if k == "yolo_exempt"})
+            return {"approved": True, "message": None}
+
+        monkeypatch.setattr("tools.approval.request_tool_approval", _gate)
+        assert resolve_pre_tool_block("terminal", {}) is None
+        assert seen == kwargs

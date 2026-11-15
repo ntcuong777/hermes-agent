@@ -247,3 +247,96 @@ class TestRequestToolApproval:
         )
         res = request_tool_approval("computer_use", "click", rule_key="cua")
         assert res == {"approved": True, "message": None}
+
+
+class TestYoloExemptPluginApproval:
+    """A plugin ``approve`` marked ``yolo_exempt`` (the permission-gate's exception list: secret
+    files, sudo, devices, ssh, cron, force push) must reach a human even under yolo; a routine
+    approve keeps the yolo skip; a block is never softened. ``_human_decision`` is the human gate:
+    it is stubbed so the tests assert the call reached it, independent of the prompt surface."""
+
+    @pytest.fixture
+    def asked(self, monkeypatch):
+        calls = []
+
+        def _human(spec, **kwargs):
+            calls.append(kwargs["pattern_key"])
+            return approval._denied("denied by human", pattern_key=kwargs["pattern_key"],
+                                    description=kwargs["description"], outcome="denied")
+
+        monkeypatch.setattr(approval, "_human_decision", _human)
+        monkeypatch.setattr(approval, "_is_interactive_cli", lambda: True)
+        monkeypatch.setattr(approval, "_is_gateway_approval_context", lambda: False)
+        monkeypatch.setattr(tools_approval_context, "_is_gateway_approval_context", lambda: False)
+        monkeypatch.setattr(approval_context, "_get_approval_mode", lambda: "manual")
+        return calls
+
+    def _resolve(self, monkeypatch, verdict):
+        from hermes_cli.plugins import resolve_pre_tool_block
+        monkeypatch.setattr("hermes_cli.plugins.invoke_hook", lambda hook_name, **kwargs: [verdict])
+        return resolve_pre_tool_block("terminal", {"command": "sudo ls"})
+
+    def test_exempt_asks_under_session_yolo(self, monkeypatch, asked):
+        monkeypatch.setattr(approval, "is_current_session_yolo_enabled", lambda: True)
+        res = request_tool_approval("terminal", "sudo", rule_key="pg:cmd:sudo", yolo_exempt=True)
+        assert asked == ["plugin_rule:pg:cmd:sudo"]
+        assert res["approved"] is False
+
+    def test_exempt_asks_under_process_yolo(self, monkeypatch, asked):
+        monkeypatch.setattr(approval, "_YOLO_MODE_FROZEN", True, raising=False)
+        res = request_tool_approval("terminal", "crontab", rule_key="pg:cmd:crontab", yolo_exempt=True)
+        assert asked == ["plugin_rule:pg:cmd:crontab"]
+        assert res["approved"] is False
+
+    def test_routine_approve_still_skips_under_yolo(self, monkeypatch, asked):
+        monkeypatch.setattr(approval, "is_current_session_yolo_enabled", lambda: True)
+        assert request_tool_approval("terminal", "rm -rf", rule_key="pg:cmd:rm") == {"approved": True, "message": None}
+        assert asked == []
+
+    def test_exempt_under_unattended_turn_fails_closed(self, monkeypatch, asked):
+        """``hermes -z`` counts as yolo; with nobody to ask, an exception blocks rather than runs."""
+        from gateway import session_finite
+        monkeypatch.setattr(approval, "_is_interactive_cli", lambda: False)
+        monkeypatch.setattr(approval, "_is_cron_approval_context", lambda: False)
+        monkeypatch.setattr(tools_approval_context, "_is_cron_approval_context", lambda: False)
+        monkeypatch.setattr(approval, "_is_single_query_approval_context", lambda: False)
+        monkeypatch.delenv("HERMES_EXEC_ASK", raising=False)
+        monkeypatch.delenv("HERMES_SESSION_PLATFORM", raising=False)
+        with session_finite.finite_turn_scope(True, unattended=True):
+            assert request_tool_approval("terminal", "x", rule_key="k")["approved"] is True
+            res = request_tool_approval("terminal", "ssh", rule_key="pg:cmd:ssh", yolo_exempt=True)
+        assert res["approved"] is False
+
+    def test_plugin_exempt_verdict_prompts_under_session_yolo(self, monkeypatch, asked):
+        monkeypatch.setattr(approval, "is_current_session_yolo_enabled", lambda: True)
+        msg = self._resolve(monkeypatch, {"action": "approve", "message": "sudo", "rule_key": "pg:cmd:sudo",
+                                          "yolo_exempt": True})
+        assert asked == ["plugin_rule:pg:cmd:sudo"]
+        assert msg == "denied by human"
+
+    def test_plugin_exempt_verdict_prompts_under_process_yolo(self, monkeypatch, asked):
+        monkeypatch.setattr(approval, "_YOLO_MODE_FROZEN", True, raising=False)
+        msg = self._resolve(monkeypatch, {"action": "approve", "message": "secret", "rule_key": "pg:secret:ab",
+                                          "yolo_exempt": True})
+        assert asked == ["plugin_rule:pg:secret:ab"]
+        assert msg == "denied by human"
+
+    def test_plugin_malformed_exempt_marker_still_prompts(self, monkeypatch, asked):
+        """Fail closed: a non-bool marker is read as exempt, never as permission to auto-approve."""
+        monkeypatch.setattr(approval, "is_current_session_yolo_enabled", lambda: True)
+        msg = self._resolve(monkeypatch, {"action": "approve", "message": "m", "rule_key": "k",
+                                          "yolo_exempt": "yes"})
+        assert asked == ["plugin_rule:k"]
+        assert msg == "denied by human"
+
+    def test_plugin_routine_verdict_auto_approved_under_yolo(self, monkeypatch, asked):
+        monkeypatch.setattr(approval, "is_current_session_yolo_enabled", lambda: True)
+        for verdict in ({"action": "approve", "message": "m", "rule_key": "k"},
+                        {"action": "approve", "message": "m", "rule_key": "k", "yolo_exempt": False}):
+            assert self._resolve(monkeypatch, verdict) is None
+        assert asked == []
+
+    def test_plugin_block_unchanged_under_yolo(self, monkeypatch, asked):
+        monkeypatch.setattr(approval, "_YOLO_MODE_FROZEN", True, raising=False)
+        assert self._resolve(monkeypatch, {"action": "block", "message": "no"}) == "no"
+        assert asked == []

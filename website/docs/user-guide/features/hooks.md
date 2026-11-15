@@ -579,6 +579,8 @@ return {"action": "approve", "message": "Why approval is required", "rule_key": 
 
 Precedence is `block` > `approve` > no directive, regardless of registration order: any plugin's valid `block` wins over an earlier plugin's `approve`, and among `approve` directives the first valid one wins (Python plugins are registered first, then shell hooks). `block` requires a non-empty `message` and short-circuits the tool with that text as the error returned to the model. `approve` escalates the call to the existing human-approval gate; `message` and `rule_key` are optional, and denial, timeout, or gate error fails closed. Other return values are ignored, so existing observer-only callbacks keep working unchanged.
 
+An `approve` is skipped without a prompt while yolo is on (`--yolo` or `/yolo`). A Python plugin that wants a human to answer even under yolo adds `"yolo_exempt": True`: the call then goes to the normal human-approval gate, and where nobody can answer it follows the gate's unattended rules like any other `approve` (cron honours `approvals.cron_mode`; an unattended `hermes -z` turn or any other context without an interactive user or gateway is blocked). `approvals.mode: off` still applies, as do approvals already granted for that `rule_key` this session or permanently. Any value other than absent, `None` or `False` counts as exempt, so a malformed marker never becomes a silent auto-approval. When several plugins approve, the first `yolo_exempt` approve wins over earlier routine ones. Shell hooks do not forward this key.
+
 **Return value — rewrite the tool's arguments:**
 
 ```python

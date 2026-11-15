@@ -1271,7 +1271,7 @@ def _run_approval_gate(
     advice: str = "Find an alternative approach that avoids this action.",
     cron_deny_message: str = "", single_query_deny_message: str = "", unattended_deny_message: str = "",
     autoapprove_log_prefix: str, fail_closed_when_no_human: bool = False, no_human_block_message: str = "",
-    pattern_keys: list[str] | None = None, mcp_context: Optional[dict] = None,
+    pattern_keys: list[str] | None = None, mcp_context: Optional[dict] = None, yolo_exempt: bool = False,
 ) -> dict:
     """Shared human-approval gate for a flagged action (tool call or write): decision core for
     :func:`request_tool_approval` and the file-tool write gates.
@@ -1283,13 +1283,15 @@ def _run_approval_gate(
     never runs ungated.
     Unattended deny text is ``ctx.block_message(subject, noun, advice)`` unless the caller passes
     an explicit ``*_deny_message`` (the file-tool write gates word their own). ``pattern_keys``
-    (default ``[pattern_key]``) are what a session/always answer persists.
+    (default ``[pattern_key]``) are what a session/always answer persists. ``yolo_exempt``: skip
+    only the yolo bypass (``_yolo_active``) for an action its source marked as an exception yolo
+    must still ask about; ``approvals.mode: off`` and every later step are unchanged.
     """
     # Hardline blocks are the caller's job BEFORE this gate, so yolo here only skips the recoverable approval layer.
     # ``approvals.mode: off`` is the third bypass source (the Desktop "Approvals: off" toggle writes it); the shell
     # guards honour it, so every action routed through this gate (computer_use, plugin rules, SSH-config writes,
     # dangerous-pattern prompts) must too, or "off" still prompts on those surfaces.
-    if _yolo_active() or approval_context._get_approval_mode() == "off":
+    if (not yolo_exempt and _yolo_active()) or approval_context._get_approval_mode() == "off":
         return _approved()
     session_key = get_current_session_key()
     if is_approved(session_key, pattern_key):
@@ -1432,7 +1434,7 @@ def check_dangerous_command(command: str, env_type: str,
 
 
 def request_tool_approval(tool_name: str, reason: str, *, rule_key: str = "", approval_callback=None,
-                          args: Optional[dict] = None) -> dict:
+                          args: Optional[dict] = None, yolo_exempt: bool = False) -> dict:
     """Escalate an arbitrary tool call to the human-approval gate.
 
     Entry point for a plugin ``pre_tool_call`` hook returning ``{"action": "approve", ...}``:
@@ -1443,7 +1445,10 @@ def request_tool_approval(tool_name: str, reason: str, *, rule_key: str = "", ap
     allowlist grain; when empty it is ``tool_name`` + a hash of ``reason`` so DISTINCT reasons
     on the same tool persist independently. ``args``: the flagged call's arguments — for an
     ``mcp__…`` tool they become the structured card's redacted argument block, so approving an
-    MCP call is never blind. Returns the ``check_dangerous_command`` result shape.
+    MCP call is never blind. ``yolo_exempt``: the plugin marked this approve as an exception
+    (``"yolo_exempt": True`` on the verdict) — process ``--yolo``, session ``/yolo`` and the
+    unattended-turn bypass do not skip it; it goes to the normal human gate (and fails closed
+    where no human is present). Returns the ``check_dangerous_command`` result shape.
     """
     description = reason or f"Plugin requires approval for {tool_name}"
     if not rule_key:
@@ -1459,7 +1464,7 @@ def request_tool_approval(tool_name: str, reason: str, *, rule_key: str = "", ap
         fail_closed_when_no_human=True,
         no_human_block_message=(f"BLOCKED: {subject} but no interactive user or gateway is present "
                                 "to approve it. A plugin flagged this action for human confirmation."),
-        mcp_context=_plugin_rule_mcp_context(tool_name, args),
+        mcp_context=_plugin_rule_mcp_context(tool_name, args), yolo_exempt=yolo_exempt,
     )
 
 
