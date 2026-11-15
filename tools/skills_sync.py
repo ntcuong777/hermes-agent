@@ -222,6 +222,9 @@ def _move_dir(src: Path, dest: Path) -> None:
 def _copy_dir(src: Path, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(src, dest, ignore=_ignore_runtime_cache)
+    # Immutable package modes must not make the user's skill tree read-only.
+    for path in (dest, *dest.rglob("*")):
+        path.chmod(path.stat().st_mode | stat.S_IWUSR)
 
 
 def _recover_renamed_skill(st: "_SyncState", skill_name: str, dest: Path) -> Optional[str]:
@@ -337,7 +340,7 @@ def _replace_skill_dir(skill_src: Path, dest: Path) -> None:
         _rmtree_writable(backup)
     shutil.move(str(dest), str(backup))
     try:
-        shutil.copytree(skill_src, dest, ignore=_ignore_runtime_cache)
+        _copy_dir(skill_src, dest)
     except OSError:
         if backup.exists():  # clear a partially-written dest so it can't shadow/block the restore
             if dest.exists():
@@ -391,6 +394,7 @@ def _seed_category_descriptions(bundled_dir: Path, only_dirs: Optional[set[Path]
         try:
             dest_desc.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(desc_md, dest_desc)
+            dest_desc.chmod(dest_desc.stat().st_mode | stat.S_IWUSR)
         except OSError as e:
             logger.debug("Could not copy %s: %s", desc_md, e)
 
