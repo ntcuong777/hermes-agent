@@ -435,7 +435,11 @@ The contract is deliberately narrow:
   plugin state is not re-read for an existing session.
 - `max_chars` is capped at 4,000 characters. All plugin sections together,
   including their audit headings, are capped at 8,000 characters and 32
-  sections. Empty, non-string, oversized, aggregate-over-budget, or raising
+  sections. `plugins.prompt_sections_total_chars` can raise the aggregate
+  cap — only upward, within 8,000..32,000 (anything else keeps the default);
+  each section keeps its own 4,000 cap, and a larger prompt costs tokens
+  every turn, so raise it only for a plugin that needs the room. Empty,
+  non-string, oversized, aggregate-over-budget, or raising
   sections are skipped with a warning; prompt construction continues.
 - Every accepted section is named in the prompt and logged at session start
   with its plugin, position, and character count.

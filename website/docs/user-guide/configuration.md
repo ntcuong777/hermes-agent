@@ -1397,6 +1397,17 @@ A rate limit that names its reset (`Retry-After` or a `retry_after` body field) 
 
 `agent.auto_recovery_cycles` is the safety net *after* both the retries and the fallback chain are spent. When the failure is a transient outage (HTTP 5xx, an `overloaded`/529 response, a connect or read timeout) and no answer text has reached you yet, Hermes does not end the turn with "API failed after N retries" — it waits and tries again, up to this many cycles (default `5`), with a jittered 15/30/60/60/60 s schedule. A provider `Retry-After` header wins over the schedule (honoured up to 120 s). Every surface shows the same line while it waits — `⏳ Provider temporarily unavailable — retrying automatically in 30s (cycle 2/5); press Esc to stop` on the CLI/TUI/Desktop, a status bubble on messaging platforms (`send /stop to cancel`), a `hermes.status` SSE event on the API server, and a log line for cron jobs. Pressing Esc (or `/stop`) cancels the wait immediately. Fallback still comes first: with a fallback chain configured, exhaustion moves to the next provider as before, and the ladder only engages once the chain has nothing left. Authentication, billing, request-format, entitlement, content-policy and account-policy errors never enter the ladder. Set `0` to disable it.
 
+## Reply Token Cap
+
+By default the per-call output cap is whatever the model catalog allows: the OpenAI-compatible routes send no `max_tokens` at all and Anthropic sends the catalog max. `agent.reply_max_tokens` clamps every request builder to at most this many output tokens, the way Pi caps replies:
+
+```yaml
+agent:
+  reply_max_tokens: null       # Per-call output cap in tokens; null/0 = off (default)
+```
+
+The clamp never raises above the model's own maximum, and it never truncates reasoning: the truncation-retry ladder still raises the cap per retry when a turn genuinely needs more room, and on Anthropic reasoning models the thinking budget can still lift `max_tokens` above it (the adapter clamps to budget + 4096). The value is read once per session, so changes apply to new sessions.
+
 ## Wall-Clock Run Budget
 
 Separate from the iteration budget, you can give each conversation run an optional **wall-clock** budget. This is designed for one-shot and eval-harness invocations that run under a hard external ceiling (e.g. a 900-second per-task limit): without it, a run can time out with the work essentially done — one generation short of emitting the final answer, or stuck in a single hung provider call.
@@ -2963,7 +2974,17 @@ code_execution:
   mode: project                # project (default) | strict
   timeout: 300                 # Max execution time in seconds
   max_tool_calls: 50           # Max tool calls within code execution
+  allowed_tools:               # Tools a script may import from hermes_tools (default: this list)
+    - web_search
+    - web_extract
+    - read_file
+    - write_file
+    - search_files
+    - patch
+    - terminal
 ```
+
+**`allowed_tools`** lists the Hermes tools a script may import inside `execute_code` (an unset or empty list restores the seven defaults shown above; an explicit list replaces them). A configured tool the session cannot reach is skipped; a tool without a hand-written import stub gets a generic `name(**kwargs)` one, listed in the schema; `execute_code` itself is never offered. A refused import of a real Hermes tool tells the agent how to call it instead — a normal tool call, or `tool_call` for a deferred one.
 
 **`mode`** controls the working directory and Python interpreter for scripts:
 
@@ -3128,11 +3149,14 @@ Secret redaction and the website blocklist:
 security:
   redact_secrets: true           # Redact API key patterns in tool output and logs (on by default)
   redact_phone_numbers: true     # Mask E.164 phone numbers in replies sent to chats (on by default)
+  write_allow_roots: []          # Dirs write_file/patch may edit although under a system deny prefix (/etc)
   website_blocklist:             # See Website Blocklist section below
     enabled: false
     domains: []
     shared_files: []
 ```
+
+- `write_allow_roots` — absolute directories `write_file`/`patch` may write although they sit under a system deny prefix (`/etc`, `/private/etc`): the one way to let the agent edit a repo that lives at `/etc/nix-darwin`. Only the prefix rule is relaxed — exact protected paths, the Hermes config guard, the protected-instruction and approval gates and the sandbox all still apply, and `../` or symlink escapes from a root stay denied. A root that is or contains a whole deny prefix (`/`, `/etc`) is ignored, and a config read failure means no roots. Empty = no exemption. See [File write safety](security.md#file-write-safety).
 
 - `redact_secrets` — when `true`, automatically detects and redacts patterns that look like API keys, tokens, and passwords in tool output before it enters the conversation context and logs. **On by default**. Set to `false` explicitly only when you need raw credential-like strings for debugging or redactor development. Reading a secret-bearing file (`.env`-style files, shell rc/profile files, the Hermes `config.yaml` under `HERMES_HOME` and its `backups/config/` copies) with `read_file`, `search_files` or a terminal `cat`/`grep` also masks credential-shaped assignments (`SOME_API_TOKEN: …`) with a non-reusable `«redacted-secret»` marker, whatever the value looks like; ordinary source and project config files keep only the vendor-prefix patterns so fixtures such as `MAX_TOKENS: 100` are never mangled.
 - `redact_phone_numbers` — when `true` (default), phone numbers in E.164 form (`+15551234567`) are masked (`+155****4567`) in the agent's replies and in everything the gateway sends to a chat platform, even with `redact_secrets: false`. Set it to `false` on a trusted single-operator setup whose assistant must show exact phone numbers (a contact list, a call log). Only E.164 numbers are affected: API keys, bot tokens, bearer tokens, passwords and every other secret pattern stay masked in chat, and logs and tool output keep masking phone numbers. Any value other than `true` or `false` keeps them masked and logs a warning.

@@ -442,6 +442,18 @@ that run commands, so the write is never silent. Non-interactive callers (ACP
 file bridge, background jobs with no human channel) fail closed. Private keys,
 `authorized_keys`, and everything else under `~/.ssh/` remain hard-blocked.
 
+### System deny prefixes and `security.write_allow_roots`
+
+Beyond the protected-path denylist, `write_file` and `patch` refuse any path under a system config prefix (`/etc`, `/private/etc`) — there is no approval for these. A checkout that legitimately lives under one (a Nix configuration repo at `/etc/nix-darwin`, for example) could never be edited, so `security.write_allow_roots` lists absolute directories that are exempt from the prefix rule alone:
+
+```yaml
+security:
+  write_allow_roots:
+    - /etc/nix-darwin
+```
+
+Only the prefix rule is relaxed: exact protected paths (credential stores, Hermes state), the Hermes config guard, the protected-instruction and approval gates and `HERMES_WRITE_SAFE_ROOT` all still apply, and a `../` or symlink escape from an allowed root stays denied. A root that is or contains a whole deny prefix (`/`, `/etc`) is ignored. Empty = no exemption.
+
 ### HERMES_WRITE_SAFE_ROOT (optional sandbox)
 
 When set, `write_file` and `patch` may only target paths inside the listed directory prefix(es). Anything outside is **hard-blocked** — not routed through dangerous-command approval.
