@@ -430,6 +430,10 @@ Requirements and edges:
 - Only titled sessions with at least one message mirror (untitled shells are skipped; a session
   gets its AI title moments after starting and appears on the next poll, ~30s). Automation runs
   (cron jobs) are machine-local sessions too — expect titled cron sessions to appear here.
+- **Old sessions predate the mirror and normally never get threads.** Set
+  `session_mirror_backfill: true` (platform extra) to thread the whole titled roster — top 25
+  most recent — on the first tick after a restart. Expect a burst of ~25 threads once; bindings
+  persist, so later restarts do not repeat it.
 - Rename sync lives in memory: a gateway restart clears it until the next title change or
   thread rename on a mirrored session.
 

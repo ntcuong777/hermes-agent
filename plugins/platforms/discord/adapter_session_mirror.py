@@ -94,6 +94,14 @@ def _tagged(title: str) -> str:
     return f"[{_machine_tag()}] {title}"[:100]
 
 
+def _backfill_enabled(adapter: Any) -> bool:
+    """`session_mirror_backfill`: thread the whole titled roster on the seeding tick too (old
+    sessions predate the mirror; without this they never get threads). Default off — it is a
+    burst of ~25 threads by design."""
+    extra = adapter.config.extra if isinstance(adapter.config.extra, dict) else {}
+    return bool(extra.get("session_mirror_backfill"))
+
+
 def mirror_channel(adapter: Any):
     """The configured mirror channel, resolved against the client cache; None = off."""
     raw = adapter.config.extra.get("session_mirror_channel") if isinstance(adapter.config.extra, dict) else None
@@ -174,11 +182,16 @@ async def tick(adapter: Any, seen: dict, *, post_new: bool) -> None:
         min_message_count=1, include_children=False)
     current = {str(r.get("id") or ""): str(r.get("title") or "") for r in rows
                if r.get("title") and r.get("id")}
-    if not post_new:  # a fresh install's first tick: seed only, do not mass-thread old sessions
+    backfill = _backfill_enabled(adapter)
+    if not post_new and not backfill:
+        # a fresh install's first tick: seed only, do not mass-thread old sessions
         for sid, title in current.items():
             seen.setdefault(sid, (None, title))
         _save_map(adapter, seen)
         return
+    # With backfill on, the seeding tick falls through to the same creation loop as later
+    # ticks: every titled session in the roster gets a bound thread, not just sessions that
+    # appear later.
     # Bound-session title drift: a mirrored session's source row flips to `discord` once the
     # /resume lane move lands, so the local-sources query above stops returning it. Read each
     # bound session directly and rename its thread on drift — source-agnostic.
@@ -205,8 +218,9 @@ async def tick(adapter: Any, seen: dict, *, post_new: bool) -> None:
             logger.info("[%s] Session mirror: could not rename the thread of %s", adapter.name, sid, exc_info=True)
     for sid, title in current.items():
         thread_id, synced_title = seen.get(sid, (None, None))
-        if sid not in seen:  # new session: open the bound thread (with a starter message, so it
-            try:             # actually surfaces in the channel instead of the hidden popup)
+        needs_thread = sid not in seen or (backfill and seen[sid][0] is None)
+        if needs_thread:  # open the bound thread (with a starter message, so it
+            try:          # actually surfaces in the channel instead of the hidden popup)
                 await check_settled(db, sid)
             except Exception as exc:  # health: allow BLE001 -- a busy session is retried on a later tick, never fatal
                 logger.info("[%s] Session mirror: %s is not settled yet (%s); retried later", adapter.name, sid, exc)

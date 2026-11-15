@@ -358,3 +358,43 @@ async def test_platform_thread_update_drives_the_discord_to_machine_sync(monkeyp
     await adapter._on_platform_thread_update(before, after)
 
     assert titles == [("s1", "ship it")]
+
+
+@pytest.mark.asyncio
+async def test_backfill_threads_the_whole_roster_on_the_seeding_tick(monkeypatch):
+    """`session_mirror_backfill`: old sessions (pre-mirror) get their threads on the first tick
+    instead of being seeded quietly — the "pull in old sessions" ask."""
+    adapter, tick, channel, _holder, _titles = _wired_adapter(
+        monkeypatch, [_row("s1", "Old one"), _row("s2", "Older still"), _row("s3", "")],
+        extra={"session_mirror_backfill": True})
+
+    await tick(post_new=False)  # the seeding tick itself does the backfill
+
+    assert channel.create_thread.await_count == 2  # s3 untitled: skipped
+    seen = adapter_session_mirror._load_map(adapter)
+    assert seen["s1"][0] is not None and seen["s2"][0] is not None and "s3" not in seen  # untitled skipped
+
+
+@pytest.mark.asyncio
+async def test_backfill_off_keeps_the_quiet_seed(monkeypatch):
+    adapter, tick, channel, _holder, _titles = _wired_adapter(
+        monkeypatch, [_row("s1", "Old one")])
+    await tick(post_new=False)
+    channel.create_thread.assert_not_called()  # default: quiet seed
+    assert _seen_map(adapter)["s1"] == (None, "Old one")
+
+
+def _seen_map(adapter):
+    return adapter_session_mirror._load_map(adapter)
+
+
+@pytest.mark.asyncio
+async def test_backfilled_sessions_are_not_recreated_on_later_ticks(monkeypatch):
+    _adapter_obj, tick, channel, _holder, _titles = _wired_adapter(
+        monkeypatch, [_row("s1", "Old one")], extra={"session_mirror_backfill": True})
+    await tick(post_new=False)
+    channel.create_thread.assert_awaited_once()
+
+    await tick(post_new=True)
+    await tick(post_new=False)
+    channel.create_thread.assert_awaited_once()  # bound: no duplicates on later ticks
