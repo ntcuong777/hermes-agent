@@ -1281,6 +1281,7 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
         )
         self._liveness_task: Optional[asyncio.Task] = None
         self._mirror_task: Optional[asyncio.Task] = None
+        self._mirror_seen: dict = {}
         self._liveness_notification_task: Optional[asyncio.Task] = None
         # True while disconnect() intentionally closes discord.py (done callback: shutdown vs crash).
         self._disconnecting = False
