@@ -31,8 +31,9 @@ def _row(sid, title, source="local"):
     return {"id": sid, "title": title, "source": source}
 
 
-def _thread_named(name):
-    return SimpleNamespace(id=999, name=name, edit=AsyncMock(), send=AsyncMock())
+def _thread_named(name, send=None):
+    thread = SimpleNamespace(id=999, name=name, edit=AsyncMock(), send=send or AsyncMock())
+    return thread
 
 
 def _mirror_channel():
@@ -65,9 +66,16 @@ def _wired_adapter(monkeypatch, rows, *, channel=None, extra=None):
         sources = kw.get("sources")
         return [r for r in holder["rows"] if not sources or r.get("source", "local") in sources]
 
+    def get_session(sid):
+        for r in holder["rows"]:
+            if r.get("id") == sid:
+                return dict(r)
+        return None
+
     dbs: dict = {}
     store = SimpleNamespace(_db_for_key=lambda key: dbs.setdefault(key, SimpleNamespace(
-        list_sessions_rich=db, set_session_title=lambda sid, name: titles.append((sid, name)))))
+        list_sessions_rich=db, set_session_title=lambda sid, name: titles.append((sid, name)),
+        get_session=get_session)))
     adapter.gateway_runner = SimpleNamespace(
         session_store=store, _session_key_for_source=lambda source: "agent:main:discord:dm:555",
         _profile_name_for_source=lambda source, adapter_profile=None: "main")
@@ -307,3 +315,46 @@ async def test_session_started_during_downtime_is_mirrored_after_restart(monkeyp
     await tick(post_new=True)
     channel.create_thread.assert_awaited_once()
     assert _seen(adapter) == {"s1": ("999", "Started while the gateway was down")}
+
+
+@pytest.mark.asyncio
+async def test_bound_discord_source_session_title_still_syncs(monkeypatch):
+    """Once /resume lands, the session row's source flips to discord — the local-sources roster
+    query stops returning it. The drift sync must read bound sessions directly, or the machine
+    /title would never reach the thread (the live failure this pins)."""
+    _adapter_obj, tick, channel, holder, _titles = _wired_adapter(monkeypatch, [])
+    thread = _thread_named("[cuong-page-mac] Fix the gate", send=AsyncMock())
+    channel.create_thread = AsyncMock(return_value=thread)
+    channel.get_thread = lambda tid: thread
+    await tick(post_new=False)  # seed on an empty machine
+
+    holder["rows"] = [_row("s1", "Fix the gate")]
+    await tick(post_new=True)  # mirrored: bound in the persisted map
+
+    # the lane move flipped the row source to discord, and /title changed the title
+    thread.edit = AsyncMock()
+    channel.threads = [thread]  # the mirror channel lists its bound thread
+    holder["rows"] = [_row("s1", "Fix the gate (done)", source="discord")]
+    await tick(post_new=True)
+
+    thread.edit.assert_awaited_once()
+    assert thread.edit.await_args.kwargs["name"] == "[cuong-page-mac] Fix the gate (done)"
+
+
+@pytest.mark.asyncio
+async def test_platform_thread_update_drives_the_discord_to_machine_sync(monkeypatch):
+    """The adapter's own on_thread_update normalization (the ONE handler Discord drives) calls
+    the mirror sync — a renamed mirror thread retitles its session."""
+    adapter, tick, channel, holder, titles = _wired_adapter(monkeypatch, [])
+    thread = _thread_named("[cuong-page-mac] Fix the gate", send=AsyncMock())
+    channel.create_thread = AsyncMock(return_value=thread)
+    channel.get_thread = lambda tid: thread
+    await tick(post_new=False)
+    holder["rows"] = [_row("s1", "Fix the gate")]
+    await tick(post_new=True)
+
+    after = SimpleNamespace(id=999, name="[cuong-page-mac] ship it")
+    before = SimpleNamespace(id=999, name="[cuong-page-mac] Fix the gate")
+    await adapter._on_platform_thread_update(before, after)
+
+    assert titles == [("s1", "ship it")]

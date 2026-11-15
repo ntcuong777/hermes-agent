@@ -119,8 +119,13 @@ def mirror_admin_id(adapter: Any) -> str | None:
 
 
 def _resolve_thread(adapter: Any, thread_id: str):
-    """A bound thread by id: client cache first, API fetch second — never the per-channel
-    thread list (its cache does not survive reconnects, which is what orphaned bindings)."""
+    """A bound thread by id: the mirror channel's own thread list first (Discord repopulates it
+    after reconnects for visible channels), then the client cache, then an API fetch."""
+    channel = mirror_channel(adapter)
+    if channel is not None:
+        for t in getattr(channel, "threads", []) or []:
+            if str(getattr(t, "id", "")) == str(thread_id):
+                return t
     client = adapter._client
     if client is None:
         return None
@@ -174,6 +179,30 @@ async def tick(adapter: Any, seen: dict, *, post_new: bool) -> None:
             seen.setdefault(sid, (None, title))
         _save_map(adapter, seen)
         return
+    # Bound-session title drift: a mirrored session's source row flips to `discord` once the
+    # /resume lane move lands, so the local-sources query above stops returning it. Read each
+    # bound session directly and rename its thread on drift — source-agnostic.
+    for sid, (thread_id, synced) in list(seen.items()):
+        if not thread_id:
+            continue
+        try:
+            row = db.get_session(sid) or {}
+        except Exception:  # health: allow BLE001 -- a read miss must not stop the roster tick
+            continue
+        title = str(row.get("title") or "")
+        if not title or title == synced:
+            continue
+        thread = _resolve_thread(adapter, thread_id)
+        if thread is None:  # deleted on Discord: drop the stale binding, keep the session
+            seen[sid] = (None, title)
+            _save_map(adapter, seen)
+            continue
+        try:
+            await thread.edit(name=_tagged(title))
+            seen[sid] = (thread_id, title)
+            _save_map(adapter, seen)
+        except Exception:  # health: allow BLE001 -- a refused rename must not stop the roster read
+            logger.info("[%s] Session mirror: could not rename the thread of %s", adapter.name, sid, exc_info=True)
     for sid, title in current.items():
         thread_id, synced_title = seen.get(sid, (None, None))
         if sid not in seen:  # new session: open the bound thread (with a starter message, so it
