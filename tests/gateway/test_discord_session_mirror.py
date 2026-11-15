@@ -162,7 +162,7 @@ async def test_missing_group_admin_list_fails_closed(monkeypatch):
     """No group_allow_admin_from -> the mirror idles: cross-origin /resume is admin-only and a
     thread source resolves the GROUP list, so the DM-scope key does not count."""
     channel = _channel()
-    _adapter_obj, tick, _seen, _ch, _holder = _wired_adapter(
+    adapter, tick, _seen, _ch, _holder = _wired_adapter(
         monkeypatch, [_row("s1", "Fix the gate")], channel=channel,
         extra={"group_allow_admin_from": []})
     await tick(post_new=False)
