@@ -78,6 +78,10 @@ def _trust_granted(server_name: str, tool_name: str) -> bool:
 # surface), so the truncation marker is never cut off by the adapter's own fit.
 _TRUST_GATE_ARGUMENTS_MAX_CHARS = 1_200
 _TRUST_GATE_ARGUMENTS_TRUNCATION_MARKER = "\n... [arguments truncated]"
+# The structured ``mcp`` card context is rendered as its own block (not inside the message), so it gets a
+# roomier bound; tool descriptions are server-supplied text, kept short and sanitized at discovery.
+_MCP_CONTEXT_ARGUMENTS_MAX_CHARS = 4_000
+_MCP_TOOL_DESCRIPTION_MAX_CHARS = 500
 
 
 def _is_secret_argument_name(key: Any) -> bool:
@@ -98,28 +102,46 @@ def _mask_secret_fields(value: Any) -> Any:
     return value
 
 
-def _format_trust_gate_arguments(args: dict) -> str:
-    """Redacted, bounded JSON of the call's arguments for the approval card. Plain text, no
-    fence: every surface already renders the prompt inside a code block."""
+def _sanitize_card_text(text: str) -> str:
+    """Escape bidi overrides, invisible format characters and C1/DEL controls (newlines kept) so a card shows
+    what the server receives, then force-redact: approval cards are a display boundary."""
     import unicodedata
     from agent.redact import redact_sensitive_text
 
+    text = "".join(ch.encode("unicode_escape").decode()
+                   if ch != "\n" and unicodedata.category(ch) in ("Cc", "Cf") else ch for ch in text)
+    return redact_sensitive_text(text, force=True)
+
+
+def _format_trust_gate_arguments(args: dict, max_chars: int = _TRUST_GATE_ARGUMENTS_MAX_CHARS) -> str:
+    """Redacted, bounded JSON of the call's arguments for the approval card. Plain text, no
+    fence: every surface already renders the prompt inside a code block."""
     rendered = json.dumps(_mask_secret_fields(args), ensure_ascii=False, indent=2, default=str)
     # Scan and redact only a window well past the cap: a multi-megabyte payload (a file write) would
     # otherwise hold the prompt back for seconds.
-    window = 4 * _TRUST_GATE_ARGUMENTS_MAX_CHARS
+    window = 4 * max_chars
     cut, rendered = len(rendered) > window, rendered[:window]
-    # Bidi overrides, invisible format characters and the C1/DEL controls JSON leaves raw could make the
-    # card show something other than what the server receives; render them as escapes.
-    rendered = "".join(ch.encode("unicode_escape").decode()
-                       if ch != "\n" and unicodedata.category(ch) in ("Cc", "Cf") else ch for ch in rendered)
     # force: the approval prompt is a display boundary even with security.redact_secrets off. The CLI
     # prints it as-is. Redact before truncating so a cut cannot split a secret past its pattern.
-    rendered = redact_sensitive_text(rendered, force=True)
-    if cut or len(rendered) > _TRUST_GATE_ARGUMENTS_MAX_CHARS:
-        keep = _TRUST_GATE_ARGUMENTS_MAX_CHARS - len(_TRUST_GATE_ARGUMENTS_TRUNCATION_MARKER)
+    rendered = _sanitize_card_text(rendered)
+    if cut or len(rendered) > max_chars:
+        keep = max_chars - len(_TRUST_GATE_ARGUMENTS_TRUNCATION_MARKER)
         rendered = rendered[:keep].rstrip() + _TRUST_GATE_ARGUMENTS_TRUNCATION_MARKER
     return rendered
+
+
+def _approval_mcp_context(server_name: str, tool_name: str, args: Optional[dict]) -> dict:
+    """Structured ``mcp`` card context for an approval prompt (trust gate and
+    ``tools.approval._plugin_rule_mcp_context``): the keys the adapters read (``server``/``tool`` header,
+    ``tool_description``, ``arguments`` body). Arguments are masked/redacted by the trust gate's formatter
+    with the roomier context bound; the description was sanitized at discovery."""
+    from tools import mcp_tool
+    from tools.mcp_tool_scope import _server_key
+
+    context = {"server": server_name, "tool": tool_name,
+               "arguments": _format_trust_gate_arguments(args or {}, max_chars=_MCP_CONTEXT_ARGUMENTS_MAX_CHARS)}
+    description = mcp_tool._tool_descriptions.get(_server_key(server_name), {}).get(tool_name)
+    return {**context, "tool_description": description} if description else context
 
 
 _NO_TRUST_KEY = object()
@@ -284,7 +306,9 @@ def _ask_for_call(server_name: str, tool_name: str, charge, booked: Optional[lis
     try:  # lazy: tools.approval routes the prompt to whichever surface owns the session
         from tools.approval_prompt import request_elicitation_consent
         answer = request_elicitation_consent(message, description, surface=f"mcp-trust/{server_name}", title=title,
-                                            remember_key=remember_key)
+                                            remember_key=remember_key,
+                                            context=_approval_mcp_context(server_name, tool_name, args)
+                                            if gated else None)
     except Exception as exc:
         logger.error("MCP trust gate: approval check failed for %s.%s: %s", server_name, tool_name, exc, exc_info=True)
         if over and charge is not None:

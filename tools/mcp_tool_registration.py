@@ -73,6 +73,12 @@ def _record_cost_policy(server_name: str, config: dict, key) -> None:
         _core._server_cost_policies[key] = policy
 
 
+def _card_tool_description(text: Any) -> str:
+    """Bounded, sanitized tool description for approval cards."""
+    from tools.mcp_tool_handlers import _MCP_TOOL_DESCRIPTION_MAX_CHARS, _sanitize_card_text
+    return _sanitize_card_text(str(text))[:_MCP_TOOL_DESCRIPTION_MAX_CHARS]
+
+
 def _record_tool_trust_metadata(server_name: str, config: dict, tools: list[Any], key=None) -> None:
     """Capture per-server trust and per-tool readOnlyHint at discovery — the security boundary: the call-time gate
     classifies from data we control, never re-read server-supplied state. *key* is the connection (default: the
@@ -87,6 +93,12 @@ def _record_tool_trust_metadata(server_name: str, config: dict, tools: list[Any]
         # Missing metadata must fail closed, not preserve a stale read-only hint.
         _core._tool_read_only_hints[key] = {
             t.name: _annotation_read_only_hint(t) for t in tools if getattr(t, "name", None)
+        }
+        # Display-only (the approval card's tool purpose), keyed by connection like the hints. Server-
+        # supplied text, so it is bounded and sanitized here, before it can reach any card.
+        _core._tool_descriptions[key] = {
+            t.name: _card_tool_description(getattr(t, "description", None))
+            for t in tools if getattr(t, "name", None) and getattr(t, "description", None)
         }
 
 
