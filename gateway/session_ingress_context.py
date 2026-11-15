@@ -217,6 +217,18 @@ def capture_provenance(runner, event):
     return provenance
 
 
+def route_provenance(runner, source, adapter):
+    """The provenance a native turn on *source* would capture through *adapter* now, for a wake that
+    runs as a route's stored origin (no committed envelope to borrow). ``restore_provenance``
+    recomputes the same binding, so a credential or profile change since still refuses."""
+    registries = [(None, runner.adapters), *getattr(runner, '_profile_adapters', {}).items()]
+    profile = next((owner for owner, mapping in registries if mapping.get(source.platform) is adapter), None)
+    bound, _home, _runtime_home, provenance = _binding(runner, source, profile)
+    if bound is not adapter:
+        raise RuntimeStoreError('admission_conflict')
+    return provenance
+
+
 def restore_provenance(runner, source, provenance):
     """Resolve current owned connector/home before installing in-process auth context."""
     if not isinstance(provenance, dict):

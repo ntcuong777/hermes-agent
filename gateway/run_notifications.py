@@ -898,10 +898,11 @@ class GatewayNotificationsMixin(GatewayUpdateNotificationsMixin, GatewayNotifica
         Not transactional: a crash after acceptance can replay (at-least-once).
         """
         from gateway.session_detached import follow_detached_pin
-        from gateway.session_local_recovery import restore_completion_route
+        from gateway.session_local_recovery import restore_completion_route, retarget_handed_off_event
         from gateway.wake import WakeNotAccepted, adapter_supports_push, admit_internal_event
+        queued, evt = evt, retarget_handed_off_event(self, evt)  # the drain reads its verdict off *queued*
         restore_completion_route(self, str(evt.get("session_key") or ""))  # watch notices and heartbeats too
-        queued, evt = evt, await follow_detached_pin(self, evt)  # the drain reads its verdict off *queued*
+        evt = await follow_detached_pin(self, evt)
         source = await asyncio.to_thread(self._build_process_event_source, evt)
         if not source:
             # API-server sessions bind the RAW X-Hermes-Session-Id key, not a structured ``agent:...`` key.
@@ -1487,8 +1488,15 @@ class GatewayNotificationsMixin(GatewayUpdateNotificationsMixin, GatewayNotifica
 
         Such events only carry ``session_key`` (the daemon worker lacks per-message routing
         metadata). Best-effort: a CLI-origin event (empty session_key) is left as-is and won't route.
+        One frozen on a local route a lane move left behind is re-keyed to the conversation's current
+        route first (``retarget_handed_off_event``), so it groups and preflights there.
         """
         from gateway.run import _parse_session_key
+        from gateway.session_local_recovery import retarget_handed_off_event
+        moved = retarget_handed_off_event(self, evt)
+        if moved is not evt:  # the drain's own queued dict: re-key it in place
+            evt.clear()
+            evt.update(moved)
         if evt.get("platform"):
             return  # already enriched
         parsed = _parse_session_key(evt.get("session_key", "") or "")

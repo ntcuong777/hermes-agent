@@ -444,6 +444,35 @@ def restore_completion_route(runner, session_key):
         restore_local_session(authority, parsed['chat_id'])
 
 
+# Routing an event snapshotted from its old route; the new route's stored origin supplies them.
+_FROZEN_ROUTE_FIELDS = ('platform', 'chat_type', 'chat_id', 'thread_id', 'scope_id', 'user_id', 'user_name',
+                        'message_id')
+
+
+def retarget_handed_off_event(runner, evt):
+    """A durable notice frozen on a local route whose conversation a messaging lane now owns
+    follows the conversation: the /resume that moved it rewrote the row's identity and retired
+    the receipt the local lane restores from.
+
+    *evt* itself while its key is not a local route, or that session's row still names it (or no
+    other route); else a copy keyed on the row's current route, without the routing snapshot it
+    took from the old one (the lane's stored origin replaces it). Never mutates *evt*."""
+    from gateway.run import _parse_session_key
+    from gateway.session_detached import _route_authority
+    key = str(evt.get('session_key') or '')
+    parsed = _parse_session_key(key) or {}
+    if parsed.get('platform') != Platform.LOCAL.value:
+        return evt
+    authority = _route_authority(runner, runner.session_store, key)
+    row = authority.db.get_session(parsed['chat_id']) if authority is not None else None
+    route = str((row or {}).get('session_key') or '')
+    moved = _parse_session_key(route) or {}
+    if not moved or route == key or moved.get('platform') == Platform.LOCAL.value:
+        return evt
+    return {**{field: value for field, value in evt.items() if field not in _FROZEN_ROUTE_FIELDS},
+            'session_key': route}
+
+
 def release_handed_off_receipts(db, *, epoch):
     """Boot heal for #143286: an older build's ``/handoff`` (or a platform ``/resume``) moved a local
     session onto a messaging lane but kept its local receipt, so every open, pin or rename refused it
