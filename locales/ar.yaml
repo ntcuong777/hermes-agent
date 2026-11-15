@@ -144,6 +144,7 @@ gateway:
     nav_next: "التالي → `/commands {page}`"
     out_of_range: "_(الصفحة المطلوبة {requested} خارج النطاق، يتم عرض الصفحة {page}.)_"
   compress:
+    started: "🗜️ جارٍ الضغط — قد تستغرق المحفوظات الطويلة بضع دقائق. سأرد هنا عند الانتهاء."
     not_enough: "لا توجد محادثة كافية للضغط (يلزم 4 رسائل على الأقل)."
     no_provider: "لا يوجد مزوّد مُهيّأ -- لا يمكن الضغط."
     nothing_to_do: "لا شيء للضغط بعد (النص كله لا يزال سياقًا محميًا)."
@@ -617,6 +618,7 @@ gateway:
     none_value: "لا شيء"
     unknown_value: "غير معروف"
   exec_approval:
+    mcp_header: "يريد خادم MCP «{server}» تشغيل الأداة «{tool}»"
     header: "يريد Hermes تشغيل أمر يحتاج إلى موافقتك"
     reason_label: "سبب التنبيه"
     default_reason: "أمر خطير"
@@ -969,6 +971,35 @@ gateway:
     hint: "أعد تعبئة الرصيد وأدِر الفوترة في المتصفح — سيتحدّث رصيدك هنا بعد ذلك."
   login:
     free_tier_remaining: "\nما زالت بعض المحادثات على المستوى المجاني؛ استخدم /model في تلك المحادثات للتبديل."
+  cwd:
+    current: "📁 دليل العمل: `{cwd}`"
+    set: "📁 تم تعيين دليل العمل إلى `{cwd}`\nستُنفَّذ أوامر هذه المحادثة هناك (`/new` يعيد الافتراضي)."
+    invalid: "❌ الدليل غير موجود: `{path}`"
+    backend: "❌ مساحات العمل متاحة فقط عندما يكون خلفية الطرفية `local`."
+    unauthorized: "لست مصرحًا لك باستخدام /cwd على هذا البوت."
+    failed: "❌ تعذّر تعيين دليل العمل. تحقق من سجلات البوابة."
+    list_header: "📁 مساحات عمل مرشحة — اختر بـ `/cwd <number>` أو اكتب المزيد من المسار:"
+    list_item: "{index}. `{path}`"
+    list_footer: "أو عيّن أي دليل بـ `/cwd <path>`."
+    list_empty: "لا توجد مساحات عمل معروفة بعد — عيّن واحدة بـ `/cwd <path>` (ستُدرج هنا المشاريع والمستودعات المستخدمة حديثًا)."
+    list_ambiguous: "❓ عدة مساحات عمل مطابقة:\n{matches}\n\nاكتب المزيد من المسار."
+    no_chat_id: "تعذّر تحديد معرّف المحادثة."
+    mode_not_enabled: "وضع المواضيع متعدد الجلسات غير مفعّل حاليًا لهذه المحادثة."
+    disable_failed: "فشل تعطيل وضع المواضيع: {error}"
+    mode_disabled: "تم إيقاف وضع المواضيع متعدد الجلسات لهذه المحادثة.\n\nلن تُحذف مواضيع Telegram الموجودة — لن تُعزل بعد الآن كجلسات مستقلة فحسب. سيعمل الخاص بجذر المحادثة كدردشة Hermes عادية مجددًا. شغّل /topic لإعادة التفعيل لاحقًا."
+    status_enabled: "مواضيع Telegram متعدد الجلسات مفعّلة."
+    status_how_to: "لإنشاء دردشة Hermes جديدة، افتح «All Messages» أعلى واجهة هذا البوت وأرسل أي رسالة هناك. سينشئ Telegram موضوعًا جديدًا لها."
+    previous_unlinked: "الجلسات السابقة غير المرتبطة:"
+    restore_one: "لاستعادة واحدة:"
+    restore_example: "مثال: أرسل /topic {session_id} داخل موضوع."
+    no_unlinked: "لا توجد جلسات Telegram سابقة غير مرتبطة."
+    restore_later: "لاستعادة جلسة سابقة لاحقًا:"
+    session_not_found: "الجلسة غير موجودة: {session_id}"
+    not_telegram_session: "هذه الجلسة ليست جلسة Telegram ولا يمكن استعادتها في هذا الموضوع."
+    not_your_session: "هذه الجلسة لا تنتمي إلى مستخدم Telegram هذا."
+    already_linked: "هذه الجلسة مرتبطة بالفعل بموضوع Telegram آخر."
+    restored: "تمت استعادة الجلسة: {title}"
+    restored_last_message: "\n\nآخر رسالة من Hermes:\n{text}"
 platform:
   whatsapp:
     clarify_other_title: "✏️ أخرى"
@@ -1082,6 +1113,8 @@ platform:
       choice_error: "خطأ أثناء تطبيق الاختيار: {error}"
       choice_expired: "⏱ انتهت صلاحية الاختيار — لم يُجرَ أي تغيير."
     command:
+      cwd:
+        arg_path: "دليل مساحة العمل لهذه المحادثة (مثل ~/code/foo). اتركه فارغًا لعرض الحالي."
       new:
         description: "بدء محادثة جديدة"
         followup: "بدأت محادثة جديدة~"
@@ -1504,6 +1537,8 @@ platform:
     prompt_other: "✏️ غير ذلك (اكتب الإجابة)"
     prompt_expired: ⌛ لم يعد هذا الطلب ينتظر إجابة. أرسل ردك كرسالة عادية.
 slash:
+  cwd:
+    description: "اعرض أو عيّن مساحة عمل الطرفية لهذه المحادثة (حتى /new)"
   rewind:
     description: "الإرجاع إلى موجّه سابق لتعديله وإعادة إرساله، أو التفريع من هناك (Esc Esc)"
   approve:

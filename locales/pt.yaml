@@ -144,6 +144,7 @@ gateway:
     nav_next: "seguinte → `/commands {page}`"
     out_of_range: "_(A página solicitada {requested} estava fora do intervalo, a mostrar a página {page}.)_"
   compress:
+    started: "🗜️ Comprimindo — um histórico longo pode levar alguns minutos. Respondo aqui quando terminar."
     not_enough: "Não há conversa suficiente para comprimir (são necessárias pelo menos 4 mensagens)."
     no_provider: "Nenhum fornecedor configurado — não é possível comprimir."
     nothing_to_do: "Ainda não há nada para comprimir (a transcrição continua a ser todo o contexto protegido)."
@@ -617,6 +618,7 @@ gateway:
     none_value: "nenhum"
     unknown_value: "desconhecido"
   exec_approval:
+    mcp_header: "O servidor MCP «{server}» quer executar a ferramenta «{tool}»"
     header: "O Hermes quer executar um comando que precisa da sua aprovação"
     reason_label: "Motivo da sinalização"
     default_reason: "comando perigoso"
@@ -969,6 +971,35 @@ gateway:
     hint: "Recarregue e gerencie o faturamento no navegador — seu saldo é atualizado aqui depois."
   login:
     free_tier_remaining: "\nAlguns chats ainda estão no nível gratuito; use /model nesses chats para trocar."
+  cwd:
+    current: "📁 Diretório de trabalho: `{cwd}`"
+    set: "📁 Diretório de trabalho definido como `{cwd}`\nOs comandos nesta conversa agora rodam lá (um `/new` volta ao padrão)."
+    invalid: "❌ O diretório não existe: `{path}`"
+    backend: "❌ Os espaços de trabalho só estão disponíveis quando o backend do terminal é `local`."
+    unauthorized: "Você não tem autorização para usar /cwd neste bot."
+    failed: "❌ Não foi possível definir o diretório de trabalho. Verifique os logs do gateway."
+    list_header: "📁 Espaços de trabalho candidatos — escolha com `/cwd <number>` ou digite mais do caminho:"
+    list_item: "{index}. `{path}`"
+    list_footer: "Ou defina qualquer diretório com `/cwd <path>`."
+    list_empty: "Ainda não há espaços de trabalho conhecidos — defina um com `/cwd <path>` (projetos e repositórios recentes aparecerão aqui)."
+    list_ambiguous: "❓ Vários espaços de trabalho correspondem:\n{matches}\n\nDigite mais do caminho."
+    no_chat_id: "Não foi possível determinar o ID do chat."
+    mode_not_enabled: "O modo de tópicos multissessão não está ativado atualmente para este chat."
+    disable_failed: "Falha ao desativar o modo de tópicos: {error}"
+    mode_disabled: "O modo de tópicos multissessão agora está DESATIVADO para este chat.\n\nOs tópicos existentes do Telegram não são removidos — eles apenas deixam de ser tratados como sessões independentes. O DM raiz volta a funcionar como um chat normal do Hermes. Execute /topic para reativar depois."
+    status_enabled: "Os tópicos multissessão do Telegram estão ativados."
+    status_how_to: "Para criar um novo chat do Hermes, abra «All Messages» no topo desta interface do bot e envie qualquer mensagem lá. O Telegram criará um novo tópico."
+    previous_unlinked: "Sessões anteriores não vinculadas:"
+    restore_one: "Para restaurar uma:"
+    restore_example: "Exemplo: envie /topic {session_id} dentro de um tópico."
+    no_unlinked: "Nenhuma sessão anterior do Telegram não vinculada foi encontrada."
+    restore_later: "Para restaurar uma sessão anterior mais tarde:"
+    session_not_found: "Sessão não encontrada: {session_id}"
+    not_telegram_session: "Essa sessão não é uma sessão do Telegram e não pode ser restaurada neste tópico."
+    not_your_session: "Essa sessão não pertence a este usuário do Telegram."
+    already_linked: "Essa sessão já está vinculada a outro tópico do Telegram."
+    restored: "Sessão restaurada: {title}"
+    restored_last_message: "\n\nÚltima mensagem do Hermes:\n{text}"
 platform:
   whatsapp:
     clarify_other_title: "✏️ Outro"
@@ -1082,6 +1113,8 @@ platform:
       choice_error: "Erro ao aplicar a seleção: {error}"
       choice_expired: "⏱ Seleção expirada — nenhuma alteração feita."
     command:
+      cwd:
+        arg_path: "Diretório do espaço de trabalho para esta conversa (ex.: ~/code/foo). Deixe vazio para mostrar o atual."
       new:
         description: "Iniciar uma nova conversa"
         followup: "Nova conversa iniciada~"
@@ -1504,6 +1537,8 @@ platform:
     prompt_other: "✏️ Outro (digitar resposta)"
     prompt_expired: ⌛ Essa solicitação não está mais aguardando resposta. Envie sua resposta como uma mensagem normal.
 slash:
+  cwd:
+    description: "Mostra ou define o espaço de trabalho de terminal desta conversa (até /new)"
   rewind:
     description: "Retroceder a um prompt anterior para editá-lo e reenviá-lo, ou bifurcar a partir dali (Esc Esc)"
   approve:
