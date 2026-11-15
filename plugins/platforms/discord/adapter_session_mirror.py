@@ -159,6 +159,14 @@ def _resolve_thread(adapter: Any, thread_id: str):
         return None
 
 
+def _live_lineage_sid(db: Any, sid: str) -> str:
+    """The lineage TIP that owns *sid*'s live context — /title and /resume both target it, so
+    the mirror's writes must too. Falls back to *sid* when the store can't resolve."""
+    rows = db.list_sessions_rich(id_query=sid, limit=1, order_by_last_active=True,
+                                 project_compression_tips=True, include_children=False)
+    return str(rows[0].get("id")) if rows else sid
+
+
 def _starter_message(title: str) -> str:
     return (f"🖥 Mirrored session **{title}** — talking here reaches the agent that runs it on "
             f"this machine. `/resume` switches this thread to another session.")
@@ -274,7 +282,8 @@ async def sync_thread_title(adapter: Any, thread: Any) -> None:
     title sync), for sessions this gateway has mirrored. The machine tag is stripped before the
     write — it never enters the session title — and a same-name echo (the poller's own rename
     arriving back through on_thread_update) is skipped, which is what keeps the two directions
-    from feeding each other."""
+    from feeding each other. The write lands on the session's live lineage TIP (the row /title
+    itself would target), not the root the mirror originally bound."""
     tag_prefix = f"[{_machine_tag()}] "
     name = (getattr(thread, "name", "") or "").strip()
     if name.startswith(tag_prefix):
@@ -302,15 +311,16 @@ async def sync_thread_title(adapter: Any, thread: Any) -> None:
     except Exception:  # health: allow BLE001 -- a rename sync must not break the adapter's event loop
         return
     try:
-        await asyncio.to_thread(db.set_session_title, sid, stripped)
+        target_sid = _live_lineage_sid(db, sid)
+        await asyncio.to_thread(db.set_session_title, target_sid, stripped)
+        seen[sid] = (str(thread.id), stripped)
+        _save_map(adapter, seen)
     except ValueError as exc:  # a duplicate title: refused by the store; the thread keeps the name
         logger.info("[%s] Session mirror: Discord rename not applied to %s (%s)", adapter.name, sid, exc)
         return
     except Exception:  # health: allow BLE001 -- other refusals keep the old title, silently
         logger.info("[%s] Session mirror: Discord rename %r not applied to %s", adapter.name, name, sid, exc_info=True)
         return
-    seen[sid] = (str(thread.id), stripped)
-    _save_map(adapter, seen)
 
 
 async def loop(adapter: Any) -> None:
