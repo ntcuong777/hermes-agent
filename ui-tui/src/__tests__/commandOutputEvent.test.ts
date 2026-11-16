@@ -50,3 +50,30 @@ describe('command.output from a lane the session is mirrored onto', () => {
     expect(sys).not.toHaveBeenCalled()
   })
 })
+
+describe('session.info that lost its route', () => {
+  const info = (payload: Record<string, unknown>) => {
+    createGatewayEventHandler(ctx())({ payload, session_id: 'sess-1', type: 'session.info' } as any)
+  }
+
+  it('keeps the model and effort on screen when a frame carries none', async () => {
+    const { getUiState } = await import('../app/uiStore.js')
+    patchUiState({ info: undefined as any, sid: 'sess-1' })
+
+    info({ model: 'claude-sonnet-5-5', reasoning_effort: 'high', reasoning_effort_wire: 'high', fast: false })
+    info({ model: null, reasoning_effort: null, lazy: false })
+    info({ model: '', running: false })
+
+    expect(getUiState().info).toMatchObject({ fast: false, model: 'claude-sonnet-5-5', reasoning_effort: 'high', reasoning_effort_wire: 'high' })
+  })
+
+  it('still takes a real change, including an empty effort', async () => {
+    const { getUiState } = await import('../app/uiStore.js')
+    patchUiState({ info: undefined as any, sid: 'sess-1' })
+
+    info({ model: 'a', reasoning_effort: 'high' })
+    info({ model: 'b', reasoning_effort: '' })
+
+    expect(getUiState().info).toMatchObject({ model: 'b', reasoning_effort: '' })
+  })
+})

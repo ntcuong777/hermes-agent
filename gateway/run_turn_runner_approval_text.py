@@ -43,11 +43,11 @@ def _cutting_text_prompt(adapter: Any, chat_id: str, command: str, description: 
     leads the fenced body with the tool description."""
     from gateway.platforms.base import fit_prefix
     from gateway.platforms.base_exec_approval import (
-        approval_timeout_seconds, code_fence, ea_header_text, ea_mcp_block, ea_mcp_header_text,
+        approval_card_parts, approval_timeout_seconds, code_fence, ea_header_text, ea_mcp_header_text,
         fit_fenced, ea_reason_label_text, format_approval_deadline_line)
     limit = adapter.max_message_length_for_chat(chat_id)
     measure = adapter.message_len_fn_for_chat(chat_id)
-    body = ea_mcp_block(mcp, command) if mcp else command
+    body, description = approval_card_parts(command, description, mcp)
     if smart_denied:
         heading = t("gateway.exec_approval.smart_deny_heading")
     elif mcp:

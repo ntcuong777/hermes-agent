@@ -497,8 +497,36 @@ def local_session_info(authority, ref):
         notices = (project_plugins_warning(policy), NOT_LOCAL_WARNING if policy.client_env_remote else None)
         if warning := ' '.join(filter(None, notices)):
             info['config_warning'] = warning
+    _complete_route(authority, live, info, ref.session_id)
     info.update(_classic_cli_fields(authority, ref, live, agent, policy))
     return info
+
+
+def _complete_route(authority, live, info, session_id):
+    """A viewer's model and effort pills never go empty. A lane-owned or mounted session with no policy and
+    no model on its agent used to publish ``model: None`` and no effort, and a viewer merges what arrives
+    over what it shows: the pills vanished the moment the session was synced to a thread. What the session
+    runs next is known without an agent: the lane's resolved route, else the route its stored row records."""
+    if info.get('model') and info.get('reasoning_effort') is not None:
+        return
+    fields = {}
+    try:
+        if live.source is not None and live.source.platform != Platform.LOCAL:
+            from gateway.session_messaging_picks import messaging_route_info
+            fields = messaging_route_info(authority.runner, live)
+        elif live.source is None:  # a history mount: what its stored row says
+            from gateway.session_lane_model import route_from_row
+            stored = authority.db.get_session(session_id) or {}
+            route = route_from_row(stored) or {}
+            if route.get('model'):
+                fields = {'model': route['model'],
+                          **effort_fields(route.get('reasoning'), '', route['model'], route.get('provider'),
+                                          route.get('base_url'), route.get('api_mode'))}
+    except Exception:
+        logger.debug('route for a viewer\'s pills unavailable', exc_info=True)
+    for key, value in fields.items():
+        if info.get(key) is None or (key == 'model' and not info[key]):
+            info[key] = value
 
 
 def _classic_cli_fields(authority, ref, live, agent, policy):

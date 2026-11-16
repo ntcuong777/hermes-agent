@@ -659,6 +659,21 @@ function applySessionInfo(payload: unknown, { appendMessage, setHistoryItems, se
 
   let info: SessionInfo = { ...current, ...incoming }
 
+  // A frame that lost its route (a synced session with no agent yet, a partial publish) reports no model
+  // or effort: it must not blank the pills already on screen. A real change still lands.
+  const known = current as Record<string, unknown> | undefined
+  const kept = (key: string) => (incoming as Record<string, unknown>)[key] == null && known?.[key] != null
+
+  if (kept('model') || ((incoming as Record<string, unknown>).model === '' && current?.model)) {
+    info = { ...info, model: current?.model }
+  }
+
+  for (const key of ['reasoning_effort', 'reasoning_effort_wire', 'service_tier', 'fast']) {
+    if (kept(key)) {
+      info = { ...info, [key]: known?.[key] }
+    }
+  }
+
   // A busy-time admission painted no bubble at submit; paint it when the
   // authority starts it, so it lands after the previous assistant reply.
   for (const started of newlyStartedRows(current?.pending_submissions, incoming.pending_submissions)) {

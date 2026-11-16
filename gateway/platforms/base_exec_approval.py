@@ -40,11 +40,33 @@ def ea_mcp_header_text(server: str, tool: str) -> str:
     return t("gateway.exec_approval.mcp_header", server=server, tool=tool)
 
 
+_MCP_ARGUMENTS_MARK = "\n\nArguments:\n"
+
+
 def ea_mcp_block(mcp: dict, command: str) -> str:
-    """Fenced body for an MCP tool-call approval: what the tool does, then the prompt text
-    (notices + redacted arguments) the message already carries."""
-    parts = [str(mcp.get("tool_description") or "").strip(), str(command or "").strip()]
+    """Fenced body for an MCP tool-call approval: what the tool does, then the call as the prompt text
+    states it (notices + arguments). The prompt text carries the arguments cut to the trust gate's 1,200
+    characters; the structured context carries them in full (4,000, redacted), which is what the
+    TUI/Desktop card shows, so a card shows those: nobody approves a call whose arguments were cut."""
+    text = str(command or "").strip()
+    arguments = str(mcp.get("arguments") or "").strip()
+    if arguments:
+        head = text.split(_MCP_ARGUMENTS_MARK, 1)[0].strip()
+        text = f"{head}{_MCP_ARGUMENTS_MARK}{arguments}" if head else f"Arguments:\n{arguments}"
+    parts = [str(mcp.get("tool_description") or "").strip(), text]
     return "\n\n".join(p for p in parts if p)
+
+
+def approval_card_parts(command: str, description: str, mcp: Optional[dict] = None) -> tuple[str, str]:
+    """``(body, reason)`` as every surface shows a request: the description's first line is the reason (the
+    headline), and the lines under it (a plugin approval's command, path, URL or query, which the gate
+    appends there: ``permission-gate`` names what a web fetch, a directory write or a search is about) join
+    the body with the command, so they are previewed whole and covered by the Deny-only rule instead of
+    being cut with the reason's budget. An MCP call's body is its tool description and full arguments."""
+    reason, *detail = str(description or "").split("\n")
+    lead = "\n".join(line for line in detail if line.strip())
+    body = ea_mcp_block(mcp, command) if mcp else str(command or "")
+    return "\n".join(part for part in (lead, body) if part), reason
 
 
 def ea_reason_label_text() -> str:
@@ -143,10 +165,10 @@ def render_exec_approval(adapter: Any, command: str, description: str, smart_den
     that only Deny is offered because it could not be (#62359). ``mcp`` (the structured MCP tool-call
     context) swaps the header for the server/tool headline and leads the fenced body with the tool
     description."""
-    header, body = adapter._EA_HEADER, str(command or "")
+    header = adapter._EA_HEADER
+    body, description = approval_card_parts(command, description, mcp)
     if mcp:
         header = adapter._ea_mcp_header(str(mcp.get("server") or ""), str(mcp.get("tool") or ""))
-        body = ea_mcp_block(mcp, command)
     if adapter._EA_REASON_BUDGET:
         description = adapter._ea_fit(str(description or ""), adapter._EA_REASON_BUDGET)
     key = "truncated_full_above" if full_command_shown else "truncated_deny_only"

@@ -443,7 +443,8 @@ from gateway.platforms.base_delivery_ledger import (
 from gateway.platforms.base_exec_approval import (
     approval_timeout_seconds, ea_action_labels, ea_default_reason_text, ea_header_text,
     ea_mcp_header_text, ea_reason_label_text, ea_smart_deny_line_text, exec_approval_cmd_budget,
-    format_approval_deadline_line, card_shows_whole_command, render_exec_approval)
+    format_approval_deadline_line, card_shows_whole_command, render_exec_approval,
+    approval_card_parts)
 from gateway.platforms.base_streaming_tts import (
     AudioFormat, StreamingTTSHandle, streaming_tts_should_skip_whole_file, streaming_tts_turn_key)
 from gateway.platforms.event import MessageEvent, MessageType, ProcessingOutcome
@@ -2758,7 +2759,10 @@ class BasePlatformAdapter(_SessionModelSettingsMixin, ABC):
             allow_permanent=allow_permanent, allow_session=allow_session, smart_denied=smart_denied)
         text, truncated = render_exec_approval(self, command, description, smart_denied, True, mcp=mcp)
         # The request was created Deny-only; Approve goes live once the card or the full command shows it whole.
-        if not await card_shows_whole_command(self, chat_id, session_key, request_id, command, metadata, truncated):
+        # What must be readable before Approve goes live: the command AND the detail lines (the URL, path,
+        # query) the reason carries, or an MCP call's whole body, exactly what the preview is cut from.
+        whole = approval_card_parts(command, description, mcp)[0]
+        if not await card_shows_whole_command(self, chat_id, session_key, request_id, whole, metadata, truncated):
             text = render_exec_approval(self, command, description, smart_denied, False, mcp=mcp)[0]
             actions = [row for row in actions if row[1] == "deny"]
         return await self._send_exec_approval_prompt(ExecApprovalPrompt(

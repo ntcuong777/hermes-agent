@@ -44,6 +44,21 @@ class PendingControls:
             if data.get('idle') is True:
                 self.idle.add(prompt_id)
             self.events.publish(session_id, prompt, event_type='approval.request')
+            self._settle_when_answered(session_id, route, generation, prompt_id)
+
+    def _settle_when_answered(self, session_id, route, generation, prompt_id):
+        """Withdraw the prompt from every viewer the moment its wait ends, by ANY path: a tap on a
+        platform card (a Discord button resolves ``tools.approval`` directly and never passes through
+        ``respond``), ``/approve`` in the thread, a timeout. Without this the card stayed on the TUI
+        until some later read happened to ``snapshot``. The hook runs on the waiter's thread after the
+        entry left the queue, so ``snapshot`` finds the request inactive and publishes ``approval.settled``."""
+        from tools.approval import observe_gateway_settle
+
+        def settled(_reason):
+            self.snapshot(session_id, generation)
+        # The wait enqueues its entry before it notifies, so the entry is here to watch; a prompt registered
+        # without one (a synthetic card) has nothing to wait for and stays until a read settles it.
+        observe_gateway_settle(route, prompt_id, settled)
 
     def register_clarify(self, session_id, generation, entry, *, timeout_s=None):
         from gateway.run import _redact_approval_command
