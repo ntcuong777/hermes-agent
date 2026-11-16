@@ -90,3 +90,29 @@ def test_permission_denied_log_names_the_raising_check(caplog):
     line = next(r.getMessage() for r in caplog.records if 'refused permission_denied' in r.getMessage())
     assert line.startswith('session.resume refused permission_denied for session s9 at ')
     assert 'test_session_commands_lane_owned.py:' in line
+
+
+def test_reads_on_a_mirror_bound_session_answer_locally(monkeypatch):
+    """``/memory pending`` is a registry read: on a session a forwarding lane owns it runs here
+    (its answer on the screen that asked), not relayed into the thread."""
+    monkeypatch.setattr(session_commands, '_client_local_plugin', lambda name: False)
+    forward = AsyncMock()
+    connection = SimpleNamespace(forward_command_to_lane=forward, has_forwarding_lane=AsyncMock(return_value=True))
+    assert _run(session_commands._nonlocal_command(
+        connection, SimpleNamespace(session_id='s'), 'memory', 'pending', None, 'session:read', 'read')) is None
+    forward.assert_not_called()
+
+
+def test_reads_on_other_messaging_sessions_stay_refused(monkeypatch):
+    monkeypatch.setattr(session_commands, '_client_local_plugin', lambda name: False)
+    connection = SimpleNamespace(forward_command_to_lane=AsyncMock(return_value=None),
+                                 has_forwarding_lane=AsyncMock(return_value=False))
+    with pytest.raises(RuntimeStoreError) as refused:
+        _run(session_commands._nonlocal_command(
+            connection, SimpleNamespace(session_id='s'), 'memory', 'pending', None, 'session:read', 'read'))
+    assert refused.value.reason == 'permission_denied'
+
+
+def test_memory_pending_is_a_read_and_memory_approve_is_not():
+    assert session_commands.command_verdict('memory', 'pending') == 'read'
+    assert session_commands.command_verdict('memory', 'approve 1') != 'read'

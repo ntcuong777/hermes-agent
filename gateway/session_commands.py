@@ -193,13 +193,18 @@ def _runner_command(name):
                  if get_plugin_command_handler(registered)), None)
 
 
-async def _nonlocal_command(connection, ref, name, arg, runner_command, capability):
+async def _nonlocal_command(connection, ref, name, arg, runner_command, capability, verdict=None):
     """A command a local surface sent to a session whose source is not one of its local routes.
     None: run it here anyway — a client-local plugin command (the composer stash) touches only
-    the calling client's own state, never this session's agent. A dict: it was relayed to the
-    session's forwarding lane (the Discord mirror's bound thread) to run as that lane's command.
-    With no such lane the refusal stands (``permission_denied``)."""
+    the calling client's own state, never this session's agent; a registry read (``/memory
+    pending``, ``/status``) on a session a forwarding lane owns changes nothing, so its answer
+    belongs on the screen that asked. A dict: anything else was relayed to that lane (the Discord
+    mirror's bound thread) to run as the lane's command. With no such lane the refusal stands
+    (``permission_denied``)."""
     if runner_command is not None and runner_command[0] == 'plugin' and _client_local_plugin(runner_command[1]):
+        return None
+    lane = getattr(connection, 'has_forwarding_lane', None)
+    if verdict == 'read' and lane is not None and await lane(ref):
         return None
     forward = getattr(connection, 'forward_command_to_lane', None)
     typed = '/' + name + (' ' + arg if arg else '')
@@ -542,7 +547,7 @@ async def execute_command(connection, ref, params, *, dispatch=False):
         raise read_only()  # no policy or agent to run even a read command against
     from gateway.session_local import authorize_local_source
     if authorize_local_source(authority.runner, live.source) is not True:
-        forwarded = await _nonlocal_command(connection, ref, name, arg, runner_command, capability)
+        forwarded = await _nonlocal_command(connection, ref, name, arg, runner_command, capability, verdict)
         if forwarded is not None:
             return forwarded
     if capability != 'session:read':

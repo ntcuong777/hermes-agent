@@ -943,6 +943,11 @@ class AuthorityConnection:
         await asyncio.to_thread(self.authority.authorize, self.actor, ref, capability)
         return adapter
 
+    async def has_forwarding_lane(self, ref) -> bool:
+        """Whether *ref* is owned by a lane that takes local forwards (read-gated): a mirror-bound
+        session, whose registry reads a local surface answers itself."""
+        return await self._forwarding_lane(ref, 'session:read') is not None
+
     async def forward_command_to_lane(self, ref, typed, capability) -> dict | None:
         """A slash command typed in a local surface on a session a forwarding lane owns (the
         Discord mirror's bound thread): relayed for the lane to run as its own command, under
