@@ -1,6 +1,5 @@
 """Authenticated WS projection of the gateway authority; no TUI execution fallback."""
 import asyncio
-import json
 import logging
 import re
 from dataclasses import asdict
@@ -50,22 +49,6 @@ _SUBMIT_PARAMS = frozenset({
 #: being forwarded with the meaning silently dropped.
 _NOT_FORWARDABLE = ('attachments', 'finite', 'unattended', 'model_override', 'clarify_batch',
                     'voice_turn', 'voice_context', 'interrupted')
-
-
-def _lane_source(row):
-    """The session's lane source from its stored origin, or None for a row no messaging lane
-    serves (local/api rows keep their own owner rules — there is no lane to forward into)."""
-    if not row:
-        return None
-    from gateway.session import SessionSource
-    try:
-        origin = json.loads(row.get('origin_json') or '')
-        source = SessionSource.from_dict(origin) if isinstance(origin, dict) else None
-    except (TypeError, ValueError, KeyError):
-        return None
-    if source is None or source.platform in (Platform.LOCAL, Platform.API_SERVER):
-        return None
-    return source
 
 
 def _profile_label(profile_id) -> str:
@@ -431,7 +414,9 @@ class AuthorityConnection:
                 if method in GROUP_METHODS or method == 'profiles.list':
                     result = await dispatch_group_control(self, method, params)
                 elif method not in handlers and (plugin := await resolve_plugin_rpc(self, method)) is not None:
-                    return {'jsonrpc': '2.0', 'id': rid, 'result': await call_plugin_rpc(self, ref, method, plugin, params)}
+                    from gateway.session_lane import call_with_rescue
+                    return {'jsonrpc': '2.0', 'id': rid, 'result': await call_with_rescue(
+                        self, ref, partial(call_plugin_rpc, self, ref, method, plugin, params))}
                 elif method not in handlers or (method in CONNECTION_METHODS and not session_owned(params)):
                     # JSON-RPC's own verdict: clients key compat fallbacks on -32601, and a
                     # 4001 'invalid_params' would read as a bad argument on a method that exists.
@@ -440,7 +425,11 @@ class AuthorityConnection:
                         'code': -32601, 'message': unknown_method_message(method),
                         'data': {'reason': 'unknown_method'}}}
                 else:
-                    result = await handlers[method](ref, params)
+                    # A refusal a handler written for local sessions raises on a session the Discord
+                    # mirror bound is answered by the call's class, never as permission_denied
+                    # (gateway/session_lane.py): every method, including one added later.
+                    from gateway.session_lane import call_with_rescue
+                    result = await call_with_rescue(self, ref, partial(handlers[method], ref, params))
                     if isinstance(result, DeferredReply):  # answered off the serial dispatch
                         check_params_accepted(contract, original_params)
                         return result.start(self, rid, partial(check_result, contract))
@@ -929,16 +918,13 @@ class AuthorityConnection:
                 'authority_epoch': 0, 'execution_generation': None}
 
     async def _forwarding_lane(self, ref, capability):
-        """The adapter of *ref*'s messaging lane when it takes local forwards, after the store's
-        own gate for *capability* (live restore, read-only-history verdict — a history mount
-        refuses honestly instead of forwarding into nowhere); None = no such lane."""
-        row = await asyncio.to_thread(self.authority.db.get_session, ref.session_id)
-        source = _lane_source(row)
-        if source is None:
-            return None
-        resolve = getattr(getattr(self.authority, 'runner', None), '_adapter_for_source', None)
-        adapter = resolve(source) if resolve is not None else None
-        if adapter is None or not getattr(adapter, 'accepts_local_forward', False):
+        """The adapter of *ref*'s messaging lane when this host's mirror bound it there
+        (``session_lane.bound_lane``), after the store's own gate for *capability* (live restore,
+        read-only-history verdict — a history mount refuses honestly instead of forwarding into
+        nowhere); None = no such lane."""
+        from gateway.session_lane import bound_lane
+        adapter = await asyncio.to_thread(bound_lane, self.authority, ref.session_id)
+        if adapter is None:
             return None
         await asyncio.to_thread(self.authority.authorize, self.actor, ref, capability)
         return adapter

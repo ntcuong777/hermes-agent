@@ -238,6 +238,19 @@ async def _forward_sender_name(adapter: Any, admin: str) -> str | None:
         return None
 
 
+def owns_local_forward(adapter: Any, session_id: str) -> bool:
+    """Local forwards are on and *session_id* (or its lineage tip) has a bound thread: the session
+    is one this mirror owns, so a local surface's commands on it relay or answer locally instead of
+    being refused (gateway/session_lane.py). Any other Discord chat keeps its refusals."""
+    if not local_forward_enabled(adapter) or not session_id:
+        return False
+    try:
+        return _bound_thread_id(adapter, session_id) is not None
+    except Exception:  # health: allow BLE001 -- an unreadable map is "not bound": the refusal stands
+        logger.info("[%s] Session mirror: could not read the binding of %s", adapter.name, session_id, exc_info=True)
+        return False
+
+
 async def forward_local_submit(adapter: Any, *, session_id: str, text: str, submission_id: str,
                               command: bool = False) -> dict | None:
     """Relay a local surface's prompt into *session_id*'s bound thread (`session_mirror_local_forward`).

@@ -103,9 +103,21 @@ def _owner_ref(authority, ref, params):
     return ref if owner == ref.session_id else SessionRef(ref.profile_id, owner)
 
 
+# Operations that rewrite a conversation's transcript or fork it. On a session the Discord mirror bound
+# to a thread (gateway/session_lane.py) the thread is the one writer: these never commit here, the
+# client relays the typed command instead (``lane_owned``). Metadata (rename, archive, pin) and the
+# chat's own model/reasoning picks still apply here: they run no turn and write no transcript row.
+_LANE_WRITES = {'compress': '/compress', 'rewind': '/undo', 'reset': '/new', 'branch': '/branch'}
+
+
 async def mutate_session(authority, actor, ref, params):
     from gateway.session_runtime_workers import track_mutation
     authority._require_admission_open()
+    if isinstance(params, dict) and params.get('operation') in _LANE_WRITES:
+        from gateway.session_lane import bound_lane, lane_owned_refusal
+        if await asyncio.to_thread(bound_lane, authority, ref.session_id) is not None:
+            authority.authorize(actor, ref, 'session:control')  # a refusal for nobody else to learn from
+            raise lane_owned_refusal(_LANE_WRITES[params['operation']])
     # A request socket can disappear while its writer is inside to_thread. The owner task keeps
     # the session gate until commit AND publication finish, and retirement joins that same task.
     task = track_mutation(authority, _owned_mutation(authority, actor, ref, params))

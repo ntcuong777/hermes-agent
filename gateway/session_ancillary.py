@@ -157,7 +157,12 @@ async def attach_file(connection, ref, params):
     authority = connection.authority
     policy = policy_for_source(authority.runner, authority.sessions[ref.session_id].source)
     if policy is None:
-        raise RuntimeStoreError('permission_denied')
+        # A mirror-bound session: the file is staged in the folder it recorded, for this client's
+        # next prompt (staging writes no transcript row and runs nothing).
+        from gateway.session_lane import viewer_policy
+        policy = await asyncio.to_thread(viewer_policy, authority, ref)
+        if policy is None:
+            raise RuntimeStoreError('permission_denied')
     # The staging helpers are bound onto the sidecar module's globals (method_ctx.bind_module).
     from tui_gateway import server
     session = {'cwd': policy.cwd, 'profile_home': authority.profile_id}

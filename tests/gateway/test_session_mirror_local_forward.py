@@ -48,7 +48,8 @@ def _submit(connection):
 @pytest.mark.asyncio
 async def test_unattached_submit_to_a_bound_session_is_forwarded(tmp_path):
     forward = AsyncMock(return_value={'queued': True, 'thread_id': '157999'})
-    adapter = SimpleNamespace(accepts_local_forward=True, forward_local_submit=forward)
+    adapter = SimpleNamespace(accepts_local_forward=True, owns_local_forward=lambda sid: True,
+                              forward_local_submit=forward)
     with SessionDB(db_path=tmp_path / 'state.db') as db:
         connection = _wired(db, origin=_ORIGIN, adapter=adapter)
         try:
@@ -90,7 +91,8 @@ async def test_local_session_submit_keeps_the_owner_refusal(tmp_path):
     """A local-origin row has its own owner rules and no lane: the refusal is untouched even
     when the adapter offers a forward."""
     forward = AsyncMock(return_value={'queued': True, 'thread_id': '157999'})
-    adapter = SimpleNamespace(accepts_local_forward=True, forward_local_submit=forward)
+    adapter = SimpleNamespace(accepts_local_forward=True, owns_local_forward=lambda sid: True,
+                              forward_local_submit=forward)
     with SessionDB(db_path=tmp_path / 'state.db') as db:
         connection = _wired(db, origin=dict(_ORIGIN, platform='local'), adapter=adapter)
         try:
@@ -114,7 +116,8 @@ async def test_local_session_submit_keeps_the_owner_refusal(tmp_path):
 ])
 async def test_non_plain_submits_keep_the_refusal(tmp_path, extra):
     forward = AsyncMock(return_value={'queued': True, 'thread_id': '157999'})
-    adapter = SimpleNamespace(accepts_local_forward=True, forward_local_submit=forward)
+    adapter = SimpleNamespace(accepts_local_forward=True, owns_local_forward=lambda sid: True,
+                              forward_local_submit=forward)
     params = {'session_id': 's', 'text': 'run the red test', 'submission_id': 'sub-1', **extra}
     params = {k: v for k, v in params.items() if v is not None}
     with SessionDB(db_path=tmp_path / 'state.db') as db:
@@ -133,7 +136,8 @@ async def test_non_plain_submits_keep_the_refusal(tmp_path, extra):
 @pytest.mark.asyncio
 async def test_api_text_equal_to_text_still_forwards(tmp_path):
     forward = AsyncMock(return_value={'queued': True, 'thread_id': '157999'})
-    adapter = SimpleNamespace(accepts_local_forward=True, forward_local_submit=forward)
+    adapter = SimpleNamespace(accepts_local_forward=True, owns_local_forward=lambda sid: True,
+                              forward_local_submit=forward)
     with SessionDB(db_path=tmp_path / 'state.db') as db:
         connection = _wired(db, origin=_ORIGIN, adapter=adapter)
         try:
@@ -144,3 +148,21 @@ async def test_api_text_equal_to_text_still_forwards(tmp_path):
 
     assert submitted['result']['status'] == 'queued', submitted
     assert forward.await_args.kwargs['submission_id'] == 'in-1'
+
+
+@pytest.mark.asyncio
+async def test_a_chat_the_mirror_did_not_bind_is_never_forwarded(tmp_path):
+    """Local forwards on for the adapter, but this chat is not one of the mirror's threads (another
+    user's Discord conversation): the refusal stands and nothing is posted."""
+    forward = AsyncMock(return_value={'queued': True, 'thread_id': '157999'})
+    adapter = SimpleNamespace(accepts_local_forward=True, owns_local_forward=lambda sid: False,
+                              forward_local_submit=forward)
+    with SessionDB(db_path=tmp_path / 'state.db') as db:
+        connection = _wired(db, origin=_ORIGIN, adapter=adapter)
+        try:
+            submitted = await _submit(connection)
+        finally:
+            await connection.close()
+
+    assert submitted['error']['message'] == 'permission_denied', submitted
+    forward.assert_not_called()

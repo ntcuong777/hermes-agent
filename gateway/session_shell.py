@@ -37,9 +37,16 @@ async def shell_exec(connection, ref, params):
     live = authority.sessions[ref.session_id]
     # Local terminal sessions only: an API, messaging or A2A session has no composer, and running
     # commands for it would be a remote-execution surface with no human at the keyboard.
-    if authorize_local_source(authority.runner, live.source) is not True:
-        raise RuntimeStoreError('permission_denied')
-    policy = policy_for_source(authority.runner, live.source)
+    if authorize_local_source(authority.runner, live.source) is True:
+        policy = policy_for_source(authority.runner, live.source)
+    elif ref.session_id in connection.subscriptions and 'session:operator' in connection.actor.capabilities:
+        # A session the Discord mirror bound (gateway/session_lane.py), from the host's own client
+        # attached to it: the human is at this keyboard, and nothing enters the transcript, so the
+        # command runs in the folder the session recorded. Anyone else stays refused.
+        from gateway.session_lane import viewer_policy
+        policy = await asyncio.to_thread(viewer_policy, authority, ref)
+    else:
+        policy = None
     if policy is None:
         raise RuntimeStoreError('permission_denied')
     # The frozen terminal policy chose a sandbox (docker, ssh, ...): the owner's host shell is not

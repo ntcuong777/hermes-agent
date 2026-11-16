@@ -1911,6 +1911,13 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
         from plugins.platforms.discord.adapter_session_mirror import local_forward_enabled
         return local_forward_enabled(self)
 
+    def owns_local_forward(self, session_id: str) -> bool:
+        """Whether the session mirror bound *session_id* to one of its threads (local forwards on):
+        gateway/session_lane.bound_lane relays and answers locally only for such a session, never
+        for another user's Discord chat."""
+        from plugins.platforms.discord.adapter_session_mirror import owns_local_forward as _owns
+        return _owns(self, session_id)
+
     async def forward_local_submit(self, *, session_id: str, text: str, submission_id: str,
                                    command: bool = False) -> dict | None:
         """Relay a local surface's prompt into *session_id*'s bound thread; None when this

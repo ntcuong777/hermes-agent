@@ -539,14 +539,24 @@ async def execute_command(connection, ref, params, *, dispatch=False):
     capability = _command_capability(verdict, canonical, definition, runner_command)
     authority.authorize(actor, ref, capability)
     live = authority.sessions[ref.session_id]
+    from gateway.session_local import authorize_local_source
+    local = authorize_local_source(authority.runner, live.source) is True
+    if verdict == 'refused' and not local:
+        # Default-safe on a session the Discord mirror bound (gateway/session_lane.py): a command this
+        # owner would refuse for a local session (its client runs it over its own RPC, which answered
+        # ``lane_owned``; or one added later that no list here knows) is relayed to the bound thread,
+        # which runs it as if typed there. With no such lane the refusal below stands.
+        forward = getattr(connection, 'forward_command_to_lane', None)
+        typed = '/' + name + (' ' + arg if arg else '')
+        if forward is not None and (forwarded := await forward(ref, typed, 'session:control')) is not None:
+            return forwarded
     if verdict == 'refused' or (verdict == 'control' and canonical in _OWNER_COMMANDS
                                 and ref.session_id in connection.subscriptions):
         raise RuntimeStoreError('unsupported_command', detail=REFUSAL_HINTS.get(canonical))
     from gateway.session_history_mount import is_history_mount, read_only
     if is_history_mount(live):
         raise read_only()  # no policy or agent to run even a read command against
-    from gateway.session_local import authorize_local_source
-    if authorize_local_source(authority.runner, live.source) is not True:
+    if not local:
         forwarded = await _nonlocal_command(connection, ref, name, arg, runner_command, capability, verdict)
         if forwarded is not None:
             return forwarded
