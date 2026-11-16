@@ -11,6 +11,7 @@ feed each other into a rename loop. A session with unsettled durable work is ret
 never bound mid-turn.
 """
 
+import asyncio
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -548,3 +549,35 @@ async def test_local_forward_resolves_a_compressed_tip():
 
     assert receipt == {"queued": True, "thread_id": "999"}
     assert adapter.handle_message.await_args.args[0].text == "run the red test"
+
+
+
+@pytest.mark.asyncio
+async def test_local_forward_retry_during_dispatch_posts_once():
+    """A retry that arrives while the first forward is still dispatching replays its receipt
+    instead of posting a second copy; a failed dispatch frees the key for a real retry."""
+    adapter = _forward_adapter({"session_mirror_local_forward": True})
+    adapter_session_mirror._save_map(adapter, {"s1": ("999", "Fix the gate")})
+    gate = asyncio.Event()
+
+    async def slow_ingress(event):
+        await gate.wait()
+
+    adapter.handle_message = AsyncMock(side_effect=slow_ingress)
+    first = asyncio.create_task(adapter_session_mirror.forward_local_submit(
+        adapter, session_id="s1", text="go", submission_id="sub-1"))
+    await asyncio.sleep(0)
+    second = await adapter_session_mirror.forward_local_submit(
+        adapter, session_id="s1", text="go", submission_id="sub-1")
+    gate.set()
+    assert await first == second == {"queued": True, "thread_id": "999"}
+    assert adapter.handle_message.await_count == 1
+
+    adapter.handle_message = AsyncMock(side_effect=RuntimeError("ingress down"))
+    with pytest.raises(RuntimeError):
+        await adapter_session_mirror.forward_local_submit(
+            adapter, session_id="s1", text="again", submission_id="sub-2")
+    adapter.handle_message = AsyncMock()
+    assert await adapter_session_mirror.forward_local_submit(
+        adapter, session_id="s1", text="again", submission_id="sub-2") is not None
+    adapter.handle_message.assert_awaited_once()

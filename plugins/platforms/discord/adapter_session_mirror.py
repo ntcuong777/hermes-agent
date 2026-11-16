@@ -243,7 +243,8 @@ async def forward_local_submit(adapter: Any, *, session_id: str, text: str, subm
     for key, (at, _receipt) in list(receipts.items()):
         if now - at > _FORWARD_DEDUPE_SECONDS:
             del receipts[key]
-    prior = receipts.get(submission_id)
+    key = (session_id, submission_id)
+    prior = receipts.get(key)
     if prior is not None:
         return prior[1]
     thread_id = _bound_thread_id(adapter, session_id)
@@ -251,16 +252,23 @@ async def forward_local_submit(adapter: Any, *, session_id: str, text: str, subm
     thread = _resolve_thread(adapter, thread_id) if thread_id else None
     if thread is None or not admin:
         return None
-    sender_name = await _forward_sender_name(adapter, admin)
-    source = adapter.build_source(
-        chat_id=str(thread.id), chat_name=getattr(thread, "name", None), chat_type="thread",
-        user_id=admin, user_name=sender_name, thread_id=str(thread.id), message_id="0",
-        guild_id=getattr(getattr(thread, "guild", None), "id", None))
-    await adapter.handle_message(MessageEvent(
-        text=text, message_type=MessageType.TEXT, source=source,
-        user_id=admin, user_name=sender_name, message_id=str(submission_id)))
     receipt = {"queued": True, "thread_id": str(thread.id)}
-    receipts[submission_id] = (now, receipt)
+    # Reserve before the first await: a client retry that lands while this dispatch is still
+    # in flight (name fetch, ingress) must replay, not post a second copy. A failed dispatch
+    # releases the key so a retry can try again.
+    receipts[key] = (now, receipt)
+    try:
+        sender_name = await _forward_sender_name(adapter, admin)
+        source = adapter.build_source(
+            chat_id=str(thread.id), chat_name=getattr(thread, "name", None), chat_type="thread",
+            user_id=admin, user_name=sender_name, thread_id=str(thread.id), message_id="0",
+            guild_id=getattr(getattr(thread, "guild", None), "id", None))
+        await adapter.handle_message(MessageEvent(
+            text=text, message_type=MessageType.TEXT, source=source,
+            user_id=admin, user_name=sender_name, message_id=str(submission_id)))
+    except BaseException:
+        receipts.pop(key, None)
+        raise
     logger.info("[%s] Session mirror: local forward for %s posted to thread %s (%d chars)",
                 adapter.name, session_id, thread.id, len(text))
     return receipt

@@ -101,3 +101,46 @@ async def test_local_session_submit_keeps_the_owner_refusal(tmp_path):
     assert submitted['error']['code'] == 4001, submitted
     assert submitted['error']['message'] == 'permission_denied'
     forward.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('extra', [
+    {'model_override': 'gpt-x'},          # would silently run on the lane's model
+    {'api_text': 'expanded @file body'},  # model-facing text would be lost
+    {'finite': {'max_turns': 1}},         # one-shot semantics would become a chat turn
+    {'attachments': [{'path': 'a.png'}]},
+    {'bogus': 1},                         # unknown keys: same allowlist as submission()
+    {'submission_id': None},              # no request id: a retry could not be deduped
+])
+async def test_non_plain_submits_keep_the_refusal(tmp_path, extra):
+    forward = AsyncMock(return_value={'queued': True, 'thread_id': '157999'})
+    adapter = SimpleNamespace(accepts_local_forward=True, forward_local_submit=forward)
+    params = {'session_id': 's', 'text': 'run the red test', 'submission_id': 'sub-1', **extra}
+    params = {k: v for k, v in params.items() if v is not None}
+    with SessionDB(db_path=tmp_path / 'state.db') as db:
+        connection = _wired(db, origin=_ORIGIN, adapter=adapter)
+        try:
+            submitted = await connection.dispatch({'id': 1, 'method': 'prompt.submit', 'params': params})
+        finally:
+            await connection.close()
+
+    # Refused either by the dispatcher's own param validation (invalid_params) or by
+    # the forward guard (the original permission_denied) — never relayed.
+    assert submitted['error']['message'] in {'permission_denied', 'invalid_params'}, submitted
+    forward.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_api_text_equal_to_text_still_forwards(tmp_path):
+    forward = AsyncMock(return_value={'queued': True, 'thread_id': '157999'})
+    adapter = SimpleNamespace(accepts_local_forward=True, forward_local_submit=forward)
+    with SessionDB(db_path=tmp_path / 'state.db') as db:
+        connection = _wired(db, origin=_ORIGIN, adapter=adapter)
+        try:
+            submitted = await connection.dispatch({'id': 1, 'method': 'prompt.submit', 'params': {
+                'session_id': 's', 'text': 'go', 'api_text': 'go', 'input_id': 'in-1'}})
+        finally:
+            await connection.close()
+
+    assert submitted['result']['status'] == 'queued', submitted
+    assert forward.await_args.kwargs['submission_id'] == 'in-1'

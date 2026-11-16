@@ -38,6 +38,20 @@ def _refusal_data(exc: RuntimeStoreError) -> dict:
     return data
 
 
+#: Params a ``prompt.submit``-shaped request may carry (``submission`` refuses anything else).
+_SUBMIT_PARAMS = frozenset({
+    'session_id', 'text', 'submission_id', 'input_id', 'queued', 'attachments', 'finite', 'unattended',
+    'surface', 'voice_context', 'interrupted', 'voice_turn', 'display_kind', 'title_preview',
+    'turn_author', 'api_text', 'model_override', 'clarify_batch'})
+
+#: Submit params that change what the turn *is* — attachments, a model override, model-facing
+#: text, one-shot/unattended admission, voice turns, clarify answers. A message typed into the
+#: lane's thread carries none of them, so a submit using any keeps its refusal rather than
+#: being forwarded with the meaning silently dropped.
+_NOT_FORWARDABLE = ('attachments', 'finite', 'unattended', 'model_override', 'clarify_batch',
+                    'voice_turn', 'voice_context', 'interrupted')
+
+
 def _lane_source(row):
     """The session's lane source from its stored origin, or None for a row no messaging lane
     serves (local/api rows keep their own owner rules — there is no lane to forward into)."""
@@ -852,10 +866,15 @@ class AuthorityConnection:
     async def _forward_to_lane(self, ref, params) -> dict | None:
         """The forwarded submit's receipt-shaped result, or None when this session has no lane
         that takes local forwards (the caller then raises the original ``permission_denied``)."""
+        # ``submission`` refuses on the subscription before it validates, so the same checks
+        # run here: the allowlist, a client request id (the forward's dedupe key — without one
+        # a retry would post twice), and a plain prompt only.
         text = params.get('text')
-        if not isinstance(text, str) or not text.strip() or params.get('attachments') \
-                or any(params.get(key) is not None for key in (
-                    'truncate_before_user_ordinal', 'truncate_before_row_id', 'truncate_before_message_id')):
+        request_id = params.get('submission_id') or params.get('input_id')
+        if (set(params) - _SUBMIT_PARAMS or not isinstance(request_id, str) or not request_id
+                or not isinstance(text, str) or not text.strip()
+                or any(params.get(key) not in (None, False, '', {}, []) for key in _NOT_FORWARDABLE)
+                or params.get('api_text') not in (None, text)):
             return None
         row = await asyncio.to_thread(self.authority.db.get_session, ref.session_id)
         source = _lane_source(row)
@@ -868,9 +887,9 @@ class AuthorityConnection:
         # The store's own gate: capability, live restore, and the read-only-history verdict —
         # a history mount (lane down) refuses honestly instead of forwarding into nowhere.
         await asyncio.to_thread(self.authority.authorize, self.actor, ref, 'session:submit')
-        submission_id = params.get('submission_id') or params.get('input_id') or uuid.uuid4().hex
+        submission_id = request_id
         receipt = await adapter.forward_local_submit(
-            session_id=ref.session_id, text=text, submission_id=str(submission_id))
+            session_id=ref.session_id, text=text, submission_id=submission_id)
         if not receipt:
             return None
         logger.info('prompt.submit forwarded to the lane for session %s: %s', ref.session_id, receipt)
@@ -934,9 +953,7 @@ class AuthorityConnection:
         """The admission a ``prompt.submit``-shaped request asks for (``prompt.replace_queued`` too)."""
         if ref.session_id not in self.subscriptions:
             raise RuntimeStoreError('permission_denied')
-        forbidden = set(params) - {'session_id', 'text', 'submission_id', 'input_id', 'queued', 'attachments', 'finite', 'unattended',
-                                   'surface', 'voice_context', 'interrupted', 'voice_turn', 'display_kind', 'title_preview',
-                                   'turn_author', 'api_text', 'model_override', 'clarify_batch'}
+        forbidden = set(params) - _SUBMIT_PARAMS
         if forbidden:
             raise RuntimeStoreError('invalid_params')
         request_id = params.get('submission_id') or params.get('input_id')
