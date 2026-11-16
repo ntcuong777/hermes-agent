@@ -73,5 +73,20 @@ def test_permission_denied_is_logged_once_per_method_and_session(monkeypatch, ca
             session_controls._log_refusal('/home/p', 'slash.exec', exc, session_id='s1')
         session_controls._log_refusal('/home/p', 'process.list', exc, session_id='s1')
     lines = [r.getMessage() for r in caplog.records if 'refused permission_denied' in r.getMessage()]
-    assert lines == ['slash.exec refused permission_denied for session s1',
-                     'process.list refused permission_denied for session s1']
+    assert lines == ['slash.exec refused permission_denied for session s1 at ?',
+                     'process.list refused permission_denied for session s1 at ?']
+
+
+def test_permission_denied_log_names_the_raising_check(caplog):
+    session_controls._DENIED_LOGGED.clear()
+
+    def guarded_check():
+        raise RuntimeStoreError('permission_denied')
+    try:
+        guarded_check()
+    except RuntimeStoreError as exc:
+        with caplog.at_level('INFO', logger='gateway.session_controls'):
+            session_controls._log_refusal('/home/p', 'session.resume', exc, session_id='s9')
+    line = next(r.getMessage() for r in caplog.records if 'refused permission_denied' in r.getMessage())
+    assert line.startswith('session.resume refused permission_denied for session s9 at ')
+    assert 'test_session_commands_lane_owned.py:' in line

@@ -97,8 +97,19 @@ def _log_denied_once(method, session_id, exc) -> None:
     if len(_DENIED_LOGGED) > 512:
         _DENIED_LOGGED.clear()
     _DENIED_LOGGED[key] = now
-    logger.info('%s refused permission_denied for session %s%s', method, session_id or '-',
-                f' detail={exc.detail}' if getattr(exc, 'detail', None) else '')
+    logger.info('%s refused permission_denied for session %s at %s%s', method, session_id or '-',
+                _raise_site(exc), f' detail={exc.detail}' if getattr(exc, 'detail', None) else '')
+
+
+def _raise_site(exc) -> str:
+    """``module.py:line`` of the frame that raised *exc*: a bare reason code says nothing about
+    which of the many ``permission_denied`` checks fired."""
+    tb, last = exc.__traceback__, None
+    while tb is not None:
+        last, tb = tb, tb.tb_next
+    if last is None:
+        return '?'
+    return f'{last.tb_frame.f_code.co_filename.rsplit("/", 1)[-1]}:{last.tb_lineno}'
 
 
 def _log_refusal(profile, method, exc: RuntimeStoreError, session_id=None) -> None:
