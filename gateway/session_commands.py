@@ -201,10 +201,15 @@ async def _nonlocal_command(connection, ref, name, arg, runner_command, capabili
     belongs on the screen that asked. A dict: anything else was relayed to that lane (the Discord
     mirror's bound thread) to run as the lane's command. With no such lane the refusal stands
     (``permission_denied``)."""
-    if runner_command is not None and runner_command[0] == 'plugin' and _client_local_plugin(runner_command[1]):
+    plugin = runner_command is not None and runner_command[0] == 'plugin'
+    if plugin and _client_local_plugin(runner_command[1]):
         return None
     lane = getattr(connection, 'has_forwarding_lane', None)
-    if verdict == 'read' and lane is not None and await lane(ref):
+    # A plugin command on a mirror-bound session runs here too: its handler acts on the same live
+    # session whichever surface typed it (`/sandbox off`, `/recall-log`), so only where the answer
+    # lands differs, and the asker is here. Registry commands that write the conversation, quick
+    # exec and skills still go to the thread (its one writer).
+    if (verdict == 'read' or plugin) and lane is not None and await lane(ref):
         return None
     forward = getattr(connection, 'forward_command_to_lane', None)
     typed = '/' + name + (' ' + arg if arg else '')

@@ -415,13 +415,15 @@ def _plugins(monkeypatch):
     ctx = PluginContext(PluginManifest(name='sweep-plugin'), manager)
     ctx.register_command('stashx', handler=lambda raw: 'stashed', client_local=True)  # like pi-commands /stash
     ctx.register_command('sandboxx', handler=lambda raw: 'sandbox off')  # like nono-sandbox /sandbox
+    ctx.register_command('recall-logx', handler=lambda raw: 'log')  # like memory-recall /recall-log
     return ctx
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('typed, expected', [
     ('stashx pop', 'ran'),          # client-local plugin command: the calling client's own state
-    ('sandboxx off', 'relayed'),    # a plugin command acting on the agent: the thread runs it
+    ('sandboxx off', 'ran'),        # a plugin command: same live session either way, answer here
+    ('recall-logx', 'ran'),         # a plugin read like memory-recall /recall-log: answer here
     ('hello', 'relayed'),           # a `type: exec` quick command: a host shell for the session
     ('st', 'ran'),                  # an alias quick command onto /status (a read)
     ('myskill do it', 'relayed'),   # a skill runs the agent
@@ -484,7 +486,7 @@ async def test_commands_and_methods_added_later_never_answer_permission_denied(t
     world = await _bound(tmp_path)
     await _open(world)
     assert await _outcome(world, ran_here, 'futurecmd x') == 'relayed'
-    assert await _outcome(world, ran_here, 'futureplugin go') == 'relayed'
+    assert await _outcome(world, ran_here, 'futureplugin go') == 'ran'  # plugin commands answer here
     read = await _call(world, 'future.read')
     assert read.get('result') == {'value': str(tmp_path)}, read  # a read answers here
     write = await _call(world, 'future.write')
