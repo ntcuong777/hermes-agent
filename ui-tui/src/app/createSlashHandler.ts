@@ -14,6 +14,7 @@ import { captureDestination, isCurrentDestination } from './submissionDestinatio
 import { getUiState } from './uiStore.js'
 import {
   describeSlashExecError,
+  isLaneOwned,
   isUnsupportedCommand,
   RPC_UNKNOWN_METHOD,
   shouldFallbackToDispatch
@@ -88,10 +89,33 @@ export function createSlashHandler(ctx: SlashHandlerContext): SlashHandler {
         }
       }
 
+    // A command whose own RPC the owner refused as `lane_owned` (a session bound to a Discord thread):
+    // the command as typed goes to `slash.exec`, which relays it to the thread, and its one-line ack
+    // ("... sent to the session's bound thread") is what the user sees.
+    const relayToLane = () =>
+      gw
+        .request<SlashExecResponse>('slash.exec', { command: `${parsed.name}${argTail}`, session_id: sid })
+        .then(r => {
+          if (!stale()) {
+            sys(r?.output || `/${parsed.name}${argTail}: sent to the session's bound thread`)
+          }
+        })
+        .catch((e: unknown) => {
+          if (!stale()) {
+            sys(`error: ${describeSlashExecError(parsed.name, e)}`)
+          }
+        })
+
     const guardedErr = (e: unknown) => {
-      if (!stale()) {
-        sys(isUnsupportedCommand(e) ? describeSlashExecError(parsed.name, e) : `error: ${rpcErrorMessage(e)}`)
+      if (stale()) {
+        return
       }
+
+      if (isLaneOwned(e)) {
+        return void relayToLane()
+      }
+
+      sys(isUnsupportedCommand(e) ? describeSlashExecError(parsed.name, e) : `error: ${rpcErrorMessage(e)}`)
     }
 
     const runCtx: SlashRunCtx = { ...ctx, flight, guarded, guardedErr, sid, stale, ui }

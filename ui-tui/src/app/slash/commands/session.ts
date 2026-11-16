@@ -16,7 +16,7 @@ import { usageBarsText } from '../../../components/overlayPrimitives.js'
 import { introMsg, toTranscriptMessages } from '../../../domain/messages.js'
 import { t } from '../../../i18n/runtime.js'
 import { formatVoiceRecordKey, parseVoiceRecordKey } from '../../../lib/platform.js'
-import { SESSION_COMPRESS_TIMEOUT_MS } from '../../../lib/rpc.js'
+import { asRpcResult, SESSION_COMPRESS_TIMEOUT_MS } from '../../../lib/rpc.js'
 import type { PanelSection } from '../../../types.js'
 import { applyConfiguredTuiTheme } from '../../createGatewayEventHandler.js'
 import { DEFAULT_INDICATOR_STYLE, INDICATOR_STYLES, type IndicatorStyle } from '../../interfaces.js'
@@ -119,16 +119,22 @@ export const sessionCommands: SlashCommand[] = [
         return ctx.transcript.sys(t('slashCmd.session.bg.usage'))
       }
 
-      ctx.gateway.rpc<BackgroundStartResponse>('prompt.background', { session_id: ctx.sid, text: arg }).then(
-        ctx.guarded<BackgroundStartResponse>(r => {
-          if (!r.task_id) {
-            return
-          }
+      // The raw request, not `rpc`: a `lane_owned` refusal (a session bound to a Discord thread)
+      // must reach `guardedErr`, which relays the typed command to that thread.
+      ctx.gateway.gw
+        .request('prompt.background', { session_id: ctx.sid, text: arg })
+        .then(raw => asRpcResult<BackgroundStartResponse>(raw))
+        .then(
+          ctx.guarded<BackgroundStartResponse>(r => {
+            if (!r.task_id) {
+              return
+            }
 
-          patchUiState(state => ({ ...state, bgTasks: new Set(state.bgTasks).add(r.task_id!) }))
-          ctx.transcript.sys(t('slashCmd.session.bg.started', r.task_id))
-        })
-      )
+            patchUiState(state => ({ ...state, bgTasks: new Set(state.bgTasks).add(r.task_id!) }))
+            ctx.transcript.sys(t('slashCmd.session.bg.started', r.task_id))
+          })
+        )
+        .catch(ctx.guardedErr)
     }
   },
 
@@ -140,15 +146,21 @@ export const sessionCommands: SlashCommand[] = [
         return ctx.transcript.sys(t('slashCmd.session.btw.usage'))
       }
 
-      ctx.gateway.rpc<BackgroundStartResponse>('prompt.btw', { session_id: ctx.sid, text: arg }).then(
-        ctx.guarded<BackgroundStartResponse>(r => {
-          if (!r.task_id) {
-            return
-          }
+      // The raw request, not `rpc`: a `lane_owned` refusal (a session bound to a Discord thread)
+      // must reach `guardedErr`, which relays the typed command to that thread.
+      ctx.gateway.gw
+        .request('prompt.btw', { session_id: ctx.sid, text: arg })
+        .then(raw => asRpcResult<BackgroundStartResponse>(raw))
+        .then(
+          ctx.guarded<BackgroundStartResponse>(r => {
+            if (!r.task_id) {
+              return
+            }
 
-          ctx.transcript.sys(t('slashCmd.session.btw.answering', r.task_id))
-        })
-      )
+            ctx.transcript.sys(t('slashCmd.session.btw.answering', r.task_id))
+          })
+        )
+        .catch(ctx.guardedErr)
     }
   },
 

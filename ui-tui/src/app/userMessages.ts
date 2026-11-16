@@ -147,7 +147,10 @@ const RPC_ERROR_ROWS: RpcErrorRow[] = [
   [(_code, text) => text === 'session_has_children', () => t('userMessages.rpc.sessionHasChildren')],
   [(_code, text) => NOT_CONNECTED_RE.test(text), () => t('userMessages.rpc.notConnected')],
   [(_code, text) => UNAVAILABLE_METHOD_RE.exec(text), m => t('userMessages.rpc.methodUnavailable', m?.[1] ?? '?')],
-  [(_code, text) => text.trim() === 'launch_credentials_unavailable', () => t('userMessages.rpc.launchCredentialsChanged')],
+  [
+    (_code, text) => text.trim() === 'launch_credentials_unavailable',
+    () => t('userMessages.rpc.launchCredentialsChanged')
+  ],
   // The runtime store's CAS refusal (hermes_state_runtime.py): the session moved between
   // the control's read and its commit, so nothing was written. `stale_generation` stays
   // raw on purpose: an interrupt answering it means the turn already settled, where
@@ -197,6 +200,13 @@ export const describeRpcError = (err: unknown): string => {
 export const isUnsupportedCommand = (err: unknown): boolean =>
   (err as { data?: { reason?: string } } | null)?.data?.reason === 'unsupported_command'
 
+/** The owner's `lane_owned` refusal (gateway/session_lane.py): the session is bound to a messaging
+ *  thread (the Discord session mirror) that writes its conversation, so a transcript write sent over
+ *  its own RPC (`/compress`, `/undo`, `/retry`, `/branch`, `/bg`, `/btw`, `/rollback <n>`) is re-sent as
+ *  the typed command through `slash.exec`, which relays it to that thread. Nothing ran here. */
+export const isLaneOwned = (err: unknown): boolean =>
+  (err as { data?: { reason?: string } } | null)?.data?.reason === 'lane_owned'
+
 /** The shared owner refuses `!cmd` / `{!cmd}` for a session whose terminal backend is not local
  *  (gateway/session_shell.py): the command would run on the gateway host, outside the session's
  *  sandbox. Name the backend and point at the agent; other errors read as describeRpcError. */
@@ -207,7 +217,9 @@ export const describeShellExecError = (err: unknown): string => {
     const backend = typeof data.detail === 'string' ? data.detail.trim() : ''
 
     // An older gateway names no backend: say so without a backend-shaped sentence.
-    return backend ? t('userMessages.rpc.shellBackendRefused', backend) : t('userMessages.rpc.shellBackendRefusedUnnamed')
+    return backend
+      ? t('userMessages.rpc.shellBackendRefused', backend)
+      : t('userMessages.rpc.shellBackendRefusedUnnamed')
   }
 
   return describeRpcError(err)

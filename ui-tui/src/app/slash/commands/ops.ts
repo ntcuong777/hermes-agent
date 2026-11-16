@@ -16,6 +16,7 @@ import type {
 
 import { t } from '../../../i18n/runtime.js'
 import { appendTranscriptMessage } from '../../../lib/messages.js'
+import { asRpcResult } from '../../../lib/rpc.js'
 import type { PanelSection } from '../../../types.js'
 import { applyDelegationStatus, getDelegationState } from '../../delegationStore.js'
 import { patchOverlayState } from '../../overlayStore.js'
@@ -316,13 +317,16 @@ export const opsCommands: SlashCommand[] = [
 
       const all = !filePath && rest.some(isAll)
 
-      return ctx.gateway
-        .rpc<RollbackRestoreResponse>('rollback.restore', {
+      // The raw request, not `rpc`: a `lane_owned` refusal (a session bound to a Discord thread)
+      // must reach `guardedErr`, which relays the typed `/rollback` to that thread.
+      return ctx.gateway.gw
+        .request('rollback.restore', {
           ...(filePath ? { file_path: filePath } : {}),
           ...(all ? { all } : {}),
           hash,
           session_id: ctx.sid
         })
+        .then(raw => asRpcResult<RollbackRestoreResponse>(raw))
         .then(
           ctx.guarded<RollbackRestoreResponse>(r => {
             if (!r.success) {
@@ -337,7 +341,8 @@ export const opsCommands: SlashCommand[] = [
 
             // What a safe whole-tree restore left alone, as main's CLI lists it: the first five paths.
             const summarize = (paths: string[]) =>
-              paths.slice(0, 5).join(', ') + (paths.length > 5 ? t('slashCmd.ops.rollback.morePaths', paths.length - 5) : '')
+              paths.slice(0, 5).join(', ') +
+              (paths.length > 5 ? t('slashCmd.ops.rollback.morePaths', paths.length - 5) : '')
 
             for (const [key, paths] of [
               ['keptUserEdits', r.skipped_user_edits],
