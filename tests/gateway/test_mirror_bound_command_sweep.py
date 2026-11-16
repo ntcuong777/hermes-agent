@@ -603,3 +603,53 @@ async def test_a_bound_session_needs_the_owners_capability(tmp_path):
     reply = await _call(world, 'slash.exec', command='sandbox off')
     assert _reason(reply) == 'permission_denied', reply
     assert world.lane.forwarded == []
+
+
+# ── reads that degrade quietly instead of refusing ────────────────────────────────────────────
+# A handler written for local sessions may answer "no launch policy" with an EMPTY result rather
+# than a refusal (``complete.path``: the `@` file picker). The rescue seam never saw those; a read
+# that met no policy on a bound session is now re-run with the viewer policy.
+
+
+@pytest.mark.asyncio
+async def test_at_file_picker_lists_the_bound_sessions_folder(tmp_path):
+    (tmp_path / 'notes_alpha.txt').write_text('x')
+    world = await _bound(tmp_path)
+    await _open(world)
+    reply = await _call(world, 'complete.path', word='notes')
+    assert 'error' not in reply, reply
+    texts = json.dumps(reply['result']['items'])
+    assert 'notes_alpha.txt' in texts, reply  # was {'items': []} before: the picker showed nothing
+
+
+@pytest.mark.asyncio
+async def test_a_future_read_that_degrades_to_empty_gets_the_real_answer(tmp_path, monkeypatch):
+    from functools import partial
+    from tui_gateway.contracts import registry
+    from tui_gateway.contracts.base import Params, Result
+    from gateway.session_controls import AuthorityConnection
+
+    class P(Params):
+        session_id: str
+
+    class R(Result):
+        cwd: str
+
+    monkeypatch.setitem(registry.CANONICAL_METHODS, 'future.quiet', registry.MethodContract('future.quiet', P, R))
+
+    async def quiet(connection, ref, params):
+        connection.authority.authorize(connection.actor, ref, 'session:read')
+        from gateway.session_policy import policy_for_source
+        policy = policy_for_source(connection.authority.runner, connection.authority.sessions[ref.session_id].source)
+        return {'cwd': policy.cwd if policy is not None else ''}  # "advisory": empty, no refusal
+    original = AuthorityConnection.handlers
+
+    def handlers(self):
+        table = original(self)
+        table['future.quiet'] = partial(quiet, self)
+        return table
+    monkeypatch.setattr(AuthorityConnection, 'handlers', handlers)
+    world = await _bound(tmp_path)
+    await _open(world)
+    reply = await _call(world, 'future.quiet')
+    assert reply.get('result') == {'cwd': str(tmp_path)}, reply

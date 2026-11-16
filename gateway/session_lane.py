@@ -96,6 +96,10 @@ def viewer_policy(authority, ref):
 # the bound thread. No method list: a method added later inherits its class from what it authorizes.
 
 _CHECKS = ContextVar('lane_authorize_checks', default=None)
+# Set when ``policy_for_source`` answered None for a non-LOCAL source during the call: a read that
+# handles "no policy" by answering empty (path completion, tool/skill listings) did not refuse, so
+# only this tells the seam it degraded.
+_MISSING = ContextVar('lane_policy_missing', default=None)
 _VIEWER_POLICY = ContextVar('lane_viewer_policy', default=None)
 
 
@@ -104,6 +108,13 @@ def note_authorize(session_id, capability):
     checks = _CHECKS.get()
     if checks is not None:
         checks.append((session_id, capability))
+
+
+def note_missing_policy():
+    """``policy_for_source`` found no launch policy for a non-LOCAL source in this call."""
+    missing = _MISSING.get()
+    if missing is not None:
+        missing.append(True)
 
 
 def viewer_policy_override():
@@ -115,16 +126,51 @@ def viewer_policy_override():
 async def call_with_rescue(connection, ref, call):
     """``await call()``; a ``permission_denied`` on a session this host's mirror bound, for its owner,
     is answered by class (see above) instead of surfacing. Every other outcome passes through."""
-    checks = []
-    token = _CHECKS.set(checks)
+    checks, missing = [], []
+    token, missing_token = _CHECKS.set(checks), _MISSING.set(missing)
     try:
-        return await call()
+        result = await call()
     except RuntimeStoreError as exc:
         if exc.reason != 'permission_denied' or getattr(exc, '_lane_rescued', False):
             raise
         return await _rescue(connection, ref, call, exc, checks)
     finally:
         _CHECKS.reset(token)
+        _MISSING.reset(missing_token)
+    if missing:
+        return await _rerun_degraded_read(connection, ref, call, result, checks)
+    return result
+
+
+async def _rerun_degraded_read(connection, ref, call, result, checks):
+    """A read that succeeded but met no launch policy for a mirror-bound session (it answered
+    empty, e.g. ``complete.path``) is re-run once with the viewer policy, so the owner gets the real
+    answer. Only reads (``session:read`` alone), only for the bound session's owner; any failure of
+    the re-run keeps the first answer — a degraded read is never made worse."""
+    import asyncio
+    sid = ref.session_id if isinstance(ref.session_id, str) else ''
+    asked = {capability for session_id, capability in checks if session_id == sid}
+    if (asked != {'session:read'} or not _rescuable(connection, sid)
+            or await asyncio.to_thread(bound_lane, connection.authority, sid) is None):
+        return result
+    try:
+        policy = await asyncio.to_thread(viewer_policy, connection.authority, ref)
+    except RuntimeStoreError:
+        return result
+    if policy is None:
+        return result
+    token = _VIEWER_POLICY.set(policy)
+    try:
+        return await call()
+    except RuntimeStoreError:
+        return result
+    finally:
+        _VIEWER_POLICY.reset(token)
+
+
+def _rescuable(connection, sid):
+    actor = connection.actor
+    return bool(sid) and (sid in connection.subscriptions or 'session:operator' in actor.capabilities)
 
 
 async def _rescue(connection, ref, call, exc, checks):
