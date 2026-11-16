@@ -1418,6 +1418,12 @@ def get_plugin_command_handler(name: str) -> Optional[Callable]:
     return entry["handler"] if entry else None
 
 
+def plugin_command_is_client_local(name: str) -> bool:
+    """Whether a plugin command was registered ``client_local=True``."""
+    entry = _ensure_plugins_discovered()._plugin_commands.get(name)
+    return bool(entry and entry.get("client_local"))
+
+
 def get_plugin_commands() -> dict[str, dict]:
     """Plugin commands dict (name -> {handler, description, plugin}) after idempotent discovery."""
     return _ensure_plugins_discovered()._plugin_commands

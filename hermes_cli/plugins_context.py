@@ -460,6 +460,7 @@ class PluginContext(PluginCapabilityCtxMixin, PluginIdleTaskCtxMixin):
         argument_mode: str | None = None,
         subcommands: dict | list | tuple | None = None,
         run_while_busy: bool = False,
+        client_local: bool = False,
     ) -> Optional[PluginRegistration]:
         """Register an in-session slash command (``/name``); handler ``fn(raw_args: str) -> str | None``
         (sync or async), plus the session-context keywords it declares (``plugin_command_dispatch``). ``args_hint`` (e.g. ``"<file>"``) lets adapters like Discord surface an argument
@@ -489,6 +490,10 @@ class PluginContext(PluginCapabilityCtxMixin, PluginIdleTaskCtxMixin):
             # True: the gateway runs it at once even while the chat's agent is mid-turn (default: the old
             # path, which interrupts the turn and sends the text to the model) (P22).
             "run_while_busy": bool(run_while_busy),
+            # True: the command only acts on the calling client's own state (a composer stash),
+            # never the session's agent, so a local surface may run it on any session it can read
+            # — including one a messaging lane (the Discord mirror's bound thread) now owns.
+            "client_local": bool(client_local),
             "subcommands": subs,
             "argument_mode": argument_mode if argument_mode in {"options", "text", "mixed"}
             else ("text" if hint else None),

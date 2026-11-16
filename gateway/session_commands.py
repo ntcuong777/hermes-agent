@@ -193,6 +193,29 @@ def _runner_command(name):
                  if get_plugin_command_handler(registered)), None)
 
 
+async def _nonlocal_command(connection, ref, name, arg, runner_command, capability):
+    """A command a local surface sent to a session whose source is not one of its local routes.
+    None: run it here anyway — a client-local plugin command (the composer stash) touches only
+    the calling client's own state, never this session's agent. A dict: it was relayed to the
+    session's forwarding lane (the Discord mirror's bound thread) to run as that lane's command.
+    With no such lane the refusal stands (``permission_denied``)."""
+    if runner_command is not None and runner_command[0] == 'plugin' and _client_local_plugin(runner_command[1]):
+        return None
+    forward = getattr(connection, 'forward_command_to_lane', None)
+    typed = '/' + name + (' ' + arg if arg else '')
+    forwarded = await forward(ref, typed, capability) if forward is not None else None
+    if forwarded is None:
+        raise RuntimeStoreError('permission_denied')
+    return forwarded
+
+
+def _client_local_plugin(name):
+    """True for a plugin command registered ``client_local=True`` (it acts only on the calling
+    client's own state, e.g. the composer stash)."""
+    from hermes_cli.plugins import plugin_command_is_client_local
+    return plugin_command_is_client_local(name)
+
+
 async def _run_runner_command(runner, live, name, arg, kind, shell):
     """The messaging gateway's own quick-command / plugin-command dispatch for this session
     (``run_inbound_hooks``): the operator's slash access policy, the 30 s sanitized-env exec with
@@ -519,7 +542,9 @@ async def execute_command(connection, ref, params, *, dispatch=False):
         raise read_only()  # no policy or agent to run even a read command against
     from gateway.session_local import authorize_local_source
     if authorize_local_source(authority.runner, live.source) is not True:
-        raise RuntimeStoreError('permission_denied')
+        forwarded = await _nonlocal_command(connection, ref, name, arg, runner_command, capability)
+        if forwarded is not None:
+            return forwarded
     if capability != 'session:read':
         authority._require_admission_open()
     if definition is not None and (canonical in _INFO_READS or canonical in _OWNER_COMMANDS

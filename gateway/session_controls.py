@@ -79,7 +79,29 @@ def _profile_label(profile_id) -> str:
     return profile_name_for_home(text) or 'default'
 
 
-def _log_refusal(profile, method, exc: RuntimeStoreError) -> None:
+#: ``(method, session_id) -> monotonic time`` of the last ``permission_denied`` logged at info.
+_DENIED_LOGGED: dict = {}
+_DENIED_LOG_SECONDS = 60.0
+
+
+def _log_denied_once(method, session_id, exc) -> None:
+    """A bare ``permission_denied`` names neither the RPC nor the session to the user (the TUI
+    shows only "permission denied"), so the first one per (method, session) a minute is logged
+    at info with both: enough to find which call a lane-owned or read-only session refuses,
+    bounded so a polling client cannot flood the log."""
+    import time
+    now = time.monotonic()
+    key = (method, session_id)
+    if now - _DENIED_LOGGED.get(key, -_DENIED_LOG_SECONDS) < _DENIED_LOG_SECONDS:
+        return
+    if len(_DENIED_LOGGED) > 512:
+        _DENIED_LOGGED.clear()
+    _DENIED_LOGGED[key] = now
+    logger.info('%s refused permission_denied for session %s%s', method, session_id or '-',
+                f' detail={exc.detail}' if getattr(exc, 'detail', None) else '')
+
+
+def _log_refusal(profile, method, exc: RuntimeStoreError, session_id=None) -> None:
     """One line per refusal, at the level its audience deserves.
 
     A refusal that names the check that fired is a launch diagnostic (warning). A bare reason code is
@@ -95,6 +117,8 @@ def _log_refusal(profile, method, exc: RuntimeStoreError) -> None:
             f' field={exc.field}' if getattr(exc, 'field', None) else '',
             f' detail={exc.detail}' if getattr(exc, 'detail', None) else '')
     field = getattr(exc, 'field', None)
+    if exc.reason == 'permission_denied':
+        _log_denied_once(method, session_id, exc)
     if exc.reason == 'session_busy' or not (field or getattr(exc, 'detail', None)):
         logger.debug(line, *args)
     elif field == 'request_id' and exc.reason == 'admission_conflict':
@@ -342,7 +366,8 @@ class AuthorityConnection:
             # An interactive socket reaches a draining owner only in a restart's after-turn wait:
             # it may answer the parked turn and queue input, never change this owner's state.
             exc = RuntimeStoreError('runtime_draining')
-            _log_refusal(getattr(self.actor, 'profile_id', None), method, exc)
+            _log_refusal(getattr(self.actor, 'profile_id', None), method, exc,
+                         session_id=params.get('session_id'))
             return {'jsonrpc': '2.0', 'id': rid, 'error': {
                 'code': 4001, 'message': exc.reason, 'data': _refusal_data(exc)}}
         profile = params.get('profile')
@@ -350,7 +375,8 @@ class AuthorityConnection:
             try:
                 routed = self._sibling_for(profile)
             except RuntimeStoreError as exc:
-                _log_refusal(getattr(self.actor, 'profile_id', None), method, exc)
+                _log_refusal(getattr(self.actor, 'profile_id', None), method, exc,
+                         session_id=params.get('session_id'))
                 return {'jsonrpc': '2.0', 'id': rid, 'error': {
                     'code': 4001, 'message': exc.reason, 'data': _refusal_data(exc)}}
             if routed is not None:
@@ -411,7 +437,8 @@ class AuthorityConnection:
             check_result(contract, result)
             return {'jsonrpc': '2.0', 'id': rid, 'result': result}
         except RuntimeStoreError as exc:
-            _log_refusal(getattr(self.actor, 'profile_id', None), method, exc)
+            _log_refusal(getattr(self.actor, 'profile_id', None), method, exc,
+                         session_id=params.get('session_id'))
             # A connector refusal keeps the legacy handlers' code and message (gateway/session_connections.py).
             return {'jsonrpc': '2.0', 'id': rid, 'error': {
                 'code': getattr(exc, 'wire_code', 4001), 'message': getattr(exc, 'wire_message', exc.reason),
@@ -876,17 +903,9 @@ class AuthorityConnection:
                 or any(params.get(key) not in (None, False, '', {}, []) for key in _NOT_FORWARDABLE)
                 or params.get('api_text') not in (None, text)):
             return None
-        row = await asyncio.to_thread(self.authority.db.get_session, ref.session_id)
-        source = _lane_source(row)
-        if source is None:
+        adapter = await self._forwarding_lane(ref, 'session:submit')
+        if adapter is None:
             return None
-        resolve = getattr(getattr(self.authority, 'runner', None), '_adapter_for_source', None)
-        adapter = resolve(source) if resolve is not None else None
-        if adapter is None or not getattr(adapter, 'accepts_local_forward', False):
-            return None
-        # The store's own gate: capability, live restore, and the read-only-history verdict —
-        # a history mount (lane down) refuses honestly instead of forwarding into nowhere.
-        await asyncio.to_thread(self.authority.authorize, self.actor, ref, 'session:submit')
         submission_id = request_id
         receipt = await adapter.forward_local_submit(
             session_id=ref.session_id, text=text, submission_id=submission_id)
@@ -897,6 +916,37 @@ class AuthorityConnection:
                 'ref': {'profile_id': self.actor.profile_id, 'session_id': ref.session_id},
                 'sequence': 0, 'status': 'queued', 'outcome': None,
                 'authority_epoch': 0, 'execution_generation': None}
+
+    async def _forwarding_lane(self, ref, capability):
+        """The adapter of *ref*'s messaging lane when it takes local forwards, after the store's
+        own gate for *capability* (live restore, read-only-history verdict — a history mount
+        refuses honestly instead of forwarding into nowhere); None = no such lane."""
+        row = await asyncio.to_thread(self.authority.db.get_session, ref.session_id)
+        source = _lane_source(row)
+        if source is None:
+            return None
+        resolve = getattr(getattr(self.authority, 'runner', None), '_adapter_for_source', None)
+        adapter = resolve(source) if resolve is not None else None
+        if adapter is None or not getattr(adapter, 'accepts_local_forward', False):
+            return None
+        await asyncio.to_thread(self.authority.authorize, self.actor, ref, capability)
+        return adapter
+
+    async def forward_command_to_lane(self, ref, typed, capability) -> dict | None:
+        """A slash command typed in a local surface on a session a forwarding lane owns (the
+        Discord mirror's bound thread): relayed for the lane to run as its own command, under
+        the capability it needs here. The result tells the client where the output lands; None
+        when there is no such lane (the caller keeps its refusal)."""
+        adapter = await self._forwarding_lane(ref, capability)
+        if adapter is None:
+            return None
+        receipt = await adapter.forward_local_submit(
+            session_id=ref.session_id, text=typed, submission_id=uuid.uuid4().hex, command=True)
+        if not receipt:
+            return None
+        logger.info('command forwarded to the lane for session %s: %s', ref.session_id, receipt)
+        return {'type': 'exec',
+                'output': f'{typed} sent to the session\'s bound thread; its output posts there.'}
 
     def _voice_stop_key(self, ref, params):
         request_id = params.get('submission_id') or params.get('input_id')

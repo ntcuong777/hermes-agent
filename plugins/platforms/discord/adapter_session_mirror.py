@@ -238,7 +238,8 @@ async def _forward_sender_name(adapter: Any, admin: str) -> str | None:
         return None
 
 
-async def forward_local_submit(adapter: Any, *, session_id: str, text: str, submission_id: str) -> dict | None:
+async def forward_local_submit(adapter: Any, *, session_id: str, text: str, submission_id: str,
+                              command: bool = False) -> dict | None:
     """Relay a local surface's prompt into *session_id*'s bound thread (`session_mirror_local_forward`).
 
     The text enters the thread as if the mirror admin had typed it there: the lane's own ingress
@@ -246,7 +247,8 @@ async def forward_local_submit(adapter: Any, *, session_id: str, text: str, subm
     attached viewer — the thread stays the session's only writer. Returns
     ``{'queued': True, 'thread_id': ...}``, or None when this session is not forwardable (the
     caller keeps its original refusal). A same-``submission_id`` retry inside the dedupe window
-    replays the first receipt instead of posting again."""
+    replays the first receipt instead of posting again. ``command`` relays a slash command
+    (``/sandbox off``) instead: the lane runs it as the admin, its output posts in the thread."""
     if not local_forward_enabled(adapter):
         return None
     now = time.monotonic()
@@ -279,7 +281,7 @@ async def forward_local_submit(adapter: Any, *, session_id: str, text: str, subm
             user_id=admin, user_name=sender_name, thread_id=str(thread.id), message_id="0",
             guild_id=getattr(getattr(thread, "guild", None), "id", None))
         await adapter.handle_message(MessageEvent(
-            text=text, message_type=MessageType.TEXT, source=source,
+            text=text, message_type=MessageType.COMMAND if command else MessageType.TEXT, source=source,
             user_id=admin, user_name=sender_name, message_id=str(submission_id)))
     except BaseException:
         receipts.pop(key, None)
