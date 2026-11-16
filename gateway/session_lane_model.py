@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from typing import Any, Mapping, Optional
 
 logger = logging.getLogger(__name__)
@@ -120,6 +121,21 @@ def carried_route(db, session_id: str) -> Optional[dict]:
     return next(filter(None, map(route_from_row, local)), None)
 
 
+def consume_carried_route(db, session_id: str) -> None:
+    """Delete the hand-off records of *session_id*'s lineage (see ``record_carried_route``)."""
+    with db._read_ctx() as conn:
+        ids = [row[0] for row in conn.execute(
+            f'{_lineage_cte()} SELECT id FROM compression_lineage', (session_id,))]
+    keys = [CARRY_PREFIX + sid for sid in ids]
+    if keys:
+        db._execute_write(lambda conn: conn.executemany('DELETE FROM state_meta WHERE key=?', [(k,) for k in keys]))
+
+
+def _lineage_cte() -> str:
+    from hermes_state_gateway import _COMPRESSION_LINEAGE_CTE
+    return _COMPRESSION_LINEAGE_CTE
+
+
 def adopt_carried_model(runner, session_key: Optional[str]) -> Optional[dict]:
     """The carried route of lane *session_key*, adopted on first use as its persisted ``/model`` pick.
 
@@ -133,23 +149,29 @@ def adopt_carried_model(runner, session_key: Optional[str]) -> Optional[dict]:
     if not session_key or store is None or db is None:
         return None
     try:
-        marked = store.get_session_metadata(session_key, CARRIED)
-        if isinstance(marked, dict):
-            return marked
-        entry = store.lookup_by_session_key(session_key)
-        checked = runner.__dict__.setdefault('_lane_model_checked', set())
-        if entry is None or (session_key, entry.session_id) in checked:
-            return None
-        checked.add((session_key, entry.session_id))
-        route = carried_route(db, entry.session_id)
-        if route is None:
-            return None
-        if runner._session_model_override(session_key) is not None or store.get_model_override(session_key):
-            # The chat's own pick came first and stays (a later reset gives the profile's, not this).
-            route = {'reasoning': route.get('reasoning')}
-        elif route.get('model'):
-            store.set_model_override(session_key, {key: route[key] for key in ('model', 'provider', 'base_url')})
-        store.set_session_metadata(session_key, CARRIED, route)
+        # One adoption at a time: the session.info worker and the turn thread both land here, and a caller that
+        # found the check "in progress" used to return None and run the turn on the profile's default.
+        with runner.__dict__.setdefault('_lane_model_lock', threading.RLock()):
+            marked = store.get_session_metadata(session_key, CARRIED)
+            if isinstance(marked, dict):
+                return marked
+            entry = store.lookup_by_session_key(session_key)
+            checked = runner.__dict__.setdefault('_lane_model_checked', set())
+            if entry is None or (session_key, entry.session_id) in checked:
+                return None
+            checked.add((session_key, entry.session_id))
+            route = carried_route(db, entry.session_id)
+            if route is None:
+                return None
+            if runner._session_model_override(session_key) is not None or store.get_model_override(session_key):
+                # The chat's own pick came first and stays (a later reset gives the profile's, not this).
+                route = {'reasoning': route.get('reasoning')}
+            elif route.get('model'):
+                store.set_model_override(session_key, {key: route[key] for key in ('model', 'provider', 'base_url')})
+            store.set_session_metadata(session_key, CARRIED, route)
+            # Consumed: the lane's own picks and turns own the route from here. A later resume of this
+            # conversation into another thread resolves what the row last ran, not this stale record.
+            consume_carried_route(db, entry.session_id)
     except Exception:
         logger.warning('Could not carry the local model of lane session=%s; using its default route',
                        session_key, exc_info=True)
@@ -159,9 +181,12 @@ def adopt_carried_model(runner, session_key: Optional[str]) -> Optional[dict]:
     return route
 
 
-def carried_reasoning(runner, session_key: Optional[str]) -> Optional[dict]:
-    """The reasoning level lane *session_key* carried from its local session, if any."""
+def carried_reasoning(runner, session_key: Optional[str], model: Optional[str] = None) -> Optional[dict]:
+    """The reasoning level lane *session_key* carried from its local session, if any. A level was chosen for
+    the carried model: once the chat runs another one (a thread ``/model``) it no longer applies."""
     route = adopt_carried_model(runner, session_key)
+    if route and model and route.get('model') and route['model'] != model:
+        return None
     reasoning = route.get('reasoning') if route else None
     return dict(reasoning) if isinstance(reasoning, dict) else None
 

@@ -2765,8 +2765,11 @@ class BasePlatformAdapter(_SessionModelSettingsMixin, ABC):
         if not await card_shows_whole_command(self, chat_id, session_key, request_id, whole, metadata, truncated):
             text = render_exec_approval(self, command, description, smart_denied, False, mcp=mcp)[0]
             actions = [row for row in actions if row[1] == "deny"]
+        # Adapters that render from the prompt's own fields (Teams) must show what the preview was cut from:
+        # the body (detail lines + command, or the MCP block) and the one-line reason, as the card text does.
         return await self._send_exec_approval_prompt(ExecApprovalPrompt(
-            chat_id=chat_id, session_key=session_key, metadata=metadata, command=command, description=description,
+            chat_id=chat_id, session_key=session_key, metadata=metadata, command=whole,
+            description=approval_card_parts(command, description, mcp)[1],
             smart_denied=smart_denied, request_id=request_id, mcp=mcp, text=text, actions=actions))
 
     async def _send_exec_approval_prompt(self, prompt: ExecApprovalPrompt) -> SendResult:

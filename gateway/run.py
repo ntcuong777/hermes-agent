@@ -541,7 +541,7 @@ def _format_exec_approval_fallback(
     steps a surface without buttons needs. The command is never cut: ``/approve`` must only ever
     answer a command the user could read in full (#62359)."""
     from gateway.platforms.base_exec_approval import (
-        approval_card_parts, approval_timeout_seconds, ea_header_text, ea_mcp_header_text,
+        approval_card_parts, approval_timeout_seconds, code_fence, ea_header_text, ea_mcp_header_text,
         ea_reason_label_text, format_approval_deadline_line)
     body, reason = approval_card_parts(command, description, mcp)
     if smart_denied:
@@ -557,10 +557,15 @@ def _format_exec_approval_fallback(
         if allow_permanent:
             choices.append(t("gateway.exec_approval.text_choice_always", prefix=command_prefix))
     choices.append(t("gateway.exec_approval.text_choice_deny", prefix=command_prefix))
+    # The locale's template wraps the command in a fixed ``` fence; the body (a plugin's URL, path or command,
+    # model-controlled) may itself hold backticks, so the fence is sized to it.
+    marker = "\0BODY\0"
+    text = t("gateway.exec_approval.text_body", heading=heading, command=marker,
+             reason_label=ea_reason_label_text(), reason=reason)
+    fence = code_fence(body)
+    text = text.replace(f"```\n{marker}\n```", f"{fence}\n{body}\n{fence}", 1)
     return (
-        t("gateway.exec_approval.text_body", heading=heading,
-          command=body,  # whole: send() splits it
-          reason_label=ea_reason_label_text(), reason=reason)
+        text
         + t("gateway.exec_approval.text_choice_joiner").join(choices[:-1])
         + t("gateway.exec_approval.text_choice_last", choice=choices[-1])
         + format_approval_deadline_line(approval_timeout_seconds()))

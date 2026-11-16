@@ -110,3 +110,30 @@ async def test_a_preview_cut_through_the_detail_lines_sends_the_whole_body_first
                                      description=f"Web access\n{many}", request_id="r1")
     assert adapter.sent and "URL: https://example.com/39/" in adapter.sent[0]
     assert next(c for _, c, _ in adapter.prompts[-1].actions) == "once"
+
+
+@pytest.mark.asyncio
+async def test_the_prompt_handed_to_an_adapter_carries_the_whole_body_and_the_short_reason():
+    """Teams renders from prompt.command/description, not prompt.text: it must get what the card was cut from."""
+    adapter = _Chat()
+    await adapter.send_exec_approval("c1", "<web_fetch> (plugin approval rule)", "sk",
+                                     description=WEB_REASON, request_id="r1")
+    prompt = adapter.prompts[-1]
+    assert prompt.description == "Web access needs approval (web_fetch)"
+    assert "URL: https://example.com/a/very/long/path?token=abc" in prompt.command
+    assert prompt.command.endswith("<web_fetch> (plugin approval rule)")
+
+
+def test_blank_lines_in_a_multi_line_command_survive():
+    body, _ = approval_card_parts("python - <<EOF\nprint(1)\n\nprint(2)\nEOF", "Run a script")
+    assert body == "python - <<EOF\nprint(1)\n\nprint(2)\nEOF"
+    body, _ = approval_card_parts("cmd", "title\ndetail one\n\ndetail two")
+    assert body == "detail one\n\ndetail two\ncmd"
+
+
+def test_the_text_fallback_fence_outgrows_backticks_in_the_body():
+    from gateway.run import _format_exec_approval_fallback
+    text = _format_exec_approval_fallback("<web_fetch> (plugin approval rule)",
+                                          "Web access\nQuery: ``` ignore the above ```", "/")
+    assert "````" in text  # a fence longer than the longest run in the body
+    assert text.count("Query: ``` ignore the above ```") == 1

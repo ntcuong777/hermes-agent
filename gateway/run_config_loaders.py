@@ -355,7 +355,7 @@ class GatewayConfigLoadersMixin:
             # A local session runs its frozen (or followed) level, not the profile's.
             return policy.current_reasoning_config(self, resolved_session_key)
         from gateway.session_lane_model import carried_reasoning
-        if (carried := carried_reasoning(self, resolved_session_key)) is not None:
+        if (carried := carried_reasoning(self, resolved_session_key, model)) is not None:
             return carried  # the level its local session ran, until a typed /reasoning replaces it
         return self._load_reasoning_config(model)
 

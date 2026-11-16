@@ -178,3 +178,47 @@ def test_an_unavailable_recorded_provider_falls_back_with_a_warning(tmp_path, ca
         model, runtime = gateway._resolve_session_agent_runtime(session_key=route, user_config=PROFILE)
     assert (model, runtime['provider']) == ('model-b', 'openai-codex')
     assert any('unavailable' in record.getMessage() for record in caplog.records if record.levelname == 'WARNING')
+
+
+@pytest.mark.asyncio
+async def test_a_concurrent_caller_waits_for_the_adoption_instead_of_running_on_the_default(tmp_path):
+    import threading
+    import time
+    from gateway import session_lane_model as lane
+    store, route, _sid = await _bind(tmp_path, {'model': 'model-a', 'provider': 'anthropic', 'reasoning': 'high'})
+    runner = _gateway_runner(store)
+    real = lane.carried_route
+    results = []
+
+    def slow(db, sid):
+        time.sleep(0.3)
+        return real(db, sid)
+    with patch.object(lane, 'carried_route', slow):
+        threads = [threading.Thread(target=lambda: results.append(lane.adopt_carried_model(runner, route)))
+                   for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(10)
+    assert [r and r.get('model') for r in results] == ['model-a', 'model-a']
+
+
+@pytest.mark.asyncio
+async def test_the_hand_off_record_is_consumed_so_a_later_resume_does_not_revive_it(tmp_path):
+    from gateway.session_lane_model import CARRY_PREFIX
+    store, route, sid = await _bind(tmp_path, {'model': 'model-a', 'provider': 'anthropic'})
+    _resolve(_gateway_runner(store), route)
+
+    def record():
+        with store._db._read_ctx() as conn:
+            return conn.execute('SELECT 1 FROM state_meta WHERE key=?', (CARRY_PREFIX + sid,)).fetchone()
+    assert record() is None
+
+
+@pytest.mark.asyncio
+async def test_a_carried_effort_does_not_outlive_a_model_change_in_the_thread(tmp_path):
+    store, route, _sid = await _bind(tmp_path, {'model': 'model-a', 'provider': 'anthropic', 'reasoning': 'high'})
+    runner = _gateway_runner(store)
+    assert runner._resolve_session_reasoning_config(session_key=route, model='model-a')['effort'] == 'high'
+    other = runner._resolve_session_reasoning_config(session_key=route, model='model-c')
+    assert other is None or other.get('effort') != 'high'

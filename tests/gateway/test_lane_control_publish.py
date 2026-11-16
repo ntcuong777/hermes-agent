@@ -99,6 +99,12 @@ async def test_a_publish_failure_never_breaks_the_command():
 import contextlib
 
 
+async def _drain(runner):
+    """The wrapper publishes off the command's reply path: let those tasks finish."""
+    import asyncio
+    await asyncio.gather(*list(runner.__dict__.get("_lane_publish_tasks", ())))
+
+
 def _info_runner(handler):
     from gateway.run import GatewayRunner
 
@@ -126,6 +132,7 @@ async def test_every_command_in_the_handler_table_repaints_the_bound_viewer():
     publish, p1, p2 = _info_published()
     with p1, p2:
         out = await runner._command_handler_table(('yolo',))['yolo'](event)
+        await _drain(runner)
     assert out == 'yolo on'
     publish.assert_awaited_once_with('authority', 'local-s1')
 
@@ -139,6 +146,7 @@ async def test_a_local_session_command_is_not_republished_by_the_table():
     publish, p1, p2 = _info_published()
     with p1, p2:
         await runner._command_handler_table(('yolo',))['yolo'](event)
+        await _drain(runner)
     publish.assert_not_awaited()
 
 
@@ -156,7 +164,9 @@ async def test_a_failing_handler_does_not_republish_and_a_failing_publish_does_n
         return 'fine'
     with patch('gateway.session_control_actions.publish_info_async', AsyncMock(side_effect=RuntimeError('x'))), \
             patch('gateway.session_authorities.active_authority', lambda _runner: 'authority'):
-        assert await _info_runner(fine)._command_handler_table(('yolo',))['yolo'](event) == 'fine'
+        fine_runner = _info_runner(fine)
+        assert await fine_runner._command_handler_table(('yolo',))['yolo'](event) == 'fine'
+        await _drain(fine_runner)
 
 
 @pytest.mark.asyncio
@@ -202,7 +212,9 @@ async def test_a_lane_commands_answer_reaches_the_bound_viewer_as_command_output
     with patch('gateway.session_control_actions.publish_info_async', AsyncMock()), \
             patch('gateway.session_control_actions.publish_command_output', out), \
             patch('gateway.session_authorities.active_authority', lambda _runner: 'authority'):
-        result = await _info_runner(yolo)._command_handler_table(('yolo',))['yolo'](event)
+        output_runner = _info_runner(yolo)
+        result = await output_runner._command_handler_table(('yolo',))['yolo'](event)
+        await _drain(output_runner)
     assert result == 'YOLO mode is now on.'  # the thread still gets the reply from the runner
     out.assert_called_once_with('authority', 'local-s1', '/yolo on', 'YOLO mode is now on.')
 
@@ -217,7 +229,9 @@ async def test_a_command_without_an_answer_publishes_no_output(answer):
     with patch('gateway.session_control_actions.publish_info_async', AsyncMock()), \
             patch('gateway.session_control_actions.publish_command_output', out), \
             patch('gateway.session_authorities.active_authority', lambda _runner: 'authority'):
-        await _info_runner(quiet)._command_handler_table(('yolo',))['yolo'](event)
+        quiet_runner = _info_runner(quiet)
+        await quiet_runner._command_handler_table(('yolo',))['yolo'](event)
+        await _drain(quiet_runner)
     out.assert_not_called()
 
 
@@ -233,3 +247,24 @@ def test_command_output_goes_to_the_live_session_and_is_bounded():
     assert sent[0] == (('local-s1', {'command': '/status', 'output': 'ok'}), {'event_type': 'command.output'})
     assert len(sent) == 2
     assert len(sent[1][0][1]['output']) == COMMAND_OUTPUT_LIMIT + 1 and sent[1][0][1]['output'].endswith('…')
+
+
+@pytest.mark.asyncio
+async def test_a_command_run_in_band_for_the_asking_tui_is_not_published_a_second_time():
+    """execute_command runs the handler under a command sink and returns the answer to the TUI that typed it."""
+    from gateway.session_command_sink import capture
+
+    async def status(self, event):
+        return 'all good'
+    event = SimpleNamespace(source=_source(Platform.DISCORD), text='/status')
+    out = MagicMock()
+    runner = _info_runner(status)
+    with patch('gateway.session_control_actions.publish_info_async', AsyncMock()) as info, \
+            patch('gateway.session_control_actions.publish_command_output', out), \
+            patch('gateway.session_authorities.active_authority', lambda _runner: 'authority'):
+        runner._handle_yolo_command = status.__get__(runner)
+        with capture():
+            await runner._command_handler_table(('yolo',))['yolo'](event)
+        await _drain(runner)
+    info.assert_awaited_once()  # the pills still repaint
+    out.assert_not_called()

@@ -90,10 +90,27 @@ def test_the_viewers_own_answer_settles_once():
     assert settled == ['approval.settled'], events.sent
 
 
-def test_a_prompt_registered_without_a_waiting_entry_is_left_to_the_next_read():
-    """A synthetic registration (no wait behind it) has nothing to settle it: it stays pending."""
+def test_a_prompt_answered_before_its_card_registered_is_withdrawn_at_once():
+    """The Discord send receipt is awaited before the viewer's card registers: a tap in that window pops the
+    entry first, so there is nothing to watch and the card must not wait for a later read."""
     events = _Events()
     controls = PendingControls(events)
     controls.register('sess-1', 'route-4', 3, {'request_id': 'solo-1', 'command': 'x', 'description': 'y'})
-    assert _types(events) == [('approval.request', 'solo-1')]
-    assert 'solo-1' in controls.pending
+    assert _types(events) == [('approval.request', 'solo-1'), ('approval.settled', 'solo-1')]
+    assert controls.pending == {}
+
+
+def test_an_ended_prompt_never_withdraws_the_sessions_other_live_prompts(monkeypatch):
+    """An idle ask at generation 3 ends while the next turn's approval (generation 4) is still pending."""
+    events = _Events()
+    controls = PendingControls(events)
+    live = {'idle-1', 'turn-2'}
+    monkeypatch.setattr('gateway.session_pending_controls.list_gateway_approvals',
+                        lambda route: [{'request_id': r} for r in live])
+    controls.register('sess-1', 'route-5', 3, {'request_id': 'idle-1', 'command': 'a', 'description': 'd', 'idle': True})
+    controls.register('sess-1', 'route-5', 4, {'request_id': 'turn-2', 'command': 'b', 'description': 'd'})
+    live.discard('idle-1')  # the idle one is answered in Discord
+    controls.withdraw('sess-1', 'idle-1')
+    assert 'turn-2' in controls.pending and 'idle-1' not in controls.pending
+    settled = [p['prompt_id'] for _s, k, p in events.sent if k == 'approval.settled']
+    assert settled == ['idle-1']

@@ -34,7 +34,10 @@ def _authority(*, viewers, running=False, generation=7, monkeypatch=None):
     return stub, live
 
 
-def test_an_idle_ask_is_stamped_with_the_latest_generation_and_flagged_idle():
+def test_an_idle_ask_is_stamped_with_the_latest_generation_and_flagged_idle(monkeypatch):
+    # The ask is waiting in the approval queue (a registration without one is withdrawn as already answered).
+    monkeypatch.setattr("gateway.session_pending_controls.list_gateway_approvals",
+                        lambda route: [{"request_id": "r1"}])
     stub, live = _authority(viewers=True)
     stub.register_idle_approval(SID, "route", {"request_id": "r1", "command": "<t>", "description": "d"})
     prompt = live.controls.pending["r1"][1]

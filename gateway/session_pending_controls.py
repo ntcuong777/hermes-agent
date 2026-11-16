@@ -55,10 +55,32 @@ class PendingControls:
         from tools.approval import observe_gateway_settle
 
         def settled(_reason):
-            self.snapshot(session_id, generation)
-        # The wait enqueues its entry before it notifies, so the entry is here to watch; a prompt registered
-        # without one (a synthetic card) has nothing to wait for and stays until a read settles it.
-        observe_gateway_settle(route, prompt_id, settled)
+            self.withdraw(session_id, prompt_id)
+        # An answer can land before the card is registered (the send receipt is awaited first): the entry is
+        # then already gone, so the prompt is withdrawn at once instead of waiting for a later read.
+        if not observe_gateway_settle(route, prompt_id, settled):
+            self.withdraw(session_id, prompt_id)
+
+    def withdraw(self, session_id, prompt_id):
+        """Settle ONE prompt whose wait has ended, for every viewer. Unlike ``snapshot`` this never touches the
+        session's other prompts: a card stamped with another generation (an idle ask, the next turn's) is
+        still live and must stay up."""
+        with self.events.lock:
+            held = self.pending.get(prompt_id)
+            if held is None or prompt_id in self.remote_responders:
+                return
+            route, prompt = held
+            if prompt['kind'] == 'clarify':
+                active = not route.event.is_set()
+            else:
+                active = any(p['request_id'] == prompt_id for p in list_gateway_approvals(route))
+            if active:
+                return
+            del self.pending[prompt_id]
+            self.idle.discard(prompt_id)
+            self.events.publish(session_id, {'prompt_id': prompt_id,
+                                             'execution_generation': prompt['execution_generation']},
+                                event_type=prompt['kind'] + '.settled')
 
     def register_clarify(self, session_id, generation, entry, *, timeout_s=None):
         from gateway.run import _redact_approval_command

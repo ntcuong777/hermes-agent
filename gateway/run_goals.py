@@ -455,7 +455,10 @@ class GatewayGoalsMixin:
                 from gateway.session_control_actions import publish_command_output, publish_info_async
                 authority = active_authority(self)
                 await publish_info_async(authority, session_id)
-                if isinstance(output, str) and output.strip():
+                # A command the TUI itself asked for runs in band under a command sink and returns its answer to
+                # that asker: publishing it as well would print it twice (and to every other viewer).
+                from gateway.session_command_sink import active_sink
+                if isinstance(output, str) and output.strip() and active_sink() is None:
                     publish_command_output(authority, session_id, _command_text(event), output)
         except Exception as exc:
             logger.debug("lane info publish failed: %s", exc)

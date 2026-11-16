@@ -64,7 +64,7 @@ def approval_card_parts(command: str, description: str, mcp: Optional[dict] = No
     the body with the command, so they are previewed whole and covered by the Deny-only rule instead of
     being cut with the reason's budget. An MCP call's body is its tool description and full arguments."""
     reason, *detail = str(description or "").split("\n")
-    lead = "\n".join(line for line in detail if line.strip())
+    lead = "\n".join(detail).strip("\n")
     body = ea_mcp_block(mcp, command) if mcp else str(command or "")
     return "\n".join(part for part in (lead, body) if part), reason
 

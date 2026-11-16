@@ -1084,7 +1084,12 @@ class GatewayBusySessionMixin:
         @functools.wraps(handler)
         async def run(event, *args, **kwargs):
             result = await handler(event, *args, **kwargs)
-            await self._publish_lane_info(event, result if isinstance(result, str) else None)
+            # Off the reply's path: the thread gets its answer without waiting for a state.db read.
+            import asyncio
+            tasks = self.__dict__.setdefault("_lane_publish_tasks", set())
+            task = asyncio.ensure_future(self._publish_lane_info(event, result if isinstance(result, str) else None))
+            tasks.add(task)
+            task.add_done_callback(tasks.discard)
             return result
         return run
 
