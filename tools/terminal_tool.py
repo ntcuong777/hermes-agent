@@ -1313,6 +1313,14 @@ def _plan_execution(
     # Reject non-positive timeouts before deadline math: ``timeout or
     # default`` would silently turn 0 into the default, and a negative
     # value is truthy and would fire an immediate "-Ns" timeout.
+    # Models sometimes send the number as a string ("30"): coerce it, and reject what is not a
+    # number with a tool error instead of a TypeError crash out of the comparison below.
+    if timeout is not None and not isinstance(timeout, (int, float)) or isinstance(timeout, bool):
+        try:
+            timeout = float(str(timeout).strip())
+            timeout = int(timeout) if timeout.is_integer() else timeout
+        except ValueError:
+            raise _Rejected(tool_error(f"timeout must be a positive number of seconds (got {timeout!r}).")) from None
     if timeout is not None and timeout <= 0:
         raise _Rejected(tool_error(f"timeout must be a positive number of seconds (got {timeout})."))
     promoted = None
