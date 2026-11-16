@@ -438,6 +438,31 @@ def _git_env(
     return env
 
 
+#: A git lock this old is abandoned: index/ref locks live for the length of one git command.
+_STALE_LOCK_SECONDS = 600
+_LOCK_EXISTS = re.compile(r"Unable to create '([^']+\.lock)': File exists")
+
+
+def _clear_stale_store_lock(stderr: str, store: Path) -> bool:
+    """Remove the lock *stderr* names when it is inside the checkpoint *store* (Hermes's own,
+    never a user repository) and older than ``_STALE_LOCK_SECONDS``; True when one was removed."""
+    match = _LOCK_EXISTS.search(stderr or "")
+    if match is None:
+        return False
+    try:
+        lock = Path(match.group(1)).resolve()
+        if not lock.is_relative_to(Path(store).resolve()):
+            return False
+        age = time.time() - lock.stat().st_mtime
+        if age < _STALE_LOCK_SECONDS:
+            return False  # possibly a live git: leave it, the next checkpoint retries
+        lock.unlink()
+    except (OSError, ValueError):
+        return False
+    logger.warning("Checkpoint store: removed stale git lock %s (%.0f min old)", lock, age / 60)
+    return True
+
+
 def _run_git(
     args: list[str],
     store: Path,
@@ -446,6 +471,7 @@ def _run_git(
     allowed_returncodes: Optional[set[int]] = None,
     index_file: Optional[Path] = None,
     extra_env: Optional[dict[str, str]] = None,
+    _lock_retried: bool = False,
 ) -> tuple[bool, str, str]:
     """Run a git command against the shared store.  Returns (ok, stdout, stderr).
 
@@ -492,6 +518,12 @@ def _run_git(
         ok = result.returncode == 0
         stdout = os.fsdecode(result.stdout) if "-z" in args else result.stdout.strip()
         stderr = result.stderr.decode("utf-8", errors="replace").strip() if "-z" in args else result.stderr.strip()
+        if not ok and not _lock_retried and _clear_stale_store_lock(stderr, store):
+            # A killed checkpoint git left its lock behind: every later checkpoint of that
+            # workspace failed on it forever. Cleared (old, inside our own store): try once more.
+            return _run_git(args, store, working_dir, timeout=timeout,
+                            allowed_returncodes=allowed_returncodes, index_file=index_file,
+                            extra_env=extra_env, _lock_retried=True)
         if not ok and result.returncode not in allowed_returncodes:
             logger.error(
                 "Git command failed: %s (rc=%d) stderr=%s",
