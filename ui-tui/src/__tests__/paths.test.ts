@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { composeTabTitle, fmtCwdBranch, fmtProjectCwdBranch, shortCwd, shortProject } from '../domain/paths.js'
+import { composeTabTitle, fmtCwdBranch, fmtProjectCwdBranch, shortCwd, shortProject, terminalTitle } from '../domain/paths.js'
 
 describe('shortCwd', () => {
   const origHome = process.env.HOME
@@ -136,5 +136,28 @@ describe('composeTabTitle', () => {
     const name = 'b'.repeat(28)
     const out = composeTabTitle('✓', name, 'opus-4', '', 28)
     expect(out).toBe(`✓ ${name} · opus-4`)
+  })
+})
+
+describe('terminalTitle', () => {
+  const short = (cwd: string) => cwd.replace('/Users/me', '~')
+
+  it('names the session even before the model is known (the tmux status line shows the window title)', () => {
+    expect(terminalTitle('⏳', 'Proceed with Codesheet', '', '/Users/me/proj', short)).toEqual({
+      tab: '⏳ Proceed with Codesheet',
+      window: '⏳ Proceed with Codesheet · ~/proj'
+    })
+  })
+
+  it('adds the model once known', () => {
+    expect(terminalTitle('✓', 'auth', 'opus-4', '/Users/me/proj', short)).toEqual({
+      tab: '✓ auth',
+      window: '✓ auth · opus-4 · ~/proj'
+    })
+  })
+
+  it('is plain Hermes only when there is nothing to say yet', () => {
+    expect(terminalTitle('✓', '  ', '', '', short)).toBe('Hermes')
+    expect(terminalTitle('✓', '', 'opus-4', '', short)).toEqual({ tab: '✓', window: '✓ opus-4' })
   })
 })

@@ -497,16 +497,18 @@ def local_session_info(authority, ref):
         notices = (project_plugins_warning(policy), NOT_LOCAL_WARNING if policy.client_env_remote else None)
         if warning := ' '.join(filter(None, notices)):
             info['config_warning'] = warning
-    _complete_route(authority, live, info, ref.session_id)
+    _complete_route(authority, live, info, ref.session_id, policy)
     info.update(_classic_cli_fields(authority, ref, live, agent, policy))
     return info
 
 
-def _complete_route(authority, live, info, session_id):
-    """A viewer's model and effort pills never go empty. A lane-owned or mounted session with no policy and
-    no model on its agent used to publish ``model: None`` and no effort, and a viewer merges what arrives
-    over what it shows: the pills vanished the moment the session was synced to a thread. What the session
-    runs next is known without an agent: the lane's resolved route, else the route its stored row records."""
+def _complete_route(authority, live, info, session_id, policy):
+    """A viewer's model and effort pills never go empty. A session with no policy and no model on its agent
+    used to publish ``model: None`` and no effort, and a viewer merges what arrives over what it shows: the
+    pills (and the terminal title built on the model) vanished the moment the session was synced to a
+    thread. What it runs next is known without an agent: the lane's resolved route for a messaging source;
+    for a history mount, or a local session whose launch policy a lane move released, the route its stored
+    row records, at its recorded effort (else the profile's)."""
     if info.get('model') and info.get('reasoning_effort') is not None:
         return
     fields = {}
@@ -514,13 +516,16 @@ def _complete_route(authority, live, info, session_id):
         if live.source is not None and live.source.platform != Platform.LOCAL:
             from gateway.session_messaging_picks import messaging_route_info
             fields = messaging_route_info(authority.runner, live)
-        elif live.source is None:  # a history mount: what its stored row says
+        elif policy is None:
             from gateway.session_lane_model import route_from_row
-            stored = authority.db.get_session(session_id) or {}
-            route = route_from_row(stored) or {}
+            route = route_from_row(authority.db.get_session(session_id) or {}) or {}
             if route.get('model'):
+                reasoning = route.get('reasoning')
+                if reasoning is None:
+                    load = getattr(authority.runner, '_load_reasoning_config', None)
+                    reasoning = load(route['model']) if callable(load) else None
                 fields = {'model': route['model'],
-                          **effort_fields(route.get('reasoning'), '', route['model'], route.get('provider'),
+                          **effort_fields(reasoning, '', route['model'], route.get('provider'),
                                           route.get('base_url'), route.get('api_mode'))}
     except Exception:
         logger.debug('route for a viewer\'s pills unavailable', exc_info=True)

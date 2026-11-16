@@ -30,7 +30,7 @@ import { RESIZE_COALESCE_MS } from '../config/timing.js'
 import { hasLeadGap, prevRenderedMsg } from '../domain/blockLayout.js'
 import { SECTION_NAMES, sectionMode } from '../domain/details.js'
 import { hasPasteChip } from '../domain/pasteExpand.js'
-import { composeTabTitle, fmtProjectCwdBranch, shortCwd } from '../domain/paths.js'
+import { fmtProjectCwdBranch, shortCwd, terminalTitle } from '../domain/paths.js'
 import { type GatewayClient } from '../gatewayClient.js'
 import { useGitBranch } from '../hooks/useGitBranch.js'
 import { pruneVirtualHeightCache, useVirtualHistory } from '../hooks/useVirtualHistory.js'
@@ -794,14 +794,7 @@ export function useMainApp(gw: GatewayClient) {
 
   const tabCwd = ui.info?.cwd
 
-  useTerminalTitle(
-    model
-      ? {
-          tab: composeTabTitle(marker, ui.sessionTitle, '', ''),
-          window: composeTabTitle(marker, ui.sessionTitle, model, tabCwd ? shortCwd(tabCwd, 24) : '')
-        }
-      : 'Hermes'
-  )
+  useTerminalTitle(terminalTitle(marker, ui.sessionTitle, model, tabCwd ?? '', cwd => shortCwd(cwd, 24)))
 
   useEffect(() => {
     if (!ui.sid || !stdout) {

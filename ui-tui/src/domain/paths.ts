@@ -66,3 +66,25 @@ export const composeTabTitle = (
 
   return segments.length ? `${marker} ${segments.join(' · ')}` : marker
 }
+
+/** The terminal's tab/window title. The session name is what a tmux status line or a tab bar is for, so it
+ *  never waits on the model: a session whose info has no model yet (a frame that lost its route) still
+ *  shows its name and cwd. Only a session with nothing to say yet is `Hermes`. */
+export const terminalTitle = (
+  marker: string,
+  sessionName: string,
+  model: string,
+  cwd: string,
+  shortenCwd: (cwd: string) => string
+): string | { tab: string; window: string } => {
+  const name = sessionName.trim()
+
+  if (!model && !name && !cwd) {
+    return 'Hermes'
+  }
+
+  return {
+    tab: composeTabTitle(marker, name, '', ''),
+    window: composeTabTitle(marker, name, model, cwd ? shortenCwd(cwd) : '')
+  }
+}

@@ -21,7 +21,7 @@ def test_a_lane_session_without_a_model_gets_the_route_its_next_turn_resolves():
     info = {'model': None, 'lazy': False}
     with patch('gateway.session_messaging_picks.messaging_route_info',
                lambda runner, live: {'model': 'claude-sonnet-5-5', 'reasoning_effort': 'medium', 'fast': False}):
-        _complete_route(SimpleNamespace(runner=object()), _live(Platform.DISCORD), info, 'sid-1')
+        _complete_route(SimpleNamespace(runner=object()), _live(Platform.DISCORD), info, 'sid-1', None)
     assert info['model'] == 'claude-sonnet-5-5'
     assert info['reasoning_effort'] == 'medium' and info['fast'] is False
 
@@ -30,11 +30,11 @@ def test_what_the_session_already_reports_is_never_overwritten():
     info = {'model': 'gpt-6', 'reasoning_effort': 'high'}
     with patch('gateway.session_messaging_picks.messaging_route_info',
                lambda runner, live: {'model': 'other', 'reasoning_effort': 'low'}):
-        _complete_route(SimpleNamespace(runner=object()), _live(Platform.DISCORD), info, 'sid-1')
+        _complete_route(SimpleNamespace(runner=object()), _live(Platform.DISCORD), info, 'sid-1', None)
     assert info == {'model': 'gpt-6', 'reasoning_effort': 'high'}
     # An effort of '' (default) is a value, not a gap; only a missing one is filled.
     info = {'model': 'gpt-6', 'reasoning_effort': ''}
-    _complete_route(SimpleNamespace(runner=object()), _live(Platform.DISCORD), info, 'sid-1')
+    _complete_route(SimpleNamespace(runner=object()), _live(Platform.DISCORD), info, 'sid-1', None)
     assert info['reasoning_effort'] == ''
 
 
@@ -44,7 +44,7 @@ def test_a_history_mount_reports_the_route_its_stored_row_records():
                            ' "api_mode": "anthropic_messages"}, "reasoning_config": {"enabled": true, "effort": "high"}}'}
     authority = SimpleNamespace(runner=object(), db=SimpleNamespace(get_session=lambda sid: row))
     info = {'model': None}
-    _complete_route(authority, _live(None), info, 'sid-1')
+    _complete_route(authority, _live(None), info, 'sid-1', None)
     assert info['model'] == 'claude-opus-5-5'
     assert info['reasoning_effort'] == 'high'
 
@@ -52,11 +52,24 @@ def test_a_history_mount_reports_the_route_its_stored_row_records():
 def test_a_failing_lookup_leaves_the_info_as_it_was():
     info = {'model': None}
     with patch('gateway.session_messaging_picks.messaging_route_info', side_effect=RuntimeError('config unreadable')):
-        _complete_route(SimpleNamespace(runner=object()), _live(Platform.DISCORD), info, 'sid-1')
+        _complete_route(SimpleNamespace(runner=object()), _live(Platform.DISCORD), info, 'sid-1', None)
     assert info == {'model': None}
 
 
-def test_a_local_session_is_left_to_its_own_policy():
+def test_a_local_session_whose_policy_a_lane_move_released_reports_its_stored_route():
+    """The live record can still say LOCAL after the move: no agent, no policy, so model None and no effort."""
+    row = {'model': 'claude-sonnet-5-5',
+           'model_config': '{"gateway_runtime": {"provider": "anthropic", "base_url": "https://api.anthropic.com",'
+                           ' "api_mode": "anthropic_messages"}}'}
+    runner = SimpleNamespace(_load_reasoning_config=lambda model: {'enabled': True, 'effort': 'medium'})
+    authority = SimpleNamespace(runner=runner, db=SimpleNamespace(get_session=lambda sid: row))
     info = {'model': None}
-    _complete_route(SimpleNamespace(runner=object()), _live(Platform.LOCAL), info, 'sid-1')
+    _complete_route(authority, _live(Platform.LOCAL), info, 'sid-1', None)
+    assert info['model'] == 'claude-sonnet-5-5'
+    assert info['reasoning_effort'] == 'medium'  # the row recorded none: the profile's level
+
+
+def test_a_local_session_with_its_policy_is_left_to_it():
+    info = {'model': None}
+    _complete_route(SimpleNamespace(runner=object()), _live(Platform.LOCAL), info, 'sid-1', object())
     assert info == {'model': None}
