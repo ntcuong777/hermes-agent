@@ -324,3 +324,23 @@ def _forward_setup(extra):
     adapter.handle_message = AsyncMock()
     mirror._save_map(adapter, {"s1": ("999", "Fix the gate")})
     return adapter, thread
+
+
+@pytest.mark.asyncio
+async def test_mirror_posts_are_redacted_for_chat_egress(monkeypatch):
+    """A desk transcript reaches Discord only through the gateway's chat-egress redaction:
+    the echo and the reply mask a credential and an E.164 number like any gateway post."""
+    secret = "sk-ant-api03-" + "A1b2C3d4E5f6G7h8I9j0" * 3
+    adapter, thread, _authority, live = _feed_adapter(
+        monkeypatch, admissions={"a1": _viewer_row(f"use key {secret}")})
+    live_feed.ensure_feeds(adapter, mirror._load_map(adapter))
+    try:
+        _publish(live, "a1", "message.start")
+        _publish(live, "a1", "message.complete",
+                 {"text": "call +15551234567 now", "admission_id": "a1", "status": "complete"})
+        await _drain(adapter)
+    finally:
+        live_feed.stop(adapter)
+    texts = _texts(thread)
+    assert texts and all(secret not in t for t in texts), texts
+    assert all("+15551234567" not in t for t in texts), texts

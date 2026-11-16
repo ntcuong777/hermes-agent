@@ -221,10 +221,20 @@ async def _thread_for(adapter: Any, feed: _Feed, sid: str):
     return thread
 
 
+def _egress(text: str) -> str:
+    """Every mirror post goes through the gateway's chat-egress redaction (secrets, and phone
+    numbers unless the profile opts out) — direct ``thread.send`` calls bypass the delivery
+    path that applies it everywhere else, and a desk session's transcript is exactly the
+    content that must not reach a chat unmasked."""
+    from agent.redact_phone_policy import redact_for_chat_egress
+    return redact_for_chat_egress(text)
+
+
 async def _send(adapter: Any, thread: Any, text: str):
-    """Post *text*, split at Discord's limit; returns the last message sent."""
+    """Post *text* (redacted for chat egress), split at Discord's limit; returns the last
+    message sent."""
     sent = None
-    for chunk in adapter.truncate_message(text, _DISCORD_LIMIT):
+    for chunk in adapter.truncate_message(_egress(text), _DISCORD_LIMIT):
         sent = await thread.send(chunk)
     return sent
 
@@ -271,7 +281,7 @@ async def _recap(adapter: Any, feed: _Feed, sid: str, db: Any) -> None:
         await thread.send(f"… {len(history) - len(shown)} earlier messages not shown")
     label = await _sender_label(adapter) if any(role == "user" for role, _ in shown) else ""
     for role, text in shown:
-        await thread.send(_clip(f"[{label}] {text}" if role == "user" else text))
+        await thread.send(_clip(_egress(f"[{label}] {text}" if role == "user" else text)))
         (feed.last_user if role == "user" else feed.last_reply)[sid] = text
 
 
@@ -291,9 +301,9 @@ async def _flush_status(adapter: Any, feed: _Feed, sid: str, turn: _Turn, *, fin
         return
     text = _status_text(turn, final=final)
     if turn.status_msg is None:
-        turn.status_msg = await thread.send(text)
+        turn.status_msg = await thread.send(_egress(text))
     else:
-        await turn.status_msg.edit(content=text)
+        await turn.status_msg.edit(content=_egress(text))
     turn.status_dirty, turn.status_at = False, time.monotonic()
 
 
@@ -355,7 +365,7 @@ async def _on_complete(adapter: Any, feed: _Feed, sid: str, turn: _Turn, payload
         reason = payload.get("warning") or payload.get("failure_reason") or payload.get("outcome") or payload["status"]
         thread = await _thread_for(adapter, feed, sid)
         if thread is not None:
-            await thread.send(f"⚠️ Turn ended without a reply: {reason}"[:_DISCORD_LIMIT])
+            await thread.send(_egress(f"⚠️ Turn ended without a reply: {reason}")[:_DISCORD_LIMIT])
 
 
 def _on_delta(turn: _Turn, text: Any) -> None:
