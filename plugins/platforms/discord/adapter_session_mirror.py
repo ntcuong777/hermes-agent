@@ -1,8 +1,9 @@
 """The Discord session mirror: machine sessions appear as threads.
 
 `session_mirror_channel` (platform extra) names a channel; every NEW titled session of this
-machine that is NOT a Discord conversation (CLI, TUI — the `local` origin) gets a thread there,
-bound to the session by dispatching the same `/resume <id> --all` pipeline a typed command uses.
+machine that is an interactive desk session (TUI, CLI: :data:`MIRROR_SOURCES`) gets a thread
+there, bound to the session by dispatching the same `/resume <id> --all` pipeline a typed command
+uses.
 The thread is the control surface: the agent answers in it, `/resume` inside switches it.
 
 Design notes:
@@ -42,6 +43,16 @@ from gateway.platforms.event import MessageEvent, MessageType
 from gateway.session_handoff import check_settled
 
 logger = logging.getLogger(__name__)
+
+#: The roster's local surfaces: interactive desk sessions only. ``tui``/``cli`` are the surfaces'
+#: own source labels; a ``local`` row counts only when one of those surfaces created it. Never
+#: ``tool``/``cron``/``subagent``/``oneshot`` runs, nor messaging conversations. (Narrower than
+#: ``hermes_state_local_migration.LEGACY_LOCAL_SOURCES``, which also holds oneshot/tool/acp.)
+MIRROR_SOURCES = ("tui", "cli", "local")
+MIRROR_LOCAL_CREATED_SOURCES = ("tui", "cli")
+#: A session the map has never seen is "new" only if active this recently; older ones are seeded
+#: quietly (unless backfill is on), so widening the roster never mass-threads old sessions.
+_NEW_SESSION_WINDOW_SECONDS = 24 * 3600
 
 POLL_SECONDS = 10.0
 _SETTLE_SECONDS = 3.0
@@ -274,6 +285,15 @@ async def forward_local_submit(adapter: Any, *, session_id: str, text: str, subm
     return receipt
 
 
+def _recently_active(row: dict) -> bool:
+    """Active inside the new-session window; a row without a timestamp counts as recent."""
+    stamp = row.get("last_active") or row.get("started_at")
+    try:
+        return stamp is None or time.time() - float(stamp) <= _NEW_SESSION_WINDOW_SECONDS
+    except (TypeError, ValueError):
+        return True
+
+
 def _starter_message(title: str) -> str:
     return (f"🖥 Mirrored session **{title}** — talking here reaches the agent that runs it on "
             f"this machine. `/resume` switches this thread to another session.")
@@ -303,10 +323,10 @@ async def tick(adapter: Any, seen: dict, *, post_new: bool) -> None:
     session_key = runner._session_key_for_source(source)
     db = store._db_for_key(session_key)
     rows = db.list_sessions_rich(
-        sources=["local"], limit=25, order_by_last_active=True,
-        min_message_count=1, include_children=False)
-    current = {str(r.get("id") or ""): str(r.get("title") or "") for r in rows
-               if r.get("title") and r.get("id")}
+        sources=list(MIRROR_SOURCES), local_created_sources=list(MIRROR_LOCAL_CREATED_SOURCES),
+        limit=25, order_by_last_active=True, min_message_count=1, include_children=False)
+    by_id = {str(r.get("id") or ""): r for r in rows if r.get("title") and r.get("id")}
+    current = {sid: str(r.get("title") or "") for sid, r in by_id.items()}
     backfill = _backfill_enabled(adapter)
     if not post_new and not backfill:
         # a fresh install's first tick: seed only, do not mass-thread old sessions
@@ -344,7 +364,10 @@ async def tick(adapter: Any, seen: dict, *, post_new: bool) -> None:
     for sid, title in current.items():
         thread_id, synced_title = seen.get(sid, (None, None))
         needs_thread = sid not in seen or (backfill and seen[sid][0] is None)
-        if needs_thread:  # open the bound thread (with a starter message, so it
+        if sid not in seen and not backfill and not _recently_active(by_id[sid]):
+            seen[sid] = (None, title)  # an old session newly in the roster: seed, never mass-thread
+            _save_map(adapter, seen)
+        elif needs_thread:  # open the bound thread (with a starter message, so it
             try:          # actually surfaces in the channel instead of the hidden popup)
                 await check_settled(db, sid)
             except Exception as exc:  # health: allow BLE001 -- a busy session is retried on a later tick, never fatal

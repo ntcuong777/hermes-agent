@@ -403,8 +403,9 @@ group_sessions_per_user: true     # Isolate sessions per user in shared channels
 
 **Type:** channel ID (string) — **Default:** unset (off)
 
-The **session mirror**: every NEW machine-local session (CLI and TUI — the `local` origin;
-api-server sessions are not mirrored) automatically gets a **thread** in this channel, bound to
+The **session mirror**: every NEW interactive desk session (TUI and CLI — sources `tui`, `cli`,
+and `local` rows a TUI/CLI created; tool, cron, subagent, one-shot, api-server and messaging
+sessions are not mirrored) automatically gets a **thread** in this channel, bound to
 that session via the same `/resume <id> --all` pipeline a typed command uses. Your desk sessions
 become Discord threads the moment they start: open the thread and you are talking to that
 session; `/resume` inside a thread switches it to a different session. Thread names carry the
@@ -428,8 +429,11 @@ Requirements and edges:
   threads again, only sessions that appear afterwards do. A session started during the restart
   window is therefore not mirrored.
 - Only titled sessions with at least one message mirror (untitled shells are skipped; a session
-  gets its AI title moments after starting and appears on the next poll, ~30s). Automation runs
-  (cron jobs) are machine-local sessions too — expect titled cron sessions to appear here.
+  gets its title when its first turn starts and appears on the next poll, ~10s). Cron jobs,
+  tool/one-shot runs and subagents are never mirrored.
+- A session the mirror has never seen counts as new only if it was active in the last 24 hours;
+  older ones are recorded quietly (unless `session_mirror_backfill` is on), so an upgrade that
+  widens which sessions qualify does not thread every old desk session at once.
 - **Old sessions predate the mirror and normally never get threads.** Set
   `session_mirror_backfill: true` (platform extra) to thread the whole titled roster — top 25
   most recent — on the first tick after a restart. Expect a burst of ~25 threads once; bindings
