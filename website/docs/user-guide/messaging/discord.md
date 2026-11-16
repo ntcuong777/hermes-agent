@@ -445,6 +445,19 @@ Requirements and edges:
   every attached viewer (TUI included). Text-only — rewinds and image attachments still ask for
   the thread — and a retried send inside 5 minutes replays the first forward instead of posting
   twice.
+- **Live mirroring.** Set `session_mirror_live: true` (platform extra) to make the thread follow
+  the session as it runs. The thread opens as soon as the session has a title, even mid-turn (the
+  binding `/resume` still waits for the session to settle), and starts with a recap of the stored
+  conversation (the last 20 user/assistant messages; long entries cut). From then on:
+  - every prompt typed at the desk (TUI/CLI, attached or relayed by `session_mirror_local_forward`)
+    is echoed as `[<your display name>] text`. Messages typed in the thread are never echoed.
+  - until the binding lands, the session still runs on its local lane and nothing reaches the thread
+    on its own, so the mirror also posts the turn: tool activity as one status message edited in
+    place (at most every 2.5s, never one message per tool call), commentary, and the final reply,
+    split at Discord's 2000-character limit.
+  - once bound, the thread's own lane posts replies and tool progress; the mirror only adds the
+    desk-prompt echoes, so nothing appears twice.
+  All of these posts are display-only bot messages: they never start a turn. Default off.
 - Rename sync lives in memory: a gateway restart clears it until the next title change or
   thread rename on a mirrored session.
 
@@ -455,6 +468,7 @@ platforms:
       session_mirror_channel: "1571082911984132157"
       group_allow_admin_from: ["202"]   # your Discord user ID
       session_mirror_local_forward: true
+      session_mirror_live: true          # thread follows the session as it runs
 ```
 
 #### `platforms.discord.extra.thread_workspaces`

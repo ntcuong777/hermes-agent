@@ -3,7 +3,8 @@
 `session_mirror_channel` (platform extra) names a channel; every NEW titled session of this
 machine that is an interactive desk session (TUI, CLI: :data:`MIRROR_SOURCES`) gets a thread
 there, bound to the session by dispatching the same `/resume <id> --all` pipeline a typed command
-uses.
+uses. With `session_mirror_live` the thread opens as soon as the session is titled (binding still
+waits for it to settle) and follows the session live (adapter_session_mirror_live.py).
 The thread is the control surface: the agent answers in it, `/resume` inside switches it.
 
 Design notes:
@@ -41,6 +42,7 @@ from typing import Any
 
 from gateway.platforms.event import MessageEvent, MessageType
 from gateway.session_handoff import check_settled
+from plugins.platforms.discord import adapter_session_mirror_live as live_feed
 
 logger = logging.getLogger(__name__)
 
@@ -270,6 +272,8 @@ async def forward_local_submit(adapter: Any, *, session_id: str, text: str, subm
     receipts[key] = (now, receipt)
     try:
         sender_name = await _forward_sender_name(adapter, admin)
+        if live_feed.live_enabled(adapter):
+            await _echo_forward(adapter, thread, text)
         source = adapter.build_source(
             chat_id=str(thread.id), chat_name=getattr(thread, "name", None), chat_type="thread",
             user_id=admin, user_name=sender_name, thread_id=str(thread.id), message_id="0",
@@ -285,6 +289,31 @@ async def forward_local_submit(adapter: Any, *, session_id: str, text: str, subm
     return receipt
 
 
+async def _echo_forward(adapter: Any, thread: Any, text: str) -> None:
+    """`session_mirror_live`: the forwarded prompt is a synthetic event Discord never shows, so it
+    is echoed into the thread first (display only; the forward below is the turn)."""
+    try:
+        await live_feed.echo_prompt(adapter, thread, text)
+    except Exception:  # health: allow BLE001 -- a lost echo must not block the forward
+        logger.info("[%s] Session mirror: could not echo a local forward", adapter.name, exc_info=True)
+
+
+def _starter_message(title: str) -> str:
+    return (f"🖥 Mirrored session **{title}** — talking here reaches the agent that runs it on "
+            f"this machine. `/resume` switches this thread to another session.")
+
+
+async def _settled(adapter: Any, db: Any, sid: str) -> bool:
+    """The handoff watcher's settled guard: a session with durable work in flight (a live turn, a
+    worker on its lineage) is not bound now; a later tick retries."""
+    try:
+        await check_settled(db, sid)
+        return True
+    except Exception as exc:  # health: allow BLE001 -- a busy session is retried on a later tick, never fatal
+        logger.info("[%s] Session mirror: %s is not settled yet (%s); retried later", adapter.name, sid, exc)
+        return False
+
+
 def _recently_active(row: dict) -> bool:
     """Active inside the new-session window; a row without a timestamp counts as recent."""
     stamp = row.get("last_active") or row.get("started_at")
@@ -294,9 +323,102 @@ def _recently_active(row: dict) -> bool:
         return True
 
 
-def _starter_message(title: str) -> str:
-    return (f"🖥 Mirrored session **{title}** — talking here reaches the agent that runs it on "
-            f"this machine. `/resume` switches this thread to another session.")
+async def _create_thread(adapter: Any, channel: Any, seen: dict, sid: str, title: str):
+    """Open *sid*'s thread WITH a starter message (so it surfaces in the channel instead of the
+    hidden popup); None when Discord refused — marked seen, so a broken channel cannot
+    retry-storm every tick."""
+    try:
+        thread = await channel.create_thread(name=_tagged(title), reason="Hermes session mirror")
+        await thread.send(_starter_message(title))
+    except Exception:  # health: allow BLE001 -- marked seen: a broken channel must not retry-storm every tick
+        logger.warning("[%s] Session mirror: could not create a thread for %s", adapter.name, sid, exc_info=True)
+        seen[sid] = (None, title)
+        _save_map(adapter, seen)
+        return None
+    seen[sid] = (str(thread.id), title)
+    _save_map(adapter, seen)
+    return thread
+
+
+def _dispatched_binds(adapter: Any) -> set:
+    """Sessions whose binding `/resume` this process already dispatched (never re-sent)."""
+    binds = getattr(adapter, "_mirror_binds", None)
+    if not isinstance(binds, set):
+        binds = adapter._mirror_binds = set()
+    return binds
+
+
+async def _dispatch_bind(adapter: Any, channel: Any, admin: str, thread_id: str, sid: str, title: str) -> None:
+    """Bind *sid* to its thread through the typed `/resume <id> --all` pipeline, as the admin."""
+    _dispatched_binds(adapter).add(sid)
+    mirror_source = adapter.build_source(
+        chat_id=str(thread_id), chat_name=title, chat_type="thread", user_id=admin,
+        user_name="session mirror", thread_id=str(thread_id), message_id="0",
+        guild_id=getattr(getattr(channel, "guild", None), "id", None))
+    await adapter.handle_message(MessageEvent(
+        text=f"/resume {sid} --all", message_type=MessageType.COMMAND, source=mirror_source,
+        user_id=admin, user_name="session mirror", message_id=str(thread_id)))
+
+
+async def _open_session(adapter: Any, db: Any, channel: Any, admin: str, seen: dict, sid: str, title: str) -> None:
+    """A new session's thread and binding. Without `session_mirror_live` both wait for the session
+    to settle; with it the thread opens now (and starts following the session) and only the
+    binding waits — a later tick binds it once settled (:func:`_bind_pending`)."""
+    live = live_feed.live_enabled(adapter)
+    if not live and not await _settled(adapter, db, sid):
+        return
+    thread = await _create_thread(adapter, channel, seen, sid, title)
+    if thread is None:
+        return
+    if live:
+        live_feed.start_feed(adapter, sid, db)
+        if not await _settled(adapter, db, sid):
+            return
+    await _dispatch_bind(adapter, channel, admin, str(thread.id), sid, title)
+
+
+async def _bind_pending(adapter: Any, db: Any, channel: Any, admin: str, seen: dict, sid: str) -> None:
+    """`session_mirror_live`: a session whose thread opened before it settled is bound once it
+    has (still on a local source = not moved yet). One dispatch per session per process."""
+    thread_id, title = seen.get(sid, (None, None))
+    if not thread_id or sid in _dispatched_binds(adapter):
+        return
+    if await _settled(adapter, db, sid):
+        await _dispatch_bind(adapter, channel, admin, thread_id, sid, title or "")
+
+
+async def _rename_thread(adapter: Any, seen: dict, sid: str, thread_id: str | None, title: str) -> None:
+    """The session was retitled on the machine: rename its thread (resolved through the client
+    cache / API — not the per-channel thread list, which reconnects reset); a deleted thread
+    drops the stale binding and keeps the session."""
+    thread = _resolve_thread(adapter, thread_id)
+    if thread is None:
+        logger.info("[%s] Session mirror: thread for %s (id %s) is gone; unbinding", adapter.name, sid, thread_id)
+        seen[sid] = (None, title)
+        _save_map(adapter, seen)
+        return
+    try:
+        await thread.edit(name=_tagged(title))
+        seen[sid] = (thread_id, title)
+        _save_map(adapter, seen)
+    except Exception:  # health: allow BLE001 -- a refused rename must not stop the roster read
+        logger.info("[%s] Session mirror: could not rename the thread of %s", adapter.name, sid, exc_info=True)
+
+
+async def _sync_bound_titles(adapter: Any, db: Any, seen: dict) -> None:
+    """Bound-session title drift: a mirrored session's source row flips to `discord` once the
+    /resume lane move lands, so the roster query stops returning it. Read each bound session
+    directly and rename its thread on drift — source-agnostic."""
+    for sid, (thread_id, synced) in list(seen.items()):
+        if not thread_id:
+            continue
+        try:
+            row = db.get_session(sid) or {}
+        except Exception:  # health: allow BLE001 -- a read miss must not stop the roster tick
+            continue
+        title = str(row.get("title") or "")
+        if title and title != synced:
+            await _rename_thread(adapter, seen, sid, thread_id, title)
 
 
 async def tick(adapter: Any, seen: dict, *, post_new: bool) -> None:
@@ -337,74 +459,21 @@ async def tick(adapter: Any, seen: dict, *, post_new: bool) -> None:
     # With backfill on, the seeding tick falls through to the same creation loop as later
     # ticks: every titled session in the roster gets a bound thread, not just sessions that
     # appear later.
-    # Bound-session title drift: a mirrored session's source row flips to `discord` once the
-    # /resume lane move lands, so the local-sources query above stops returning it. Read each
-    # bound session directly and rename its thread on drift — source-agnostic.
-    for sid, (thread_id, synced) in list(seen.items()):
-        if not thread_id:
-            continue
-        try:
-            row = db.get_session(sid) or {}
-        except Exception:  # health: allow BLE001 -- a read miss must not stop the roster tick
-            continue
-        title = str(row.get("title") or "")
-        if not title or title == synced:
-            continue
-        thread = _resolve_thread(adapter, thread_id)
-        if thread is None:  # deleted on Discord: drop the stale binding, keep the session
-            seen[sid] = (None, title)
-            _save_map(adapter, seen)
-            continue
-        try:
-            await thread.edit(name=_tagged(title))
-            seen[sid] = (thread_id, title)
-            _save_map(adapter, seen)
-        except Exception:  # health: allow BLE001 -- a refused rename must not stop the roster read
-            logger.info("[%s] Session mirror: could not rename the thread of %s", adapter.name, sid, exc_info=True)
+    await _sync_bound_titles(adapter, db, seen)
+    live = live_feed.live_enabled(adapter)
     for sid, title in current.items():
         thread_id, synced_title = seen.get(sid, (None, None))
-        needs_thread = sid not in seen or (backfill and seen[sid][0] is None)
         if sid not in seen and not backfill and not _recently_active(by_id[sid]):
             seen[sid] = (None, title)  # an old session newly in the roster: seed, never mass-thread
             _save_map(adapter, seen)
-        elif needs_thread:  # open the bound thread (with a starter message, so it
-            try:          # actually surfaces in the channel instead of the hidden popup)
-                await check_settled(db, sid)
-            except Exception as exc:  # health: allow BLE001 -- a busy session is retried on a later tick, never fatal
-                logger.info("[%s] Session mirror: %s is not settled yet (%s); retried later", adapter.name, sid, exc)
-                continue
-            try:
-                thread = await channel.create_thread(name=_tagged(title), reason="Hermes session mirror")
-                await thread.send(_starter_message(title))
-            except Exception:  # health: allow BLE001 -- marked seen: a broken channel must not retry-storm every tick
-                logger.warning("[%s] Session mirror: could not create a thread for %s", adapter.name, sid, exc_info=True)
-                seen[sid] = (None, title)
-                _save_map(adapter, seen)
-                continue
-            seen[sid] = (str(thread.id), title)
-            _save_map(adapter, seen)
-            mirror_source = adapter.build_source(
-                chat_id=str(thread.id), chat_name=title, chat_type="thread", user_id=admin,
-                user_name="session mirror", thread_id=str(thread.id), message_id="0",
-                guild_id=getattr(getattr(channel, "guild", None), "id", None))
-            await adapter.handle_message(MessageEvent(
-                text=f"/resume {sid} --all", message_type=MessageType.COMMAND, source=mirror_source,
-                user_id=admin, user_name="session mirror", message_id=str(thread.id)))
+        elif sid not in seen or (backfill and thread_id is None):
+            await _open_session(adapter, db, channel, admin, seen, sid, title)
         elif title != synced_title:
-            # the session was retitled on the machine: rename its thread (resolved through the
-            # client cache / API — not the per-channel thread list, which reconnects reset)
-            thread = _resolve_thread(adapter, thread_id)
-            if thread is None:
-                logger.info("[%s] Session mirror: thread for %s (id %s) is gone; unbinding", adapter.name, sid, thread_id)
-                seen[sid] = (None, title)
-                _save_map(adapter, seen)
-                continue
-            try:
-                await thread.edit(name=_tagged(title))
-                seen[sid] = (thread_id, title)
-                _save_map(adapter, seen)
-            except Exception:  # health: allow BLE001 -- a refused rename must not stop the roster read
-                logger.info("[%s] Session mirror: could not rename the thread of %s", adapter.name, sid, exc_info=True)
+            await _rename_thread(adapter, seen, sid, thread_id, title)
+        elif live and thread_id:
+            await _bind_pending(adapter, db, channel, admin, seen, sid)
+    if live:
+        live_feed.ensure_feeds(adapter, seen)
 
 
 async def sync_thread_title(adapter: Any, thread: Any) -> None:
@@ -462,15 +531,18 @@ async def loop(adapter: Any) -> None:
     # first boot does not mass-thread every historical session.
     fresh = not _map_path(adapter).exists()
     first = True
-    while True:
-        try:
-            await tick(adapter, _load_map(adapter), post_new=not first or not fresh)
-            first = False
-        except asyncio.CancelledError:
-            raise
-        except Exception:  # health: allow BLE001 -- the mirror is ambient; a bad tick must not kill the loop
-            logger.warning("[%s] Session mirror tick failed", adapter.name, exc_info=True)
-        await asyncio.sleep(POLL_SECONDS)
+    try:
+        while True:
+            try:
+                await tick(adapter, _load_map(adapter), post_new=not first or not fresh)
+                first = False
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # health: allow BLE001 -- the mirror is ambient; a bad tick must not kill the loop
+                logger.warning("[%s] Session mirror tick failed", adapter.name, exc_info=True)
+            await asyncio.sleep(POLL_SECONDS)
+    finally:
+        live_feed.stop(adapter)  # detach the live feed's stream observers with the loop
 
 
 def start(adapter: Any) -> None:
