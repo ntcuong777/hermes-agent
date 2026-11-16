@@ -3,6 +3,7 @@ Bound onto ``GatewayRunner`` through ``GatewaySlashCommandsMixin``."""
 
 from __future__ import annotations
 
+import functools
 import logging
 
 from agent.i18n import t
@@ -27,9 +28,20 @@ def _mgr_call(prefix: str, fn, *args, errors=(RuntimeError, ValueError)):
         return None, f"{prefix}: {exc}"
 
 
+def publishes_lane_control(handler):
+    """A goal/loop command that ran in a messaging lane changed state a mirrored local viewer shows."""
+    @functools.wraps(handler)
+    async def wrapper(self, event):
+        result = await handler(self, event)
+        await self._publish_lane_control(event)
+        return result
+    return wrapper
+
+
 class GatewayGoalCommandsMixin:
     """Autonomy-loop gateway commands: /goal, /subgoal, /heartbeat, /loop, /refine, /review."""
 
+    @publishes_lane_control
     async def _handle_goal_command(self, event: MessageEvent) -> str:
         from hermes_cli.goal_command import dispatch_goal_command
         from hermes_cli.goals import last_user_message_from_db
@@ -112,6 +124,7 @@ class GatewayGoalCommandsMixin:
         except Exception as exc:
             logger.debug("goal %s failed: %s", label, exc)
 
+    @publishes_lane_control
     async def _handle_heartbeat_command(self, event: MessageEvent) -> str:
         """Handle /heartbeat (mirror of the CLI handler): the session's one recurring re-entry
         prompt. The gateway-wide poller injects due heartbeats through the adapter FIFO as
@@ -180,6 +193,7 @@ class GatewayGoalCommandsMixin:
             return quick_key, None, t(f"gateway.{verb}.nothing_yet")
         return quick_key, agent, None
 
+    @publishes_lane_control
     async def _handle_refine_command(self, event: MessageEvent) -> str:
         """Handle /refine — run the memory/skill review fork on demand, in a daemon thread against a
         snapshot of the cached AIAgent's conversation (live session and prompt cache untouched)."""
@@ -223,6 +237,7 @@ class GatewayGoalCommandsMixin:
         tail = t("gateway.refine.focus_suffix", focus=args) if args else ""
         return t("gateway.refine.started", focus_suffix=tail)
 
+    @publishes_lane_control
     async def _handle_review_command(self, event: MessageEvent) -> str:
         """Handle /review — spawn an independent reviewer subagent. The approval session-key
         contextvar is only bound during agent turns, so bind it explicitly here or the completion
@@ -268,6 +283,7 @@ class GatewayGoalCommandsMixin:
         from agent.review_engine import format_dispatch_note
         return format_dispatch_note(result, args)
 
+    @publishes_lane_control
     async def _handle_subgoal_command(self, event: MessageEvent) -> str:
         """Handle /subgoal (mirror of the CLI handler): extra criteria appended to the active goal
         mid-loop. They modify state read at the next turn boundary, so this is safe while the
@@ -307,6 +323,7 @@ class GatewayGoalCommandsMixin:
         idx = len(mgr.state.subgoals) if mgr.state else 0
         return t("gateway.subgoal.added", index=idx, text=text)
 
+    @publishes_lane_control
     async def _handle_loop_command(self, event: MessageEvent) -> str:
         """Handle /loop — recurring in-session wakeups, via ``dispatch_loop_command`` (CLI mirror)."""
         try:

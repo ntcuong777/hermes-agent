@@ -401,16 +401,34 @@ class GatewayGoalsMixin:
                            run_generation=turn_run_generation(event))
             except Exception as exc:
                 logger.debug("%s hook failed: %s", label, exc)
-        await self._publish_local_control(source, only_if_present=True)
+        await self._publish_local_control(source, only_if_present=True, session_id=session_entry.session_id)
 
-    async def _publish_local_control(self, source: Any, *, only_if_present: bool = False) -> None:
-        """A local (Desktop/Ink) session's goal or loop state just moved here: repaint its viewers' cards,
-        whose loop countdown runs off the snapshot's ``next_due_at``."""
-        if getattr(source, "platform", None) != Platform.LOCAL:
+    async def _publish_local_control(self, source: Any, *, only_if_present: bool = False,
+                                     session_id: Optional[str] = None) -> None:
+        """A session's goal or loop state just moved here: repaint its viewers' cards (a local
+        session's own, or a TUI/Desktop viewer a messaging lane is mirrored onto), whose loop countdown
+        runs off the snapshot's ``next_due_at``. A lane source names the session it is bound to
+        (*session_id*): its own chat id is the thread, not a session a viewer is subscribed to."""
+        if getattr(source, "platform", None) == Platform.LOCAL:
+            session_id = source.chat_id
+        if not session_id:
             return
         from gateway.session_authorities import active_authority
         from gateway.session_control_actions import publish_async
-        await publish_async(active_authority(self), source.chat_id, only_if_present=only_if_present)
+        await publish_async(active_authority(self), session_id, only_if_present=only_if_present)
+
+    async def _publish_lane_control(self, event: Any) -> None:
+        """After a goal/loop command a messaging lane ran: the bound local viewer's goal and loop bars
+        repaint (a ``/goal clear`` in the thread left the TUI's "goal paused" bar up). A local session's
+        own commands publish through ``execute_command``; never fails the command."""
+        source = getattr(event, "source", None)
+        if source is None or getattr(source, "platform", None) == Platform.LOCAL:
+            return
+        try:
+            entry = await self.async_session_store.get_or_create_session(source, touch_activity=False)
+            await self._publish_local_control(source, session_id=getattr(entry, "session_id", None))
+        except Exception as exc:
+            logger.debug("lane control publish failed: %s", exc)
 
     @staticmethod
     def _turn_failed() -> bool:
@@ -544,7 +562,7 @@ class GatewayGoalsMixin:
             with suppress(Exception):
                 mgr.abandon_tick()
         # Viewers swap the countdown for "running now" (or re-anchor it after a slash tick settled).
-        await self._publish_local_control(source)
+        await self._publish_local_control(source, session_id=sid)
 
     async def _loop_wakeup_watcher(self, interval: float = 15.0) -> None:
         """Fire due /loop wakeups for idle gateway sessions: a coarse ticker scans persisted loops
