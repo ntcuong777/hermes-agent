@@ -1069,11 +1069,24 @@ class GatewayBusySessionMixin:
 
     def _command_handler_table(self, names) -> dict[str, Any]:
         return {
-            name: getattr(
+            name: self._repainting_viewer(getattr(
                 self, self._COMMAND_HANDLER_ALIASES.get(name, f"_handle_{name.replace('-', '_')}_command"),
-            )
+            ))
             for name in names
         }
+
+    def _repainting_viewer(self, handler):
+        """Every slash command a messaging lane runs may change what a local viewer bound to the same
+        session shows (its model, reasoning, fast, yolo, title, cwd pills): republish ``session.info`` after
+        it, for every command in the table and any added to it later, so no command has to remember to."""
+        import functools
+
+        @functools.wraps(handler)
+        async def run(event, *args, **kwargs):
+            result = await handler(event, *args, **kwargs)
+            await self._publish_lane_info(event)
+            return result
+        return run
 
     def _gateway_plain_command_handlers(self):
         """Return ordinary slash handlers shared by idle and busy dispatch."""

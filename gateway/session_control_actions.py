@@ -117,6 +117,30 @@ async def publish_async(authority, session_id, *, only_if_present=False, only_if
                       only_if_present=only_if_present, only_if_changed=only_if_changed)
 
 
+async def publish_info_async(authority, session_id) -> None:
+    """Repaint every viewer's model/reasoning/fast/yolo/title/cwd pills for *session_id*: the
+    ``session.info`` a local pick or a turn publishes, read in a worker thread (it reads state.db)."""
+    live = authority.sessions.get(session_id) if authority is not None else None
+    if live is None:
+        return
+    from gateway.session_contract import SessionRef
+    from gateway.session_authorities import owner_scope
+    from gateway.session_local import local_session_info
+    ref = SessionRef(authority.profile_id, session_id)
+
+    def read():
+        with owner_scope(authority):  # a worker thread inherits no profile scope it was not given
+            return local_session_info(authority, ref)
+    try:
+        info = await asyncio.to_thread(read)
+    except Exception:
+        logger.debug('session.info republish skipped for %s', session_id, exc_info=True)
+        return
+    if authority.sessions.get(session_id) is not live:  # closed or re-mounted while the read ran
+        return
+    live.event_stream.publish(session_id, info, event_type='session.info')
+
+
 def _read_control_snapshot(authority, session_id, *, scoped=False):
     from gateway.session_ancillary import control_snapshot
     from gateway.session_contract import SessionRef

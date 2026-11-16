@@ -92,3 +92,99 @@ async def test_a_publish_failure_never_breaks_the_command():
     with patch('gateway.session_control_actions.publish_async', AsyncMock(side_effect=RuntimeError('boom'))), \
             patch('gateway.session_authorities.active_authority', lambda _runner: 'authority'):
         assert await runner._handle_subgoal_command(event)
+
+
+# ── session.info: every lane command repaints the bound viewer's pills ─────────────────────────────
+
+import contextlib
+
+
+def _info_runner(handler):
+    from gateway.run import GatewayRunner
+
+    class _R(GatewayRunner):
+        async_session_store = SimpleNamespace(
+            get_or_create_session=AsyncMock(return_value=SimpleNamespace(session_id='local-s1')))
+        _handle_yolo_command = handler
+    return object.__new__(_R)
+
+
+def _info_published():
+    publish = AsyncMock()
+    return publish, patch('gateway.session_control_actions.publish_info_async', publish), \
+        patch('gateway.session_authorities.active_authority', lambda _runner: 'authority')
+
+
+@pytest.mark.asyncio
+async def test_every_command_in_the_handler_table_repaints_the_bound_viewer():
+    """The table wraps all handlers, so a command added later repaints too (a /model, /reasoning, /fast,
+    /yolo or /title typed in the thread left the TUI's pills on their old values)."""
+    async def yolo(self, event):
+        return 'yolo on'
+    runner = _info_runner(yolo)
+    event = SimpleNamespace(source=_source(Platform.DISCORD))
+    publish, p1, p2 = _info_published()
+    with p1, p2:
+        out = await runner._command_handler_table(('yolo',))['yolo'](event)
+    assert out == 'yolo on'
+    publish.assert_awaited_once_with('authority', 'local-s1')
+
+
+@pytest.mark.asyncio
+async def test_a_local_session_command_is_not_republished_by_the_table():
+    async def yolo(self, event):
+        return 'ok'
+    runner = _info_runner(yolo)
+    event = SimpleNamespace(source=_source(Platform.LOCAL, 'local-s1'))
+    publish, p1, p2 = _info_published()
+    with p1, p2:
+        await runner._command_handler_table(('yolo',))['yolo'](event)
+    publish.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_failing_handler_does_not_republish_and_a_failing_publish_does_not_fail_the_command():
+    async def boom(self, event):
+        raise ValueError('nope')
+    event = SimpleNamespace(source=_source(Platform.DISCORD))
+    publish, p1, p2 = _info_published()
+    with p1, p2, pytest.raises(ValueError):
+        await _info_runner(boom)._command_handler_table(('yolo',))['yolo'](event)
+    publish.assert_not_awaited()
+
+    async def fine(self, event):
+        return 'fine'
+    with patch('gateway.session_control_actions.publish_info_async', AsyncMock(side_effect=RuntimeError('x'))), \
+            patch('gateway.session_authorities.active_authority', lambda _runner: 'authority'):
+        assert await _info_runner(fine)._command_handler_table(('yolo',))['yolo'](event) == 'fine'
+
+
+@pytest.mark.asyncio
+async def test_publish_info_sends_session_info_to_the_live_session_only():
+    from gateway.session_control_actions import publish_info_async
+    stream = SimpleNamespace(publish=lambda *a, **k: sent.append((a, k)))
+    sent = []
+    live = SimpleNamespace(event_stream=stream)
+    authority = SimpleNamespace(sessions={'local-s1': live}, profile_id='p')
+    with patch('gateway.session_local.local_session_info', lambda _a, _r: {'model': 'm'}), \
+            patch('gateway.session_authorities.owner_scope', lambda _a: contextlib.nullcontext()):
+        await publish_info_async(authority, 'local-s1')
+        await publish_info_async(authority, 'absent')
+        await publish_info_async(None, 'local-s1')
+    assert sent == [(('local-s1', {'model': 'm'}), {'event_type': 'session.info'})]
+
+
+@pytest.mark.asyncio
+async def test_publish_info_drops_a_read_for_a_session_that_was_remounted():
+    from gateway.session_control_actions import publish_info_async
+    sent = []
+    live = SimpleNamespace(event_stream=SimpleNamespace(publish=lambda *a, **k: sent.append(a)))
+    authority = SimpleNamespace(sessions={'local-s1': live}, profile_id='p')
+
+    def read(_a, _r):
+        authority.sessions['local-s1'] = SimpleNamespace(event_stream=live.event_stream)  # re-mounted mid-read
+        return {'model': 'old'}
+    with patch('gateway.session_local.local_session_info', read), \
+            patch('gateway.session_authorities.owner_scope', lambda _a: contextlib.nullcontext()):
+        await publish_info_async(authority, 'local-s1')
+    assert sent == []

@@ -417,18 +417,36 @@ class GatewayGoalsMixin:
         from gateway.session_control_actions import publish_async
         await publish_async(active_authority(self), session_id, only_if_present=only_if_present)
 
-    async def _publish_lane_control(self, event: Any) -> None:
-        """After a goal/loop command a messaging lane ran: the bound local viewer's goal and loop bars
-        repaint (a ``/goal clear`` in the thread left the TUI's "goal paused" bar up). A local session's
-        own commands publish through ``execute_command``; never fails the command."""
+    async def _lane_session_id(self, event: Any) -> Optional[str]:
+        """The session a messaging-lane *event* runs in, or None for a local/unknown source (a local
+        session's own commands publish through ``execute_command``)."""
         source = getattr(event, "source", None)
         if source is None or getattr(source, "platform", None) == Platform.LOCAL:
-            return
+            return None
+        entry = await self.async_session_store.get_or_create_session(source, touch_activity=False)
+        return getattr(entry, "session_id", None)
+
+    async def _publish_lane_control(self, event: Any) -> None:
+        """After a goal/loop command a messaging lane ran: the bound local viewer's goal and loop bars
+        repaint (a ``/goal clear`` in the thread left the TUI's "goal paused" bar up). Never fails the
+        command."""
         try:
-            entry = await self.async_session_store.get_or_create_session(source, touch_activity=False)
-            await self._publish_local_control(source, session_id=getattr(entry, "session_id", None))
+            if session_id := await self._lane_session_id(event):
+                await self._publish_local_control(event.source, session_id=session_id)
         except Exception as exc:
             logger.debug("lane control publish failed: %s", exc)
+
+    async def _publish_lane_info(self, event: Any) -> None:
+        """After any command a messaging lane ran: the bound local viewer repaints its model, reasoning,
+        fast, yolo, title and cwd pills (``session.info``). Commands that changed nothing republish the
+        same values; a session without a live viewer costs one dict lookup. Never fails the command."""
+        try:
+            if session_id := await self._lane_session_id(event):
+                from gateway.session_authorities import active_authority
+                from gateway.session_control_actions import publish_info_async
+                await publish_info_async(active_authority(self), session_id)
+        except Exception as exc:
+            logger.debug("lane info publish failed: %s", exc)
 
     @staticmethod
     def _turn_failed() -> bool:
