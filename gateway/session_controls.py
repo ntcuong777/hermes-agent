@@ -948,7 +948,7 @@ class AuthorityConnection:
             return None
         logger.info('command forwarded to the lane for session %s: %s', ref.session_id, receipt)
         return {'type': 'exec',
-                'output': f'{typed} sent to the session\'s bound thread; its output posts there.'}
+                'output': f'{typed} sent to the session\'s bound thread; its output posts there and follows here.'}
 
     def _voice_stop_key(self, ref, params):
         request_id = params.get('submission_id') or params.get('input_id')

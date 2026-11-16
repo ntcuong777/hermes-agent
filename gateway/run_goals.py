@@ -26,6 +26,12 @@ if TYPE_CHECKING:  # string annotations only; never imported at runtime (cycle)
 logger = logging.getLogger("gateway.run")
 
 
+def _command_text(event: Any) -> str:
+    """The command line as typed (``/goal clear``), one line, for the viewer's transcript."""
+    text = str(getattr(event, "text", "") or "").strip()
+    return text.splitlines()[0][:200] if text else ""
+
+
 class GatewayGoalsMixin:
     """Goal/heartbeat continuation, post-turn hooks and loop-wakeup watcher methods for GatewayRunner."""
 
@@ -436,15 +442,21 @@ class GatewayGoalsMixin:
         except Exception as exc:
             logger.debug("lane control publish failed: %s", exc)
 
-    async def _publish_lane_info(self, event: Any) -> None:
+    async def _publish_lane_info(self, event: Any, output: Optional[str] = None) -> None:
         """After any command a messaging lane ran: the bound local viewer repaints its model, reasoning,
-        fast, yolo, title and cwd pills (``session.info``). Commands that changed nothing republish the
-        same values; a session without a live viewer costs one dict lookup. Never fails the command."""
+        fast, yolo, title and cwd pills (``session.info``) and, when the command answered with text, shows
+        that answer too (``command.output``): the thread gets the reply as usual, and the TUI/Desktop
+        user who typed the command, or is following the session, is not left with only an
+        acknowledgement. Commands that changed nothing republish the same values; a session without a
+        live viewer costs one dict lookup. Never fails the command."""
         try:
             if session_id := await self._lane_session_id(event):
                 from gateway.session_authorities import active_authority
-                from gateway.session_control_actions import publish_info_async
-                await publish_info_async(active_authority(self), session_id)
+                from gateway.session_control_actions import publish_command_output, publish_info_async
+                authority = active_authority(self)
+                await publish_info_async(authority, session_id)
+                if isinstance(output, str) and output.strip():
+                    publish_command_output(authority, session_id, _command_text(event), output)
         except Exception as exc:
             logger.debug("lane info publish failed: %s", exc)
 

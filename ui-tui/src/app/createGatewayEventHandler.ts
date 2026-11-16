@@ -1246,6 +1246,18 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         applyDeferredPickOutcome(ev.payload as Record<string, unknown> | undefined, sid, gw, sys)
 
         return
+      case 'command.output' as typeof ev.type: {
+        // A slash command ran in the thread this session is mirrored onto (typed here and relayed, or typed
+        // there): the thread got its reply, this transcript gets it too.
+        const p = ev.payload as { command?: string; output?: string } | undefined
+        const output = typeof p?.output === 'string' ? p.output.trim() : ''
+
+        if (output) {
+          sys(p?.command ? `↳ ${p.command}\n${output}` : output)
+        }
+
+        return
+      }
 
       case 'session.replay_gap':
         // The authority retired this subscription (fanout overflow) while the

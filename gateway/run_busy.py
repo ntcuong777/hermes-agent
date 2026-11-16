@@ -1084,7 +1084,7 @@ class GatewayBusySessionMixin:
         @functools.wraps(handler)
         async def run(event, *args, **kwargs):
             result = await handler(event, *args, **kwargs)
-            await self._publish_lane_info(event)
+            await self._publish_lane_info(event, result if isinstance(result, str) else None)
             return result
         return run
 

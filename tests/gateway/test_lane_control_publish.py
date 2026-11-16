@@ -5,7 +5,7 @@ a TUI session is mirrored onto ran in the lane, which only published for LOCAL s
 showing the cleared goal's "paused" bar until it was reopened.
 """
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -188,3 +188,48 @@ async def test_publish_info_drops_a_read_for_a_session_that_was_remounted():
             patch('gateway.session_authorities.owner_scope', lambda _a: contextlib.nullcontext()):
         await publish_info_async(authority, 'local-s1')
     assert sent == []
+
+
+# ── command.output: the lane's answer is shown to the bound viewer too ───────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_lane_commands_answer_reaches_the_bound_viewer_as_command_output():
+    async def yolo(self, event):
+        return 'YOLO mode is now on.'
+    event = SimpleNamespace(source=_source(Platform.DISCORD), text='/yolo on\nsecond line')
+    out = MagicMock()
+    with patch('gateway.session_control_actions.publish_info_async', AsyncMock()), \
+            patch('gateway.session_control_actions.publish_command_output', out), \
+            patch('gateway.session_authorities.active_authority', lambda _runner: 'authority'):
+        result = await _info_runner(yolo)._command_handler_table(('yolo',))['yolo'](event)
+    assert result == 'YOLO mode is now on.'  # the thread still gets the reply from the runner
+    out.assert_called_once_with('authority', 'local-s1', '/yolo on', 'YOLO mode is now on.')
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('answer', [None, '', '   \n'])
+async def test_a_command_without_an_answer_publishes_no_output(answer):
+    async def quiet(self, event):
+        return answer
+    event = SimpleNamespace(source=_source(Platform.DISCORD), text='/yolo')
+    out = MagicMock()
+    with patch('gateway.session_control_actions.publish_info_async', AsyncMock()), \
+            patch('gateway.session_control_actions.publish_command_output', out), \
+            patch('gateway.session_authorities.active_authority', lambda _runner: 'authority'):
+        await _info_runner(quiet)._command_handler_table(('yolo',))['yolo'](event)
+    out.assert_not_called()
+
+
+def test_command_output_goes_to_the_live_session_and_is_bounded():
+    from gateway.session_control_actions import COMMAND_OUTPUT_LIMIT, publish_command_output
+    sent = []
+    live = SimpleNamespace(event_stream=SimpleNamespace(publish=lambda *a, **k: sent.append((a, k))))
+    authority = SimpleNamespace(sessions={'local-s1': live})
+    publish_command_output(authority, 'local-s1', '/status', 'ok')
+    publish_command_output(authority, 'absent', '/status', 'nobody listens')
+    publish_command_output(None, 'local-s1', '/status', 'no authority')
+    publish_command_output(authority, 'local-s1', '/big', 'x' * (COMMAND_OUTPUT_LIMIT + 50))
+    assert sent[0] == (('local-s1', {'command': '/status', 'output': 'ok'}), {'event_type': 'command.output'})
+    assert len(sent) == 2
+    assert len(sent[1][0][1]['output']) == COMMAND_OUTPUT_LIMIT + 1 and sent[1][0][1]['output'].endswith('…')

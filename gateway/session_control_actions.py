@@ -141,6 +141,21 @@ async def publish_info_async(authority, session_id) -> None:
     live.event_stream.publish(session_id, info, event_type='session.info')
 
 
+#: A command's answer as a viewer's transcript shows it: long enough for any built-in command's output,
+#: bounded so a pathological one cannot flood every attached client.
+COMMAND_OUTPUT_LIMIT = 8000
+
+
+def publish_command_output(authority, session_id, command, output) -> None:
+    """Show *output* of a slash command a messaging lane ran to the viewers of *session_id* (the thread
+    gets it as the reply; ``command.output`` puts it in a TUI/Desktop transcript too)."""
+    live = authority.sessions.get(session_id) if authority is not None else None
+    if live is None:
+        return
+    text = output if len(output) <= COMMAND_OUTPUT_LIMIT else output[:COMMAND_OUTPUT_LIMIT] + '…'
+    live.event_stream.publish(session_id, {'command': command, 'output': text}, event_type='command.output')
+
+
 def _read_control_snapshot(authority, session_id, *, scoped=False):
     from gateway.session_ancillary import control_snapshot
     from gateway.session_contract import SessionRef
