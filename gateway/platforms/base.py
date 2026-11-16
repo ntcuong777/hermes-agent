@@ -1913,6 +1913,15 @@ class BasePlatformAdapter(_SessionModelSettingsMixin, ABC):
         ABSENT — every network-exposed direct adapter leaves it False."""
         return False
 
+    accepts_local_forward = False
+
+    async def forward_local_submit(self, *, session_id: str, text: str, submission_id: str) -> Optional[dict]:
+        """Relay a local surface's prompt to *session_id*'s messaging lane on the adapter's own
+        terms (a bound thread, a bot chat…), or return None to keep the caller's refusal. The
+        canonical submit path consults :attr:`accepts_local_forward` before calling; adapters
+        that opt in implement both (Discord: the session mirror's bound thread)."""
+        return None
+
     def supports_draft_streaming(
         self, chat_type: Optional[str] = None, metadata: Optional[dict[str, Any]] = None,
         chat_id: Optional[str] = None) -> bool:

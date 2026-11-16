@@ -1903,6 +1903,19 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
         from plugins.platforms.discord.adapter_session_mirror import start as start_mirror
         start_mirror(self)
 
+    @property
+    def accepts_local_forward(self) -> bool:
+        """Local submits to mirror-bound sessions relay into the bound thread
+        (`session_mirror_local_forward`); gateway/session_controls consults this duck-typed
+        flag before asking :meth:`forward_local_submit`."""
+        from plugins.platforms.discord.adapter_session_mirror import local_forward_enabled
+        return local_forward_enabled(self)
+
+    async def forward_local_submit(self, *, session_id: str, text: str, submission_id: str) -> dict | None:
+        """Relay a local surface's prompt into *session_id*'s bound thread; None when this
+        session is not forwardable. See adapter_session_mirror.forward_local_submit."""
+        from plugins.platforms.discord.adapter_session_mirror import forward_local_submit as _forward
+        return await _forward(self, session_id=session_id, text=text, submission_id=submission_id)
 
     # Reasons from ``_read_websocket_health`` that mean the transport is confirmed dead,
     # not merely suspect: ``_liveness_loop`` escalates on the first such strike (#118487).

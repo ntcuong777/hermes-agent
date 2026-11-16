@@ -34,6 +34,7 @@ import asyncio
 import json
 import logging
 import socket
+import time
 from pathlib import Path
 from typing import Any
 
@@ -112,6 +113,15 @@ def _backfill_enabled(adapter: Any) -> bool:
     return bool(extra.get("session_mirror_backfill"))
 
 
+def local_forward_enabled(adapter: Any) -> bool:
+    """`session_mirror_local_forward`: a local surface's (TUI/CLI) submit to a mirror-bound
+    session is relayed into its bound thread as the mirror admin instead of being refused —
+    the thread stays the session's only writer, the local surface becomes a remote keyboard
+    for it. Default off."""
+    extra = adapter.config.extra if isinstance(adapter.config.extra, dict) else {}
+    return bool(extra.get("session_mirror_local_forward"))
+
+
 def mirror_channel(adapter: Any):
     """The configured mirror channel, resolved against the client cache; None = off."""
     raw = adapter.config.extra.get("session_mirror_channel") if isinstance(adapter.config.extra, dict) else None
@@ -165,6 +175,95 @@ def _live_lineage_sid(db: Any, sid: str) -> str:
     rows = db.list_sessions_rich(id_query=sid, limit=1, order_by_last_active=True,
                                  project_compression_tips=True, include_children=False)
     return str(rows[0].get("id")) if rows else sid
+
+
+#: A local-forward retry inside this window replays the first receipt instead of posting again
+#: (a lost reply must not double-post into the thread; the window only bounds the memory).
+_FORWARD_DEDUPE_SECONDS = 300.0
+
+
+def _bound_thread_id(adapter: Any, session_id: str) -> str | None:
+    """The bound thread of *session_id*: the map's exact entry, else the lineage tip's — a
+    compression after binding moves the live context under an id the map doesn't name."""
+    seen = _load_map(adapter)
+    binding = seen.get(session_id)
+    if binding and binding[0]:
+        return str(binding[0])
+    channel = mirror_channel(adapter)
+    admin = mirror_admin_id(adapter)
+    runner = getattr(adapter, "gateway_runner", None)
+    store = getattr(runner, "session_store", None)
+    if channel is None or not admin or store is None:
+        return None
+    try:
+        source = adapter.build_source(
+            chat_id=str(channel.id), chat_name=getattr(channel, "name", None), chat_type="dm",
+            user_id=admin, message_id="0")
+        db = store._db_for_key(runner._session_key_for_source(source))
+        tip = _live_lineage_sid(db, session_id) if db is not None else session_id
+    except Exception:  # health: allow BLE001 -- an unreadable store keeps the session unforwardable
+        return None
+    binding = seen.get(tip)
+    return str(binding[0]) if binding and binding[0] else None
+
+
+async def _forward_sender_name(adapter: Any, admin: str) -> str | None:
+    """The admin's display name for the shared-sender prefix (`[<name>] ...`), client cache
+    first, API as fallback. None when Discord cannot tell: the prefix is then omitted."""
+    client = getattr(adapter, "_client", None)
+    if client is None:
+        return None
+    try:
+        user = client.get_user(int(admin))
+        if user is None:
+            user = await client.fetch_user(int(admin))
+        name = getattr(user, "display_name", None) or getattr(user, "name", None)
+        return name if isinstance(name, str) and name.strip() else None
+    except (TypeError, ValueError):
+        return None
+    except Exception:  # health: allow BLE001 -- a name miss must not block the forward
+        return None
+
+
+async def forward_local_submit(adapter: Any, *, session_id: str, text: str, submission_id: str) -> dict | None:
+    """Relay a local surface's prompt into *session_id*'s bound thread (`session_mirror_local_forward`).
+
+    The text enters the thread as if the mirror admin had typed it there: the lane's own ingress
+    authorizes it and runs the turn, and the reply lands in the thread and streams to every
+    attached viewer — the thread stays the session's only writer. Returns
+    ``{'queued': True, 'thread_id': ...}``, or None when this session is not forwardable (the
+    caller keeps its original refusal). A same-``submission_id`` retry inside the dedupe window
+    replays the first receipt instead of posting again."""
+    if not local_forward_enabled(adapter):
+        return None
+    now = time.monotonic()
+    receipts = getattr(adapter, "_forward_receipts", None)
+    if not isinstance(receipts, dict):
+        receipts = adapter._forward_receipts = {}
+    for key, (at, _receipt) in list(receipts.items()):
+        if now - at > _FORWARD_DEDUPE_SECONDS:
+            del receipts[key]
+    prior = receipts.get(submission_id)
+    if prior is not None:
+        return prior[1]
+    thread_id = _bound_thread_id(adapter, session_id)
+    admin = mirror_admin_id(adapter)
+    thread = _resolve_thread(adapter, thread_id) if thread_id else None
+    if thread is None or not admin:
+        return None
+    sender_name = await _forward_sender_name(adapter, admin)
+    source = adapter.build_source(
+        chat_id=str(thread.id), chat_name=getattr(thread, "name", None), chat_type="thread",
+        user_id=admin, user_name=sender_name, thread_id=str(thread.id), message_id="0",
+        guild_id=getattr(getattr(thread, "guild", None), "id", None))
+    await adapter.handle_message(MessageEvent(
+        text=text, message_type=MessageType.TEXT, source=source,
+        user_id=admin, user_name=sender_name, message_id=str(submission_id)))
+    receipt = {"queued": True, "thread_id": str(thread.id)}
+    receipts[submission_id] = (now, receipt)
+    logger.info("[%s] Session mirror: local forward for %s posted to thread %s (%d chars)",
+                adapter.name, session_id, thread.id, len(text))
+    return receipt
 
 
 def _starter_message(title: str) -> str:

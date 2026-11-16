@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from gateway.config import PlatformConfig
+from gateway.platforms.event import MessageType
 
 from plugins.platforms.discord.adapter import DiscordAdapter
 from plugins.platforms.discord import adapter_session_mirror
@@ -446,3 +447,104 @@ async def test_persisted_null_thread_id_stays_none_not_the_string(monkeypatch):
     assert seen["local-old"] == (None, "Old one")
     assert seen["local-corrupted"] == (None, "Corrupted by an older build")  # repaired
     assert seen["local-bound"] == ("15713709", "Bound one")
+
+
+# ── local forward (`session_mirror_local_forward`) ────────────────────────────
+
+
+def _forward_adapter(extra=None):
+    """An adapter for forward tests: a bound thread (id 999) discoverable on the mirror
+    channel's own thread list, `handle_message` captured, map seeded by the caller."""
+    adapter = _adapter({"session_mirror_channel": "555", "group_allow_admin_from": ["admin-1"],
+                        **(extra or {})})
+    channel = _mirror_channel()
+    channel.threads = [_thread_named("[h] Fix the gate")]
+    adapter._client = MagicMock()
+    adapter._client.get_channel = lambda cid: channel if str(cid) == "555" else None
+    adapter.gateway_runner = SimpleNamespace(
+        session_store=SimpleNamespace(), _session_key_for_source=lambda source: "agent:main:discord:dm:555",
+        _profile_name_for_source=lambda source, adapter_profile=None: "main")
+    adapter.handle_message = AsyncMock()
+    return adapter
+
+
+@pytest.mark.asyncio
+async def test_local_forward_posts_the_prompt_into_the_bound_thread():
+    """`session_mirror_local_forward`: the submit text enters the bound thread as the mirror
+    admin — the same synthetic-ingest recipe the binding pipeline uses — so the lane's own
+    ingress authorizes it and runs the turn."""
+    adapter = _forward_adapter({"session_mirror_local_forward": True})
+    adapter_session_mirror._save_map(adapter, {"s1": ("999", "Fix the gate")})
+
+    receipt = await adapter_session_mirror.forward_local_submit(
+        adapter, session_id="s1", text="run the red test", submission_id="sub-1")
+
+    assert receipt == {"queued": True, "thread_id": "999"}
+    adapter.handle_message.assert_awaited_once()
+    event = adapter.handle_message.await_args.args[0]
+    assert event.text == "run the red test"
+    assert event.message_type == MessageType.TEXT
+    assert event.internal is False  # the lane's authorization stays real: no internal bypass
+    assert event.source.user_id == "admin-1"
+    assert event.source.thread_id == "999"
+
+
+@pytest.mark.asyncio
+async def test_local_forward_off_keeps_the_refusal():
+    adapter = _forward_adapter()  # default off
+    adapter_session_mirror._save_map(adapter, {"s1": ("999", "Fix the gate")})
+
+    receipt = await adapter_session_mirror.forward_local_submit(
+        adapter, session_id="s1", text="run the red test", submission_id="sub-1")
+
+    assert receipt is None
+    adapter.handle_message.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_local_forward_unbound_session_is_not_forwardable():
+    adapter = _forward_adapter({"session_mirror_local_forward": True})
+    adapter_session_mirror._save_map(adapter, {"other": ("999", "Not this one")})
+
+    assert await adapter_session_mirror.forward_local_submit(
+        adapter, session_id="s1", text="run the red test", submission_id="sub-1") is None
+    adapter.handle_message.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_local_forward_replays_the_receipt_on_a_retry():
+    """A lost reply must not double-post: the same submission_id inside the dedupe window
+    replays the first receipt without a second dispatch."""
+    adapter = _forward_adapter({"session_mirror_local_forward": True})
+    adapter_session_mirror._save_map(adapter, {"s1": ("999", "Fix the gate")})
+
+    first = await adapter_session_mirror.forward_local_submit(
+        adapter, session_id="s1", text="run the red test", submission_id="sub-1")
+    second = await adapter_session_mirror.forward_local_submit(
+        adapter, session_id="s1", text="run the red test", submission_id="sub-1")
+
+    assert second == first == {"queued": True, "thread_id": "999"}
+    assert adapter.handle_message.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_local_forward_resolves_a_compressed_tip():
+    """A compression after binding moves the live context under an id the map doesn't name;
+    the forward resolves the tip through the store and still finds the thread."""
+    adapter = _forward_adapter({"session_mirror_local_forward": True})
+    rows = [_row("tip-1", "Fix the gate")]
+
+    def list_rich(**_kw):
+        return list(rows)
+
+    adapter.gateway_runner = SimpleNamespace(
+        session_store=SimpleNamespace(_db_for_key=lambda key: SimpleNamespace(list_sessions_rich=list_rich)),
+        _session_key_for_source=lambda source: "agent:main:discord:dm:555",
+        _profile_name_for_source=lambda source, adapter_profile=None: "main")
+    adapter_session_mirror._save_map(adapter, {"tip-1": ("999", "Fix the gate")})
+
+    receipt = await adapter_session_mirror.forward_local_submit(
+        adapter, session_id="s1", text="run the red test", submission_id="sub-1")
+
+    assert receipt == {"queued": True, "thread_id": "999"}
+    assert adapter.handle_message.await_args.args[0].text == "run the red test"

@@ -1,5 +1,6 @@
 """Authenticated WS projection of the gateway authority; no TUI execution fallback."""
 import asyncio
+import json
 import logging
 import re
 from dataclasses import asdict
@@ -35,6 +36,22 @@ def _refusal_data(exc: RuntimeStoreError) -> dict:
         # ``bot_relay.settle``; groups.send's words may come back for editing.
         data['admitted'] = False
     return data
+
+
+def _lane_source(row):
+    """The session's lane source from its stored origin, or None for a row no messaging lane
+    serves (local/api rows keep their own owner rules — there is no lane to forward into)."""
+    if not row:
+        return None
+    from gateway.session import SessionSource
+    try:
+        origin = json.loads(row.get('origin_json') or '')
+        source = SessionSource.from_dict(origin) if isinstance(origin, dict) else None
+    except (TypeError, ValueError, KeyError):
+        return None
+    if source is None or source.platform in (Platform.LOCAL, Platform.API_SERVER):
+        return None
+    return source
 
 
 def _profile_label(profile_id) -> str:
@@ -815,10 +832,52 @@ class AuthorityConnection:
         if self._voice_stop_replay(ref, params) or await self._typed_voice_stop(ref, params):
             self._record_voice_stop(ref, params)
             return {'voice_stopped': True}
+        try:
+            request = self.submission(ref, params)
+        except RuntimeStoreError as exc:
+            if exc.reason != 'permission_denied':
+                raise
+            # An un-attached submit to a messaging-lane session whose adapter offers a local
+            # forward (the Discord session mirror's bound thread) is relayed there instead of
+            # refused: the lane's own ingress authorizes and runs it, one writer either way.
+            forwarded = await self._forward_to_lane(ref, params)
+            if forwarded is None:
+                raise
+            return forwarded
         # The interactive WS is the one surface a restart's after-turn wait admits (#139041).
-        receipt = await self.authority.submit(self.actor, self.submission(ref, params),
+        receipt = await self.authority.submit(self.actor, request,
                                               queue_while_restarting=self._operator is True)
         return asdict(receipt)
+
+    async def _forward_to_lane(self, ref, params) -> dict | None:
+        """The forwarded submit's receipt-shaped result, or None when this session has no lane
+        that takes local forwards (the caller then raises the original ``permission_denied``)."""
+        text = params.get('text')
+        if not isinstance(text, str) or not text.strip() or params.get('attachments') \
+                or any(params.get(key) is not None for key in (
+                    'truncate_before_user_ordinal', 'truncate_before_row_id', 'truncate_before_message_id')):
+            return None
+        row = await asyncio.to_thread(self.authority.db.get_session, ref.session_id)
+        source = _lane_source(row)
+        if source is None:
+            return None
+        resolve = getattr(getattr(self.authority, 'runner', None), '_adapter_for_source', None)
+        adapter = resolve(source) if resolve is not None else None
+        if adapter is None or not getattr(adapter, 'accepts_local_forward', False):
+            return None
+        # The store's own gate: capability, live restore, and the read-only-history verdict —
+        # a history mount (lane down) refuses honestly instead of forwarding into nowhere.
+        await asyncio.to_thread(self.authority.authorize, self.actor, ref, 'session:submit')
+        submission_id = params.get('submission_id') or params.get('input_id') or uuid.uuid4().hex
+        receipt = await adapter.forward_local_submit(
+            session_id=ref.session_id, text=text, submission_id=str(submission_id))
+        if not receipt:
+            return None
+        logger.info('prompt.submit forwarded to the lane for session %s: %s', ref.session_id, receipt)
+        return {'admission_id': f'mirror-forward-{submission_id}',
+                'ref': {'profile_id': self.actor.profile_id, 'session_id': ref.session_id},
+                'sequence': 0, 'status': 'queued', 'outcome': None,
+                'authority_epoch': 0, 'execution_generation': None}
 
     def _voice_stop_key(self, ref, params):
         request_id = params.get('submission_id') or params.get('input_id')

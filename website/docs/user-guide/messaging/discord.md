@@ -434,6 +434,13 @@ Requirements and edges:
   `session_mirror_backfill: true` (platform extra) to thread the whole titled roster — top 25
   most recent — on the first tick after a restart. Expect a burst of ~25 threads once; bindings
   persist, so later restarts do not repeat it.
+- **A bound session is thread-controlled, so a desk submit to it is refused** (`permission_denied`
+  — the one-writer rule). Set `session_mirror_local_forward: true` (platform extra) to relay such
+  a submit into the bound thread instead, as if you had typed it there under your admin identity:
+  the thread's own ingress authorizes and runs it, the reply lands in the thread and streams to
+  every attached viewer (TUI included). Text-only — rewinds and image attachments still ask for
+  the thread — and a retried send inside 5 minutes replays the first forward instead of posting
+  twice.
 - Rename sync lives in memory: a gateway restart clears it until the next title change or
   thread rename on a mirrored session.
 
@@ -443,6 +450,7 @@ platforms:
     extra:
       session_mirror_channel: "1571082911984132157"
       group_allow_admin_from: ["202"]   # your Discord user ID
+      session_mirror_local_forward: true
 ```
 
 #### `platforms.discord.extra.thread_workspaces`
