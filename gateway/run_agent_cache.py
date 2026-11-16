@@ -154,6 +154,9 @@ class GatewayAgentCacheMixin:
         store = getattr(self, "session_store", None)
         if self._session_model_override(session_key) is not None or store is None:
             return
+        # A local conversation a lane took over adopts the route it ran as this chat's pick, once.
+        from gateway.session_lane_model import adopt_carried_model
+        adopt_carried_model(self, session_key)
         try:
             persisted = store.get_model_override(session_key)
         except Exception:
