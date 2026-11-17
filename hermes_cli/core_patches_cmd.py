@@ -158,7 +158,7 @@ def cmd_patches(args: Any) -> None:
             rows = _rows()
             _print_table(rows)
             code = _strict_code(rows, getattr(args, "strict", False))
-    except (CorePatchTargetError, ValueError) as exc:
+    except (CorePatchTargetError, ValueError, OSError) as exc:  # CorePatchFileError is a CorePatchTargetError
         print(f"hermes plugins patches: {exc}", file=sys.stderr)
         code = 2
     if code:
