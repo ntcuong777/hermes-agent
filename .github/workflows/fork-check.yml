@@ -78,6 +78,13 @@ jobs:
           # core_patches.lock.json inside this repository (none today: prints 'no locks found').
           "$HERMES_PYTHON" -I hermes_cli/core_patches_ast.py --verify-locks plugins --source-root .
 
+      - name: TUI slot pins (an upstream change to a component a plugin copies, or a copy without provenance)
+        run: |
+          # .github/tui-slot-pins.json mirrors every nix-darwin plugin's tui_slots.lock.json (written by
+          # scripts/fork/tui-slot-check --write-pins). It fails on drift AND on a slot without a reason or an upstream
+          # commit. With no slot recorded it verifies nothing and passes. CI only: it can never stop a running Hermes.
+          "$HERMES_PYTHON" -I scripts/fork/tui-slot-check --verify-pins .github/tui-slot-pins.json --fork-root .
+
       - name: Install JS workspace
         run: npm ci --ignore-scripts
 
