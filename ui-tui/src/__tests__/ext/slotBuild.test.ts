@@ -44,6 +44,26 @@ describe('rewriteImports', () => {
     expect(ids).toEqual(['app/overlayStore', 'components/helpers', 'ink', 'react'])
   })
 
+  it('rewrites an import that carries a trailing comment (a fork seam marker), not spanning into the next import', () => {
+    const { code, ids } = rewriteImports(
+      [
+        "import { extensionHost } from '../sdk/ext/host.js' // fork: tui extension host",
+        "import { transformPasteText } from '../sdk/ext/composerHooks.js' // fork: tui extension host",
+        'const x = 1'
+      ].join('\n'),
+      DIR
+    )
+
+    expect(code).toBe(
+      [
+        "const { extensionHost } = __host('sdk/ext/host')",
+        "const { transformPasteText } = __host('sdk/ext/composerHooks')",
+        'const x = 1'
+      ].join('\n')
+    )
+    expect(ids).toEqual(['sdk/ext/composerHooks', 'sdk/ext/host'])
+  })
+
   it('refuses a side-effect import', () => {
     expect(() => rewriteImports("import './x.js'\n", DIR)).toThrow('side-effect import')
   })

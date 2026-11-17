@@ -18,7 +18,7 @@ import { createRequire } from 'node:module'
 import { dirname, join, posix, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const IMPORT = /^import\s+([\s\S]*?)\s+from\s+['"]([^'"]+)['"][ \t]*;?[ \t]*$/gm
+const IMPORT = /^import\s+([\s\S]*?)\s+from\s+['"]([^'"]+)['"][ \t]*;?[ \t]*(?:\/\/[^\n]*)?$/gm
 const SIDE_EFFECT = /^import\s+['"][^'"]+['"][ \t]*;?[ \t]*$/m
 
 /** The host module id of an import specifier seen from a file in `fileDir` (repo-relative, under ui-tui/src or apps). */
