@@ -136,8 +136,22 @@ def slot_table(root: Path) -> dict[str, Any]:
     return load_json(root / "ui-tui/src/sdk/ext/slots.json").get("slots", {})
 
 
+def slot_spec(root: Path, plugin_dir: Optional[Path], slot: str) -> dict[str, Any]:
+    """The slot's row: the TUI table, else (a build-time slot, stage 8/D12) the plugin dir's own table."""
+    row = slot_table(root).get(slot)
+    if row or plugin_dir is None:
+        return row or {}
+    return (load_json(plugin_dir / "slots.json").get("slots") or {}).get(slot) or {}
+
+
 def locks_under(plugins_root: Path) -> list[tuple[Path, dict[str, Any]]]:
-    return [(p.parent, load_json(p)) for p in sorted(plugins_root.glob(f"*/{LOCK_NAME}"))]
+    # One level down (the nix plugins root), or the root itself when it directly holds a lock (the
+    # fork-owned build-time slot directory, stage 8/D12).
+    found = [(p.parent, load_json(p)) for p in sorted(plugins_root.glob(f"*/{LOCK_NAME}"))]
+    own = plugins_root / LOCK_NAME
+    if own.is_file():
+        found.append((plugins_root, load_json(own)))
+    return found
 
 
 def entries(plugins_root: Path) -> list[tuple[Path, str, dict[str, Any]]]:
@@ -286,9 +300,9 @@ def agent_brief(slot: str, plugins_root: Path, root: Path) -> str:
 
 def record(args: argparse.Namespace) -> str:
     root, plugin_dir = Path(args.fork_root), Path(args.plugin_dir)
-    spec = slot_table(root).get(args.record)
+    spec = slot_spec(root, plugin_dir, args.record)
     if not spec:
-        raise SystemExit(f"slot {args.record} is not in {root}/ui-tui/src/sdk/ext/slots.json")
+        raise SystemExit(f"slot {args.record} is not in {root}/ui-tui/src/sdk/ext/slots.json (nor the plugin dir's own slots.json)")
     if not (args.reason or "").strip():
         raise SystemExit("--reason is required: one line, the bug or purpose the copy exists for")
     rel, symbols = spec["file"], list(spec["symbols"])
