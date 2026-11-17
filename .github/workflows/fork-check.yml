@@ -29,6 +29,7 @@ concurrency:
 env:
   FORK_PYTEST_FILES: >-
     tests/core_patches
+    tests/agent/test_core_fixes_reverted.py
     tests/gateway/test_complete_path_host_plugin_backend.py
     tests/gateway/test_complete_path_at_filter.py
     tests/tui_gateway
