@@ -1,4 +1,95 @@
 {
-  "pins": {},
-  "version": 1
+  "pins": {
+    "core-fixes/checkpoint-stale-lock": {
+      "ast_sha": "36df092499e414dc1b775e0b55b8e6f922ffae427e69bac085c6711cef00a887",
+      "kind": "wrap",
+      "plugin": "core-fixes",
+      "reason": "A checkpoint git killed past its timeout left a store index lock behind and every later checkpoint of that workspace failed; clear a stale lock inside the store (older than 600 s) and retry once (fork 565d63a2ee3).",
+      "target": "tools.checkpoint_manager:_run_git",
+      "target_file": "tools/checkpoint_manager.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "core-fixes/cron-external-interpreter": {
+      "ast_sha": "78ee4345821471d9864f0969bce7af7ed644c140cf384cb913a82d48e6f6dc88",
+      "kind": "wrap",
+      "plugin": "core-fixes",
+      "reason": "Cron script jobs on an external Nix install run on that install's own interpreter instead of a missing store venv (fork f52195c165d, P26).",
+      "target": "cron.scheduler_script:_posix_cron_script_argv",
+      "target_file": "cron/scheduler_script.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "core-fixes/deferred-tool-hint-scope": {
+      "ast_sha": "c5e2440b9ed9d597c988eaf325256fd40fec11e4ac0958aed40fefc161fcda62",
+      "kind": "wrap",
+      "plugin": "core-fixes",
+      "reason": "Remember the agent of the running tool round in a ContextVar so the unknown-name error can tell which deferred tools are reachable through tool_call (fork 5e94a2c2fd1, P16).",
+      "target": "agent.turn_tool_round:run_tool_round",
+      "target_file": "agent/turn_tool_round.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "core-fixes/deferred-tool-hint-text": {
+      "ast_sha": "207bbdd9b49c1d67a4771f6fd75599dc061a96944b8e2f8353d898d7b73d9760",
+      "kind": "wrap",
+      "plugin": "core-fixes",
+      "reason": "A call to a deferred tool by its own name is told to use tool_call instead of the does-not-exist error (fork 5e94a2c2fd1, P16).",
+      "target": "agent.conversation_loop:_invalid_tool_name_error_content",
+      "target_file": "agent/conversation_loop.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "core-fixes/edit-diff-host-backend": {
+      "ast_sha": "de2d8bcb51cb5a1d4133c23e6dd0ac4a5e74776b8afdf5a688dd5c39155c6134",
+      "kind": "wrap",
+      "plugin": "core-fixes",
+      "reason": "The inline edit diff shows for a host plugin backend that declares is_remote=False, such as nono (fork e6f7bfe0989, P12).",
+      "target": "agent.display:_resolve_local_edit_paths",
+      "target_file": "agent/display.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "core-fixes/edit-diff-text-patch": {
+      "ast_sha": "7dd0389f4e634d30ad2d9c9a492c0c8ff8f7368f600700fee2dc9e8aa25125db",
+      "kind": "wrap",
+      "plugin": "core-fixes",
+      "reason": "The inline edit diff shows for a patch whose result is plain text, diffed from the before-snapshot (fork e6f7bfe0989, P12).",
+      "target": "agent.display:extract_edit_diff",
+      "target_file": "agent/display.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "core-fixes/patch-mode-targets": {
+      "ast_sha": "edf9c54fcfe3f3de12545787d73b2c34c708609107bb246685425749761ae7d6",
+      "kind": "wrap",
+      "plugin": "core-fixes",
+      "reason": "A patch call with mode patch and no V4A body targets its path instead of an empty parallel-write scope (fork fd118ea2512, P14).",
+      "target": "agent.tool_dispatch_helpers:_extract_file_mutation_targets",
+      "target_file": "agent/tool_dispatch_helpers.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "core-fixes/sandbox-deferred-tools": {
+      "ast_sha": "09d37562d36670267e9f6d5c38eb492ec8f1bf6417313c59b5104dcbf431b8c0",
+      "kind": "wrap",
+      "plugin": "core-fixes",
+      "reason": "execute_code hermes_tools offers the deferred tools the session can reach through tool_call, so from hermes_tools import web_extract works (fork a2ac9e421c8, P9).",
+      "target": "model_tools:handle_function_call",
+      "target_file": "model_tools.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "core-fixes/tmux-notify-passthrough": {
+      "ast_sha": "2e7938bce95211493252d66e02289bba0dc3039f0e515e50024cb2e94b5604e6",
+      "kind": "wrap",
+      "plugin": "core-fixes",
+      "reason": "OSC 9 and Warp OSC 777 desktop notifications are dropped by tmux; DCS-wrap the sequence when TMUX is set so they reach the outer terminal (fork 38836268730, P47).",
+      "target": "hermes_cli.terminal_notify:notification_sequence",
+      "target_file": "hermes_cli/terminal_notify.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    }
+  },
+  "version": 2
 }
