@@ -5346,6 +5346,9 @@ def _restart_all_as_host(owner, system: bool, detach: bool = False, owe_online_n
 
 def _cmd_restart(args):
     _refuse_from_inside_gateway("restart", "restart loops")
+    if getattr(args, "when_idle", False):  # write the request marker; the running gateway restarts at an idle moment
+        from gateway.graceful_restart import cmd_restart_when_idle
+        return cmd_restart_when_idle(args)
     from hermes_cli.gateway_profile_lifecycle import profile_lifecycle
     if profile_lifecycle("restart", args):
         return
