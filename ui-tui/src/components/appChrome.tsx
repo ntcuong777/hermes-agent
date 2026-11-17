@@ -15,7 +15,7 @@ import { VERBS } from '../content/verbs.js'
 import { fmtDuration } from '../domain/messages.js'
 import { stickyPromptFromViewport } from '../domain/viewport.js'
 import { messages, t as tr } from '../i18n/runtime.js'
-import { costLabel, quotaLabel, quotaSeverity, stashLabel } from '../lib/statusUsage.js'
+import { stashLabel, type StatusField } from '../lib/statusUsage.js'
 import { buildSubagentTree, treeTotals, widthByDepth } from '../lib/subagentTree.js'
 import { useScrollbarSnapshot, useViewportSnapshot } from '../lib/viewportStore.js'
 import type { Theme } from '../theme.js'
@@ -547,16 +547,21 @@ const voiceColor = (label: string, t: Theme) =>
   label.startsWith('●') ? t.color.error : label.startsWith('◉') ? t.color.warn : t.color.muted
 
 interface StatusRuleOptInSegments {
-  costText: string
-  quotaColor: string
-  quotaText: string
-  showCost: boolean
-  showQuota: boolean
+  pluginSegments: { color: string; id: string; text: string }[]
   showStash: boolean
   stashText: string
 }
 
-// Session cost, the active account's quota and the stash: opt-in
+const toneColor = (tone: StatusField['tone'], t: Theme) =>
+  tone === 'bad'
+    ? t.color.statusBad
+    : tone === 'warn'
+      ? t.color.statusWarn
+      : tone === 'good'
+        ? t.color.statusGood
+        : t.color.muted
+
+// Plugin segments (usage.status_fields, e.g. a plugin's cost and quota) and the stash: opt-in
 // (display.status_bar.fields must list them), and ranked right under the
 // context bar, above the clock and perf read-outs, because they are meant to
 // be seen at all times, not only when there is room left over.
@@ -575,16 +580,18 @@ const optInSegments = ({
   t: Theme
   usage: Usage
 }): StatusRuleOptInSegments => {
-  const costText = optIn('cost') ? costLabel(usage) : ''
-  const quotaText = optIn('quota') ? quotaLabel(usage.quota) : ''
-  const showCost = cols >= 60 && !!costText && fits(SEP_WIDTH + stringWidth(costText))
-  const showQuota = cols >= 76 && !!quotaText && fits(SEP_WIDTH + stringWidth(`◔ ${quotaText}`))
+  const pluginSegments = (usage.status_fields ?? []).flatMap(field => {
+    const text = field.text.trim()
+
+    return text && optIn(field.id) && cols >= (field.min_cols ?? 60) && fits(SEP_WIDTH + stringWidth(text))
+      ? [{ color: toneColor(field.tone, t), id: field.id, text }]
+      : []
+  })
+
   const stashText = optIn('stash') && stashCounts ? stashLabel(stashCounts) : ''
   const showStash = cols >= 60 && !!stashText && fits(SEP_WIDTH + stringWidth(stashText))
-  const quotaSev = quotaSeverity(usage.quota)
-  const quotaColor = quotaSev === 'bad' ? t.color.statusBad : quotaSev === 'warn' ? t.color.statusWarn : t.color.muted
 
-  return { costText, quotaColor, quotaText, showCost, showQuota, showStash, stashText }
+  return { pluginSegments, showStash, stashText }
 }
 
 interface StatusRuleDurationSegments {
@@ -842,7 +849,7 @@ export function StatusRule({
 
   const showBar = !!bar && fits(SEP_WIDTH + stringWidth(`[${bar}] ${pct != null ? `${contextMark}${pct}%` : ''}`))
 
-  const { costText, quotaColor, quotaText, showCost, showQuota, showStash, stashText } = optInSegments({
+  const { pluginSegments, showStash, stashText } = optInSegments({
     cols,
     fits,
     optIn,
@@ -970,18 +977,12 @@ export function StatusRule({
             <Text color={barColor}>{pct != null ? `${contextMark}${pct}%` : ''}</Text>
           </Text>
         ) : null}
-        {showCost ? (
-          <Text color={t.color.muted} wrap="truncate-end">
+        {pluginSegments.map(segment => (
+          <Text color={t.color.muted} key={segment.id} wrap="truncate-end">
             {' │ '}
-            {costText}
+            <Text color={segment.color}>{segment.text}</Text>
           </Text>
-        ) : null}
-        {showQuota ? (
-          <Text color={t.color.muted} wrap="truncate-end">
-            {' │ '}
-            <Text color={quotaColor}>◔ {quotaText}</Text>
-          </Text>
-        ) : null}
+        ))}
         {showStash ? (
           <Text color={t.color.muted} wrap="truncate-end">
             {' │ '}
@@ -1193,7 +1194,7 @@ interface StatusRuleProps {
   // classic CLI bar. null = defaults (everything shows).
   statusBarFields?: null | ReadonlySet<string>
   // Drafts held in the session stash and the profile stash; shown only when `stash` is listed in
-  // display.status_bar.fields (opt-in, like cost and quota).
+  // display.status_bar.fields (opt-in, like the plugin segments).
   stashCounts?: { global: number; session: number }
   statusColor: string
   t: Theme
