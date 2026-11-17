@@ -89,6 +89,76 @@
       "target_file": "hermes_cli/terminal_notify.py",
       "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
       "upstream_release": "0.23.0"
+    },
+    "lane-mirror/repaint-goal": {
+      "ast_sha": "723da958f25a2bae72f869d32486d37153905d6a42432d0aab293f00e2dc7fd2",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A /goal command run in a Discord thread bound to a TUI session repaints the viewer's goal and loop bars (lane viewer repaint)",
+      "target": "gateway.slash_commands_goals:GatewayGoalCommandsMixin._handle_goal_command",
+      "target_file": "gateway/slash_commands_goals.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/repaint-handler-table": {
+      "ast_sha": "e8312cc6efd74ec3cbec315057d839db737107740cc8b97e56dff07823632bf4",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A slash command run in a Discord thread bound to a TUI session republishes the viewer's session.info pills and the command output (lane viewer repaint)",
+      "target": "gateway.run_busy:GatewayBusySessionMixin._command_handler_table",
+      "target_file": "gateway/run_busy.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/repaint-heartbeat": {
+      "ast_sha": "90015d162704f29ba509d6f3b33d31dc021d60c57275edc8399ac18574075c55",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A /heartbeat command run in a Discord thread bound to a TUI session repaints the viewer's goal and loop bars (lane viewer repaint)",
+      "target": "gateway.slash_commands_goals:GatewayGoalCommandsMixin._handle_heartbeat_command",
+      "target_file": "gateway/slash_commands_goals.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/repaint-loop": {
+      "ast_sha": "cb34578c477cabf903ae32e5a2acd48cc266255f9c4eb63b932c711f18e3c422",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A /loop command run in a Discord thread bound to a TUI session repaints the viewer's goal and loop bars (lane viewer repaint)",
+      "target": "gateway.slash_commands_goals:GatewayGoalCommandsMixin._handle_loop_command",
+      "target_file": "gateway/slash_commands_goals.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/repaint-refine": {
+      "ast_sha": "8ad4f72136866ee64787e3eed6cf0c43c1febea37c0ebbfff803857258be65d1",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A /refine command run in a Discord thread bound to a TUI session repaints the viewer's goal and loop bars (lane viewer repaint)",
+      "target": "gateway.slash_commands_goals:GatewayGoalCommandsMixin._handle_refine_command",
+      "target_file": "gateway/slash_commands_goals.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/repaint-review": {
+      "ast_sha": "b9bac5bd999e36a2e418ae541136379cfffcb195f04f15601eaa598b58a3b1d9",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A /review command run in a Discord thread bound to a TUI session repaints the viewer's goal and loop bars (lane viewer repaint)",
+      "target": "gateway.slash_commands_goals:GatewayGoalCommandsMixin._handle_review_command",
+      "target_file": "gateway/slash_commands_goals.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/repaint-subgoal": {
+      "ast_sha": "0653f5e280896f74f8148cf2c44742010032a99f1a97569d7c602e7505c3a1d7",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A /subgoal command run in a Discord thread bound to a TUI session repaints the viewer's goal and loop bars (lane viewer repaint)",
+      "target": "gateway.slash_commands_goals:GatewayGoalCommandsMixin._handle_subgoal_command",
+      "target_file": "gateway/slash_commands_goals.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
     }
   },
   "version": 2
