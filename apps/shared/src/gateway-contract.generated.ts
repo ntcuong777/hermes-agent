@@ -5278,6 +5278,7 @@ export interface ApprovalMcpContext {
   tool: string
   tool_description?: string | null
   arguments?: string | null
+  arguments_cut?: boolean | null
 }
 export interface CanonicalSnapshotInfo {
   provider?: string | null

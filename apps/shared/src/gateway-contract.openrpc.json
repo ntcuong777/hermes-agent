@@ -5404,6 +5404,18 @@
             ],
             "default": null,
             "title": "Arguments"
+          },
+          "arguments_cut": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Arguments Cut"
           }
         },
         "required": [
