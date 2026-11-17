@@ -92,6 +92,15 @@ def test_a_cap_above_upstreams_ceiling_does_not_raise_a_sized_budget(register):
     assert trl.apply_budget_limits(upstream, 1_000_000).default_result_size == upstream.default_result_size
 
 
+@pytest.mark.parametrize("context", [None, 200_000])
+def test_read_file_stays_unbounded_by_the_result_size(register, context):
+    register(trl.HOOK, lambda **_: {"result_size_chars": 8192})
+    budget = trl.apply_budget_limits(budget_config.budget_for_context_window(context), context)
+    assert budget.default_result_size == 8192
+    assert budget.resolve_threshold("read_file") == float("inf")
+    assert budget.resolve_threshold("search_files") == 8192
+
+
 def test_the_agent_budget_goes_through_the_hook(register):
     from agent.tool_executor import _budget_for_agent
 
