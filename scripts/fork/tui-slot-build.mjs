@@ -106,7 +106,7 @@ export default {
 }
 `
 
-export const buildSlotSource = async (source, fileDir, esbuild) => {
+export const buildSlotSource = async (source, fileDir, esbuild, loader = 'tsx') => {
   const { code, ids } = rewriteImports(source, fileDir)
 
   if (!/export\s+const\s+sdkVersion\b/.test(code) || !/export\s+const\s+slots\b/.test(code)) {
@@ -118,7 +118,7 @@ export const buildSlotSource = async (source, fileDir, esbuild) => {
     jsx: 'transform',
     jsxFactory: '__h',
     jsxFragment: '__Fragment',
-    loader: 'tsx',
+    loader,
     target: 'node20'
   })
 
@@ -147,7 +147,9 @@ const main = async argv => {
     return 2
   }
 
-  const built = await buildSlotSource(readFileSync(src, 'utf8'), dir, loadEsbuild(forkRoot))
+  // The source's extension decides the esbuild loader: a .tsx copy may hold JSX, a .ts copy may hold TS
+  // generic arrows (`<T>(...)`), which the tsx loader would parse as a JSX start tag.
+  const built = await buildSlotSource(readFileSync(src, 'utf8'), dir, loadEsbuild(forkRoot), src.endsWith('.tsx') ? 'tsx' : 'ts')
 
   writeFileSync(out, built.code)
   console.log(`built ${out} (${built.code.length} bytes); host modules: ${built.ids.join(', ') || 'none'}`)

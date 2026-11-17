@@ -73,6 +73,14 @@ describe('buildSlotSource', () => {
   const copy =
     "import { Text } from '@hermes/ink'\nexport const Hello = ({ n }: { n: number }) => <Text>hi {n}</Text>\nexport const sdkVersion = 1\nexport const slots = { 't.c': Hello }\n"
 
+  it("a .ts copy (loader 'ts') compiles a TS generic arrow that the tsx loader would read as JSX", async () => {
+    const source = 'const journaled = <T>(write: () => T): { value: T } | undefined => {\n  return { value: write() }\n}\nexport const useIt = () => journaled\nexport const sdkVersion = 1\nexport const slots = { submission: useIt }\n'
+    const { code } = await buildSlotSource(source, DIR, esbuild, 'ts')
+
+    expect(code).toContain('const journaled = <T>')
+    expect(code).toContain("export default {")
+  })
+
   it('compiles JSX to the host createElement and ends with a default export that registers the slots', async () => {
     const { code, ids } = await buildSlotSource(copy, DIR, esbuild)
 
