@@ -317,6 +317,42 @@ describe('composer-clear', () => {
     expect(state.text).toBe('draft')
   })
 
+  // A paste result landing does not move the revision (sibling pastes must not read as the user editing).
+  it('keeps text that landed without an edit (a paste) while the save was in flight', async () => {
+    const { host, said, state } = setup({ save: { type: 'composer-clear', notice: 'saved' } })
+    const slow = host.request
+
+    host.request = async (...args) => {
+      state.text = 'draft pasted block'
+
+      return slow(...args)
+    }
+
+    runKeybind('save', host)
+    await settle()
+
+    expect(host.clear).not.toHaveBeenCalled()
+    expect(state.text).toBe('draft pasted block')
+    expect(said).toEqual(['saved', 'keybind: saved, composer kept (text arrived meanwhile)'])
+  })
+
+  it('still clears when a paste landed and the text is exactly what was saved again', async () => {
+    const { host, state } = setup({ save: { type: 'composer-clear' } })
+    const slow = host.request
+
+    host.request = async (...args) => {
+      state.text = 'draft'
+
+      return slow(...args)
+    }
+
+    runKeybind('save', host)
+    await settle()
+
+    expect(host.clear).toHaveBeenCalledTimes(1)
+    expect(state.text).toBe('')
+  })
+
   it('does not clear the composer of another session after a switch', async () => {
     const { host, state } = setup({ save: { type: 'composer-clear' } })
     const slow = host.request
