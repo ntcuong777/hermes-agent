@@ -1281,7 +1281,6 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
             "websocket_event_max_silence_seconds", 14400.0,
         )
         self._liveness_task: Optional[asyncio.Task] = None
-        self._mirror_task: Optional[asyncio.Task] = None
         self._liveness_notification_task: Optional[asyncio.Task] = None
         # True while disconnect() intentionally closes discord.py (done callback: shutdown vs crash).
         self._disconnecting = False
@@ -1872,10 +1871,6 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
                 "old_name": old_name[:256] if isinstance(old_name, str) else None,
                 "new_name": new_name[:256],
             })
-        # The session mirror's reverse rename rides this normalization: a thread rename in
-        # Discord retitles the mirrored session (tag stripped, unbound threads ignored).
-        from plugins.platforms.discord.adapter_session_mirror import sync_thread_title
-        await sync_thread_title(self, after)
         await self._emit_platform_event("thread_renamed", _build)
 
     async def _cancel_bot_task(self) -> None:
@@ -1900,36 +1895,6 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
         if self._liveness_task and not self._liveness_task.done():
             return
         self._liveness_task = asyncio.create_task(self._liveness_loop())
-
-    def _start_session_mirror(self) -> None:
-        """Session mirror (adapter_session_mirror.py): new machine-local sessions get a thread in
-        `session_mirror_channel`, bound via `/resume <id> --all`. Idle unless the channel AND the
-        group-scope admin list (`group_allow_admin_from`) are configured; see that module."""
-        from plugins.platforms.discord.adapter_session_mirror import start as start_mirror
-        start_mirror(self)
-
-    @property
-    def accepts_local_forward(self) -> bool:
-        """Local submits to mirror-bound sessions relay into the bound thread
-        (`session_mirror_local_forward`); gateway/session_controls consults this duck-typed
-        flag before asking :meth:`forward_local_submit`."""
-        from plugins.platforms.discord.adapter_session_mirror import local_forward_enabled
-        return local_forward_enabled(self)
-
-    def owns_local_forward(self, session_id: str) -> bool:
-        """Whether the session mirror bound *session_id* to one of its threads (local forwards on):
-        gateway/session_lane.bound_lane relays and answers locally only for such a session, never
-        for another user's Discord chat."""
-        from plugins.platforms.discord.adapter_session_mirror import owns_local_forward as _owns
-        return _owns(self, session_id)
-
-    async def forward_local_submit(self, *, session_id: str, text: str, submission_id: str,
-                                   command: bool = False) -> dict | None:
-        """Relay a local surface's prompt into *session_id*'s bound thread; None when this
-        session is not forwardable. See adapter_session_mirror.forward_local_submit."""
-        from plugins.platforms.discord.adapter_session_mirror import forward_local_submit as _forward
-        return await _forward(self, session_id=session_id, text=text, submission_id=submission_id,
-                              command=command)
 
     # Reasons from ``_read_websocket_health`` that mean the transport is confirmed dead,
     # not merely suspect: ``_liveness_loop`` escalates on the first such strike (#118487).
@@ -2090,7 +2055,7 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
     async def _cancel_liveness_task(self) -> None:
         """Cancel and await liveness tasks without awaiting the current task."""
         current = asyncio.current_task()
-        for task_name in ("_liveness_task", "_liveness_notification_task", "_mirror_task"):
+        for task_name in ("_liveness_task", "_liveness_notification_task"):
             task = getattr(self, task_name, None)
             if task is None:
                 continue
@@ -2352,8 +2317,6 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
         """Finish non-critical startup work after Discord is connected."""
         if not self._client:
             return
-        # The mirror runs even when the command sync early-returns: it needs no sync.
-        self._start_session_mirror()
         try:
             sync_policy = self._get_discord_command_sync_policy()
             if sync_policy == "off":

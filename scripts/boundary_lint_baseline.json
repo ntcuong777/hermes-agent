@@ -394,7 +394,6 @@
     "plugins/platforms/discord/adapter_config_readers.py gateway.slash_access._coerce_id_list": 1,
     "plugins/platforms/discord/adapter_exec_approval_view.py agent.i18n.t": 1,
     "plugins/platforms/discord/adapter_media.py agent.i18n.t": 1,
-    "plugins/platforms/discord/adapter_session_mirror.py gateway.session_handoff.check_settled": 1,
     "plugins/platforms/discord/ffmpeg_utils.py tools.transcription_audio._find_ffmpeg_binary": 1,
     "plugins/platforms/discord/gateway_env.py gateway.platform_env.EnvCred": 1,
     "plugins/platforms/discord/gateway_env.py gateway.platform_env.home_step": 1,
