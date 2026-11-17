@@ -454,14 +454,6 @@ def _session_workspace(runner, source):
         reset_session_cwd(cwd_token)
 
 
-def _command_capability(verdict, canonical, definition, runner_command) -> str:
-    """The capability a command needs: reads stay read; approval-listed commands gate on approve;
-    anything that runs (a definition or a plugin runner) is control; unknown text is submit."""
-    return ('session:read' if verdict == 'read' else
-            'session:approve' if canonical in _APPROVAL_COMMANDS else
-            'session:control' if definition or runner_command else 'session:submit')
-
-
 async def _run_in_band(connection, ref, live, home, canonical, arg, definition, before):
     """Run a recognized command against the live runner (busy dispatch, prompt command, or handler)
     and shape its response; the settle/publish epilogue approval.respond and cron share."""
@@ -543,7 +535,9 @@ async def execute_command(connection, ref, params, *, dispatch=False):
             with _profile_runtime_scope(home):
                 return _runner_command(name)
         runner_command = await asyncio.to_thread(lookup)
-    capability = _command_capability(verdict, canonical, definition, runner_command)
+    capability = ('session:read' if verdict == 'read' else
+                  'session:approve' if canonical in _APPROVAL_COMMANDS else
+                  'session:control' if definition or runner_command else 'session:submit')
     authority.authorize(actor, ref, capability)
     live = authority.sessions[ref.session_id]
     from gateway.session_local import authorize_local_source
