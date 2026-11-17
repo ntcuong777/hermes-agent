@@ -67,8 +67,8 @@ def test_the_registry_sets_no_attribute_on_a_shared_callable(target):
         return f"bonjour {name}"
     before = dict(vars(shared))
     _install(_spec(target, "fr", shared, kind="replace"))
-    assert target.mod.greet is shared and vars(shared) == before
-    assert cp.installed_patch(shared) == "demo:fr"
+    assert target.mod.greet("x") == "bonjour x" and vars(shared) == before  # the installed callable is the safety shell
+    assert cp.installed_patch(target.mod.greet) == "demo:fr"
 
 
 def test_an_identity_wrap_does_not_mark_the_original(target):

@@ -8,8 +8,10 @@ In a plugin's tests::
         cpt.assert_core_patches_current(PLUGIN_DIR, expected=EXPECTED_SHAS)
 
 Fails, with the unified diff of each changed target, when the core's source no longer matches
-``<plugin>/core_patches.lock.json``; and when ``expected`` (the plugin's ``expect_ast_sha`` literals,
-name -> sha) disagrees with the lock.
+``<plugin>/core_patches.lock.json``; when ``expected`` (the plugin's ``expect_ast_sha`` literals,
+name -> sha) disagrees with the lock; and (``provenance=True``, the default) when a lock entry has no
+complete provenance record (a reason, the upstream commit, a snapshot): refresh with
+``hermes plugins patches --record NAME --reason "..."``. This is a CI failure, never an agent failure.
 """
 
 from __future__ import annotations
@@ -17,11 +19,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Mapping, Optional
 
-from hermes_cli.core_patches_ast import LOCK_FILE, CorePatchTargetError, core_patch_sha, lock_diff, read_lock
+from hermes_cli.core_patches_ast import (
+    LOCK_FILE, CorePatchTargetError, core_patch_sha, lock_diff, provenance_problems, read_lock,
+)
 
 
 def assert_core_patches_current(
     plugin_dir: Path, expected: Optional[Mapping[str, str]] = None, *, source_root: Optional[Path] = None,
+    provenance: bool = True,
 ) -> None:
     import pytest
 
@@ -32,8 +37,11 @@ def assert_core_patches_current(
         locked = {name: entry.get("ast_sha") for name, entry in lock.items()}
         if dict(expected) != locked:
             pytest.fail(f"expect_ast_sha values {dict(expected)} differ from {LOCK_FILE} {locked}; "
-                        "refresh with `hermes plugins patches --lock PLUGIN_DIR --name NAME --target TARGET`")
+                        "refresh with `hermes plugins patches --record NAME --reason ...`")
     failures: list[str] = []
+    if provenance:
+        failures += [line for name, entry in sorted(lock.items())
+                     for line in provenance_problems(name, entry, Path(plugin_dir))]
     for name, entry in sorted(lock.items()):
         try:
             current = core_patch_sha(str(entry["target"]), source_root)
@@ -42,6 +50,6 @@ def assert_core_patches_current(
             continue
         if current != entry.get("ast_sha"):
             failures.append(f"{name}: {entry['target']} drifted (locked {entry.get('ast_sha')}, now {current})\n"
-                            + lock_diff(entry, source_root))
+                            + lock_diff(entry, source_root, Path(plugin_dir)))
     if failures:
-        pytest.fail("core patch drift:\n" + "\n".join(failures))
+        pytest.fail("core patch drift or missing provenance:\n" + "\n".join(failures))

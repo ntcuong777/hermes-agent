@@ -54,7 +54,9 @@ def test_the_listing_shows_each_status(target, no_discovery, capsys):
     cmd.cmd_patches(_args("--json"))
     (row,) = json.loads(capsys.readouterr().out)
     assert row == {"plugin": "demo", "name": "up", "target": f"{target.name}:greet", "kind": "wrap",
-                   "order": 0, "critical": False, "status": "active", "detail": ""}
+                   "order": 0, "critical": False, "status": "active", "detail": "", "expect_ast_sha": GREET_SHA,
+                   "current_sha": GREET_SHA, "reason": "", "upstream_commit": "unknown",
+                   "upstream_release": "unknown", "failures": 0, "last_error": ""}
 
 
 def test_lock_writes_an_entry(target, tmp_path, capsys):
@@ -71,7 +73,7 @@ def test_diff_is_quiet_until_the_target_changes(target, tmp_path, no_discovery, 
     write_lock_entry(plugin, "up", f"{target.name}:greet")
     _stage(target, plugin_dir=str(plugin))
     cmd.cmd_patches(_args("--diff"))
-    assert "no change since the lock" in capsys.readouterr().out
+    assert "no change since the recorded upstream snapshot" in capsys.readouterr().out
     target.path.write_text(target.path.read_text().replace('f"hello {name}"', 'f"hi {name}"', 1))
     with pytest.raises(SystemExit) as exited:
         cmd.cmd_patches(_args("--diff", "up"))

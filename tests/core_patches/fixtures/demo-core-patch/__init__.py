@@ -1,8 +1,8 @@
 """Worked example of ``ctx.register_core_patch``: wrap ``cpdemo_target.greet`` to upper-case it.
 
 The author's workflow: ``hermes plugins patches --sha cpdemo_target:greet`` prints the fingerprint
-pasted below; ``hermes plugins patches --lock <this dir> --name shout --target cpdemo_target:greet``
-records the source it was taken from in core_patches.lock.json; the plugin's tests call
+pasted below; ``hermes plugins patches --record shout --reason "..."`` records the provenance (reason,
+upstream commit, a snapshot of the source it was taken from) in core_patches.lock.json; the plugin's tests call
 ``hermes_cli.core_patches_testing.assert_core_patches_current``. Enabling it needs
 ``plugins.entries.demo-core-patch.allow_core_patch: true``.
 """

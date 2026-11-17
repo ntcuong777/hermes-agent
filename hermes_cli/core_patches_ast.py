@@ -22,16 +22,21 @@ import difflib
 import hashlib
 import importlib.util
 import json
+import os
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
 TARGET_RE = re.compile(r"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*:[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?$")
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 LOCK_FILE = "core_patches.lock.json"
-LOCK_VERSION = 1
+LOCK_VERSION = 2          # v2 = provenance record + snapshot file; v1 (inline `source`) is still read
+SNAPSHOT_DIR = "upstream-source"
+PIN_KEYS = ("target", "ast_sha", "plugin", "kind", "target_file", "upstream_commit", "upstream_release", "reason")
 DEFAULT_SOURCE_ROOT = Path(__file__).resolve().parents[1]
 _DEFS = (ast.FunctionDef, ast.AsyncFunctionDef)
 
@@ -200,26 +205,167 @@ def read_lock(plugin_dir: Path) -> dict:
     return patches
 
 
-def write_lock_entry(plugin_dir: Path, name: str, target: str, source_root: Optional[Path] = None) -> str:
-    """Record `target`'s current source and fingerprint under `name`; returns the sha."""
-    current = target_source(target, source_root)
-    path = Path(plugin_dir) / LOCK_FILE
-    patches = dict(read_lock(plugin_dir))
-    patches[name] = {
-        "target": target, "ast_sha": current.sha, "source": current.source,
-        "python": "%d.%d.%d" % sys.version_info[:3],
-    }
+def lock_version(plugin_dir: Path) -> int:
+    """The ``version`` of the plugin's lock file (1 when missing or unreadable)."""
+    try:
+        version = _read_json(Path(plugin_dir) / LOCK_FILE).get("version")
+        return version if isinstance(version, int) else 1
+    except (CorePatchFileError, AttributeError):
+        return 1
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def snapshot_rel(name: str) -> str:
+    return f"{SNAPSHOT_DIR}/{name}.py.txt"
+
+
+def _snapshot_file(plugin_dir: Path, rel: Any) -> Optional[Path]:
+    """The snapshot file named by a lock entry, only if it stays under ``upstream-source/``."""
+    if not isinstance(rel, str) or not rel.startswith(SNAPSHOT_DIR + "/") or ".." in Path(rel).parts:
+        return None
+    return Path(plugin_dir) / rel
+
+
+def snapshot_text(plugin_dir: Optional[Path], entry: Mapping[str, Any]) -> Optional[str]:
+    """The recorded ORIGINAL upstream source of a patch's target: the v2 snapshot file, or a v1 entry's
+    inline ``source``. None when it is missing."""
+    path = _snapshot_file(plugin_dir, entry.get("snapshot")) if plugin_dir is not None else None
+    if path is not None:
+        try:
+            return path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+    inline = entry.get("source")
+    return inline if isinstance(inline, str) else None
+
+
+def _write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _migrated(plugin_dir: Path, patches: Mapping[str, Any]) -> dict:
+    """Every entry as a v2 entry: a v1 entry's inline ``source`` moves to its snapshot file (entry gets
+    ``migrated_from: 1``; provenance fields it never had stay absent, so the lint reports them)."""
+    out: dict = {}
+    for name, entry in patches.items():
+        entry = dict(entry) if isinstance(entry, dict) else {}
+        if "source" in entry and "snapshot" not in entry:
+            text = str(entry.pop("source"))
+            _write_text(Path(plugin_dir) / snapshot_rel(name), text)
+            entry.update(snapshot=snapshot_rel(name), snapshot_sha256=_sha256(text), migrated_from=1)
+        entry.pop("source", None)
+        out[name] = entry
+    return out
+
+
+def _write_lock(plugin_dir: Path, patches: Mapping[str, Any]) -> None:
     body = {"version": LOCK_VERSION, "patches": dict(sorted(patches.items()))}
-    path.write_text(json.dumps(body, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _write_text(Path(plugin_dir) / LOCK_FILE, json.dumps(body, indent=2, sort_keys=True) + "\n")
+
+
+def migrate_lock(plugin_dir: Path) -> int:
+    """Rewrite a v1 lock as v2 in place (snapshot files, no inline source). Returns how many entries moved."""
+    patches = read_lock(plugin_dir)
+    moved = sum(1 for e in patches.values() if isinstance(e, dict) and "source" in e and "snapshot" not in e)
+    if moved or lock_version(plugin_dir) != LOCK_VERSION:
+        _write_lock(plugin_dir, _migrated(plugin_dir, patches))
+    return moved
+
+
+def target_file_rel(current: TargetSource, source_root: Optional[Path] = None) -> str:
+    """The target's file relative to the checkout (``tools/terminal_tool.py``)."""
+    root = Path(source_root) if source_root is not None else DEFAULT_SOURCE_ROOT
+    try:
+        return Path(current.path).resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return Path(current.path).name
+
+
+def write_lock_entry(plugin_dir: Path, name: str, target: str, source_root: Optional[Path] = None,
+                     *, provenance: Optional[Mapping[str, Any]] = None) -> str:
+    """Record `target`'s current source (a snapshot file) and fingerprint under `name`; returns the sha.
+    `provenance` (reason, fork_head, upstream_ref, ...) is merged into the entry. `authored_at` is kept
+    from an earlier record; `recorded_at` is refreshed. Other v1 entries of the lock are migrated."""
+    current = target_source(target, source_root)
+    plugin_dir = Path(plugin_dir)
+    patches = _migrated(plugin_dir, read_lock(plugin_dir))
+    now = _utc_now()
+    entry = dict(patches.get(name, {}))
+    entry.update(target=target, ast_sha=current.sha, python="%d.%d.%d" % sys.version_info[:3],
+                 target_file=target_file_rel(current, source_root), snapshot=snapshot_rel(name),
+                 snapshot_sha256=_sha256(current.source), recorded_at=now)
+    entry.setdefault("authored_at", now)
+    entry.update(dict(provenance or {}))
+    _write_text(plugin_dir / snapshot_rel(name), current.source)
+    patches[name] = entry
+    _write_lock(plugin_dir, patches)
     return current.sha
 
 
-def lock_diff(entry: Mapping[str, Any], source_root: Optional[Path] = None) -> str:
-    """Unified diff from the locked source to the current source ("" when unchanged)."""
+def lock_diff(entry: Mapping[str, Any], source_root: Optional[Path] = None, plugin_dir: Optional[Path] = None) -> str:
+    """Unified diff from the recorded upstream source to the current source ("" when unchanged)."""
+    old = snapshot_text(plugin_dir, entry)
+    if old is None:
+        raise CorePatchFileError(f"{entry.get('target')}: no recorded source (snapshot file missing); "
+                                 "refresh with hermes plugins patches --record NAME --reason ...")
     current = target_source(str(entry["target"]), source_root).source
     return "".join(difflib.unified_diff(
-        str(entry.get("source", "")).splitlines(keepends=True), current.splitlines(keepends=True),
-        fromfile=f"locked {entry['target']}", tofile=f"current {entry['target']}"))
+        old.splitlines(keepends=True), current.splitlines(keepends=True),
+        fromfile=f"recorded {entry['target']}", tofile=f"current {entry['target']}"))
+
+
+# ── provenance lint (CI only: a failure here is a red check, never an agent failure) ────────
+
+
+def provenance_problems(label: str, entry: Any, plugin_dir: Optional[Path] = None) -> list[str]:
+    """What is missing from a lock entry's provenance record (``reason``, ``authored_at``, ``fork_head``,
+    ``upstream_ref.commit``, a snapshot whose hash matches). Empty when complete."""
+    if not isinstance(entry, dict):
+        return [f"PROVENANCE {label}: the entry is not an object"]
+    fix = f"fix: hermes plugins patches --record {label.split('/')[-1]} --reason \"...\""
+    problems = []
+    reason = entry.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        problems.append(f"PROVENANCE {label}: no reason ({fix})")
+    elif "\n" in reason.strip() or len(reason) > 240:
+        problems.append(f"PROVENANCE {label}: reason must be one line of at most 240 characters")
+    for key in ("authored_at", "fork_head"):
+        if not entry.get(key):
+            problems.append(f"PROVENANCE {label}: no {key} ({fix})")
+    upstream = entry.get("upstream_ref")
+    if not isinstance(upstream, dict) or not upstream.get("commit"):
+        problems.append(f"PROVENANCE {label}: no upstream_ref.commit ({fix}; 'unknown' is accepted when git history is unavailable)")
+    if not entry.get("snapshot"):
+        problems.append(f"PROVENANCE {label}: no snapshot of the upstream source (schema v1 entry; {fix})")
+    elif plugin_dir is not None:
+        text = snapshot_text(plugin_dir, entry)
+        if text is None:
+            problems.append(f"PROVENANCE {label}: snapshot file {entry.get('snapshot')} is missing")
+        elif entry.get("snapshot_sha256") != _sha256(text):
+            problems.append(f"PROVENANCE {label}: snapshot file does not match snapshot_sha256")
+    return problems
+
+
+def pin_problems(label: str, pin: Any) -> list[str]:
+    """The same lint for a pins-file entry (it carries ``reason`` and ``upstream_commit``)."""
+    if not isinstance(pin, dict):
+        return [f"PROVENANCE {label}: the pin is not an object"]
+    problems = []
+    if not isinstance(pin.get("reason"), str) or not pin["reason"].strip():
+        problems.append(f"PROVENANCE {label}: the pin has no reason (record it in the plugin lock, then --write-pins)")
+    if not pin.get("upstream_commit"):
+        problems.append(f"PROVENANCE {label}: the pin has no upstream_commit (record it in the plugin lock, then --write-pins)")
+    return problems
 
 
 def _entry_problem(label: str, entry: Any, source_root: Optional[Path], word: str) -> Optional[str]:
@@ -243,15 +389,17 @@ def _locks(plugins_root: Path) -> list[tuple[Path, Any]]:
 
 
 def verify_locks(plugins_root: Path, source_root: Optional[Path] = None) -> list[str]:
-    """One line per drifted or broken lock entry under `plugins_root/*/core_patches.lock.json`."""
-    return [
-        line
-        for plugin, patches in _locks(plugins_root)
-        for line in ([f"ERROR {plugin.name}: {patches}"] if isinstance(patches, Exception) else [
-            _entry_problem(f"{plugin.name}/{name}", entry, source_root, "locked")
-            for name, entry in sorted(patches.items())])
-        if line
-    ]
+    """One line per drifted, broken or provenance-less lock entry under `plugins_root/*/core_patches.lock.json`."""
+    problems: list[str] = []
+    for plugin, patches in _locks(plugins_root):
+        if isinstance(patches, Exception):
+            problems.append(f"ERROR {plugin.name}: {patches}")
+            continue
+        for name, entry in sorted(patches.items()):
+            label = f"{plugin.name}/{name}"
+            line = _entry_problem(label, entry, source_root, "locked")
+            problems += ([line] if line else []) + provenance_problems(label, entry, plugin)
+    return problems
 
 
 # ── the plugin's expect_ast_sha literals against its lock ───────────────────────────────────
@@ -319,12 +467,22 @@ def verify_expectations(plugins_root: Path) -> list[str]:
 # ── pins (.github/core-patch-pins.json in the fork: what fork-check verifies) ───────────────
 
 
+def pin_of(plugin: str, entry: Mapping[str, Any]) -> dict:
+    """The fork-side copy of one lock entry (``PIN_KEYS``): enough for fork CI to detect drift and to say
+    what the patch is for and which upstream commit it was written against."""
+    upstream = entry.get("upstream_ref") if isinstance(entry.get("upstream_ref"), dict) else {}
+    return {"target": entry["target"], "ast_sha": entry["ast_sha"], "plugin": plugin,
+            "kind": entry.get("kind", ""), "target_file": entry.get("target_file", ""),
+            "upstream_commit": upstream.get("commit", ""), "upstream_release": upstream.get("release", ""),
+            "reason": entry.get("reason", "")}
+
+
 def write_pins(plugins_root: Path, pins_file: Path) -> int:
     broken = [f"{plugin.name}: {patches}" for plugin, patches in _locks(plugins_root) if isinstance(patches, Exception)]
     if broken:
         raise CorePatchFileError("; ".join(broken))
     pins = {
-        f"{plugin.name}/{name}": {"target": entry["target"], "ast_sha": entry["ast_sha"]}
+        f"{plugin.name}/{name}": pin_of(plugin.name, entry)
         for plugin, patches in _locks(plugins_root)
         for name, entry in sorted(patches.items())
     }
@@ -342,8 +500,107 @@ def read_pins(pins_file: Path) -> dict:
 
 
 def verify_pins(pins_file: Path, source_root: Optional[Path] = None) -> list[str]:
-    return [line for label, pin in sorted(read_pins(pins_file).items())
-            if (line := _entry_problem(label, pin, source_root, "pinned"))]
+    problems: list[str] = []
+    for label, pin in sorted(read_pins(pins_file).items()):
+        line = _entry_problem(label, pin, source_root, "pinned")
+        problems += ([line] if line else []) + pin_problems(label, pin)
+    return problems
+
+
+# ── markdown reports (a PR or issue body; never fail) ───────────────────────────────────────
+
+_HEADER = ("| patch | target | state | recorded | current | upstream commit | reason |\n"
+           "|---|---|---|---|---|---|---|\n")
+
+
+def _git(root: Path, *args: str) -> str:
+    try:
+        run_ = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, timeout=30, check=False)
+        return run_.stdout.strip() if run_.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def _cell(text: Any) -> str:
+    return str(text or "-").replace("|", "\\|").replace("\n", " ")
+
+
+def _row_line(label: str, entry: Mapping[str, Any], state: str, current: str, commit: str, reason: str) -> str:
+    return (f"| `{label}` | `{entry.get('target', '?')}` | {state} | `{str(entry.get('ast_sha', ''))[:12]}` | "
+            f"`{current[:12] or '-'}` | `{commit[:12] or 'unknown'}` | {_cell(reason)} |\n")
+
+
+def _fenced(text: str, lang: str, max_lines: int = 120) -> str:
+    lines = text.splitlines()
+    clipped = lines[:max_lines] + ([f"... ({len(lines) - max_lines} more lines)"] if len(lines) > max_lines else [])
+    return f"```{lang}\n" + "\n".join(clipped) + "\n```\n"
+
+
+def _state_of(entry: Any, source_root: Optional[Path]) -> tuple[str, str, str]:
+    """(state, current sha, detail): ok, DRIFT or ERROR."""
+    try:
+        current = core_patch_sha(str(entry["target"]), source_root)
+    except (CorePatchTargetError, KeyError, TypeError, OSError, UnicodeDecodeError) as exc:
+        return "ERROR", "", str(exc)
+    return ("ok" if current == entry.get("ast_sha") else "DRIFT"), current, ""
+
+
+def report_locks(plugins_root: Path, source_root: Optional[Path] = None) -> str:
+    """Markdown: a table of every lock entry and, for each drifted one, the diff recorded -> current."""
+    table, details, drifted = [], [], 0
+    for plugin, patches in _locks(plugins_root):
+        if isinstance(patches, Exception):
+            details.append(f"### {plugin.name}\n\nUnreadable lock: `{patches}`\n")
+            continue
+        for name, entry in sorted(patches.items()):
+            label = f"{plugin.name}/{name}"
+            state, current, why = _state_of(entry, source_root)
+            upstream = entry.get("upstream_ref") if isinstance(entry.get("upstream_ref"), dict) else {}
+            table.append(_row_line(label, entry, state, current, str(upstream.get("commit") or ""), entry.get("reason")))
+            if state == "ok":
+                continue
+            drifted += 1
+            body = why
+            if state == "DRIFT":
+                try:
+                    body = _fenced(lock_diff(entry, source_root, plugin), "diff")
+                except CorePatchTargetError as exc:
+                    body = str(exc)
+            details.append(f"### {label} ({state})\n\nrecorded upstream: `{upstream.get('commit', 'unknown')}` "
+                           f"(release {upstream.get('release', 'unknown')}). Agent brief: "
+                           f"`hermes plugins patches --agent-brief {name}`\n\n{body}\n")
+    head = f"## Core patches: {drifted} of {len(table)} need attention\n\n" if table else "## Core patches\n\nNo locks found.\n"
+    return head + (_HEADER + "".join(table) + "\n" if table else "") + "\n".join(details)
+
+
+def report_pins(pins_file: Path, source_root: Optional[Path] = None) -> str:
+    """Markdown from the fork's pins file: a table and, for each drifted pin, the upstream commits since the
+    recorded one that touched the target file (needs the git history; the function-level diff is in the
+    plugin lock, see scripts/fork/sync-report.sh)."""
+    root = Path(source_root) if source_root is not None else DEFAULT_SOURCE_ROOT
+    try:
+        pins = read_pins(pins_file)
+    except CorePatchFileError as exc:
+        return f"## Core patches\n\nCannot read the pins: `{exc}`\n"
+    table, details, drifted = [], [], 0
+    for label, pin in sorted(pins.items()):
+        state, current, why = _state_of(pin, root)
+        table.append(_row_line(label, pin, state, current, str(pin.get("upstream_commit") or ""), pin.get("reason")))
+        if state == "ok":
+            continue
+        drifted += 1
+        commit, path = str(pin.get("upstream_commit") or ""), str(pin.get("target_file") or "")
+        history = (_git(root, "log", "--oneline", "-n", "20", f"{commit}..HEAD", "--", path)
+                   if commit not in ("", "unknown") and path else "")
+        details.append(f"### {label} ({state})\n\n{why or 'The target changed since the pin.'} Recorded against upstream "
+                       f"`{commit or 'unknown'}` (release {pin.get('upstream_release') or 'unknown'}).\n\n"
+                       + (f"Commits touching `{path}` since then:\n\n" + _fenced(history, "") if history
+                          else "No commit list (the recorded commit is unknown or not in this clone).\n")
+                       + f"\nFunction-level diff and agent brief: run `scripts/fork/sync-report.sh --plugins-root "
+                         f"<nix-darwin>/hermes/plugins` and `hermes plugins patches --agent-brief {label.split('/')[-1]}`.\n")
+    head = (f"## Core patches: {drifted} of {len(table)} need attention\n\n" if table
+            else "## Core patches\n\nNo patches are pinned.\n")
+    return head + (_HEADER + "".join(table) + "\n" if table else "") + "\n".join(details)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -354,6 +611,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                        help="Verify every lock under PLUGINS_ROOT and each plugin's expect_ast_sha literals")
     group.add_argument("--write-pins", nargs=2, metavar=("PLUGINS_ROOT", "PINS_FILE"))
     group.add_argument("--verify-pins", metavar="PINS_FILE")
+    group.add_argument("--report-locks", metavar="PLUGINS_ROOT",
+                       help="Print a markdown report of every lock (drift diffs included); exits 0")
+    group.add_argument("--report-pins", metavar="PINS_FILE",
+                       help="Print a markdown report of the pins (upstream commits touching drifted targets); exits 0")
+    group.add_argument("--migrate-lock", metavar="PLUGIN_DIR", help="Rewrite a schema v1 lock as v2 in place")
     parser.add_argument("--plugins-root", type=Path, default=None,
                         help="With --verify-pins: also check each plugin's expect_ast_sha against its lock")
     parser.add_argument("--source-root", type=Path, default=None)
@@ -369,6 +631,15 @@ def run(args: Any) -> int:
             return 0
         if getattr(args, "write_pins", None):
             print(f"wrote {write_pins(Path(args.write_pins[0]), Path(args.write_pins[1]))} pin(s)")
+            return 0
+        if getattr(args, "report_locks", None):
+            print(report_locks(Path(args.report_locks), args.source_root))
+            return 0
+        if getattr(args, "report_pins", None):
+            print(report_pins(Path(args.report_pins), args.source_root))
+            return 0
+        if getattr(args, "migrate_lock", None):
+            print(f"migrated {migrate_lock(Path(args.migrate_lock))} entr(y/ies) to schema v{LOCK_VERSION}")
             return 0
         if args.verify_locks:
             root = Path(args.verify_locks)

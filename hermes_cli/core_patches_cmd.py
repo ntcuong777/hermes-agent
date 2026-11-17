@@ -1,7 +1,9 @@
 """``hermes plugins patches`` and the ``hermes doctor`` row for the core-patch registry (fork-owned).
 
 Only the standard library at module level: ``build_plugins_parser`` imports this for every
-``hermes`` invocation, so an upstream rename in ``doctor_report`` must not break the CLI.
+``hermes`` invocation, so an upstream rename in ``doctor_report`` must not break the CLI. The report
+modes (``--report``, ``--upstream-diff``, ``--agent-brief``) print and exit 0; only ``--strict``,
+``--verify-pins`` and an unusable input exit non-zero.
 """
 
 from __future__ import annotations
@@ -20,13 +22,26 @@ def add_patches_parser(plugins_subparsers: Any) -> None:
     """Attach ``hermes plugins patches`` (called from hermes_cli/subcommands/plugins.py)."""
     parser = plugins_subparsers.add_parser(
         "patches", help="Core patches plugins registered: status, drift, fingerprints",
-        description="List core patches (active, skipped-drift, skipped-no-grant, skipped-error), print a "
-                    "target's AST fingerprint, show what changed since a lock, or record a lock entry.")
+        description="List core patches (active, skipped-drift, skipped-no-grant, skipped-error, "
+                    "disabled-after-errors), print a target's AST fingerprint, show what changed upstream since "
+                    "the recorded snapshot, record provenance, or brief an agent about a drifted patch.")
     parser.add_argument("--json", action="store_true", dest="patches_json", help="Machine-readable listing")
     parser.add_argument("--sha", metavar="TARGET", help="Print the fingerprint of pkg.mod:function or pkg.mod:Class.method")
     parser.add_argument("--diff", nargs="?", const="", default=None, metavar="NAME",
-                        help="Diff each patch target (or NAME) against its core_patches.lock.json source")
-    parser.add_argument("--lock", metavar="PLUGIN_DIR", help="Write/refresh a lock entry (needs --name and --target)")
+                        help="Diff each patch target (or NAME) against its recorded upstream snapshot")
+    parser.add_argument("--lock", metavar="PLUGIN_DIR",
+                        help="Write/refresh a bare lock entry (needs --name and --target; prefer --record)")
+    parser.add_argument("--record", metavar="NAME",
+                        help="Write the provenance record and upstream snapshot of patch NAME from the CURRENT core "
+                             "source (needs --reason); run it right after reviewing a drift and updating the patch")
+    parser.add_argument("--reason", help="With --record: one line, the bug or purpose of the patch")
+    parser.add_argument("--report", action="store_true", help="Markdown report for a PR or issue body")
+    parser.add_argument("--upstream-diff", metavar="NAME",
+                        help="Diff the recorded upstream snapshot against the current core target, and against "
+                             "the plugin's copy")
+    parser.add_argument("--agent-brief", metavar="NAME",
+                        help="A self-contained markdown brief for an agent that has to re-sync patch NAME")
+    parser.add_argument("--migrate-lock", metavar="PLUGIN_DIR", help="Rewrite a schema v1 lock as v2 in place")
     parser.add_argument("--name", help="Patch name for --lock")
     parser.add_argument("--target", help="Target for --lock")
     parser.add_argument("--strict", action="store_true",
@@ -38,15 +53,12 @@ def add_patches_parser(plugins_subparsers: Any) -> None:
 
 
 def _rows() -> list[dict[str, Any]]:
-    from hermes_cli import core_patches
+    from hermes_cli import core_patches, core_patches_report as report
     from hermes_cli.plugins import discover_plugins
 
     discover_plugins()
-    return [
-        {"plugin": r.spec.plugin_id, "name": r.spec.name, "target": r.spec.target, "kind": r.spec.kind,
-         "order": r.spec.order, "critical": r.critical, "status": r.status, "detail": r.detail}
-        for r in core_patches.records()
-    ]
+    failures = report._failures()
+    return [report.row_of(r, failures) for r in core_patches.records()]
 
 
 def _print_table(rows: list[dict[str, Any]]) -> None:
@@ -56,13 +68,14 @@ def _print_table(rows: list[dict[str, Any]]) -> None:
     for row in rows:
         flag = " critical" if row["critical"] else ""
         detail = f"  {row['detail']}" if row["detail"] else ""
-        print(f"{row['status']:<17} {row['plugin']}:{row['name']}  {row['kind']}{flag} order={row['order']}  "
+        print(f"{row['status']:<22} {row['plugin']}:{row['name']}  {row['kind']}{flag} order={row['order']}  "
               f"{row['target']}{detail}")
     print(FOOTER)
 
 
 def _strict_code(rows: list[dict[str, Any]], strict: bool) -> int:
-    return 1 if strict and any(row["status"] in ("skipped-drift", "skipped-error") for row in rows) else 0
+    bad = ("skipped-drift", "skipped-error", "disabled-after-errors")
+    return 1 if strict and any(row["status"] in bad for row in rows) else 0
 
 
 def _diff(name: str) -> int:
@@ -82,28 +95,47 @@ def _diff(name: str) -> int:
             print(f"{record.spec.key}: no entry in {LOCK_FILE}")
             continue
         try:
-            text = lock_diff(entry)
+            text = lock_diff(entry, None, Path(record.spec.plugin_dir))
         except CorePatchTargetError as exc:
             print(f"{record.spec.key}: {exc}")
             changed += 1
             continue
         if text:
             changed += 1
-            print(f"{record.spec.key}: {record.spec.target} changed since the lock:")
+            print(f"{record.spec.key}: {record.spec.target} changed since the recorded upstream snapshot:")
             print(text, end="" if text.endswith("\n") else "\n")
         else:
-            print(f"{record.spec.key}: no change since the lock")
+            print(f"{record.spec.key}: no change since the recorded upstream snapshot")
     return 1 if changed else 0
 
 
 def cmd_patches(args: Any) -> None:
     """Dispatch ``hermes plugins patches``; exits non-zero via SystemExit on failure or drift."""
-    from hermes_cli.core_patches_ast import CorePatchTargetError, core_patch_sha, write_lock_entry
+    from hermes_cli.core_patches_ast import CorePatchTargetError, core_patch_sha, migrate_lock, write_lock_entry
 
     code = 0
     try:
         if getattr(args, "sha", None):
             print(core_patch_sha(args.sha))
+        elif getattr(args, "record", None):
+            code = _record(args.record, getattr(args, "reason", None))
+        elif getattr(args, "upstream_diff", None):
+            from hermes_cli import core_patches_prov as prov
+
+            print(prov.upstream_diff(prov.find_record(args.upstream_diff)), end="")
+        elif getattr(args, "agent_brief", None):
+            from hermes_cli import core_patches_prov as prov
+
+            print(prov.agent_brief(prov.find_record(args.agent_brief)))
+        elif getattr(args, "report", False):
+            from hermes_cli import core_patches, core_patches_prov as prov
+            from hermes_cli.plugins import discover_plugins
+
+            discover_plugins()
+            print(prov.report_markdown(core_patches.records()))
+            code = _strict_code(_rows(), getattr(args, "strict", False))
+        elif getattr(args, "migrate_lock", None):
+            print(f"migrated {migrate_lock(Path(args.migrate_lock))} entr(y/ies)")
         elif getattr(args, "lock", None):
             if not (args.name and args.target):
                 print("--lock needs --name and --target", file=sys.stderr)
@@ -126,11 +158,29 @@ def cmd_patches(args: Any) -> None:
             rows = _rows()
             _print_table(rows)
             code = _strict_code(rows, getattr(args, "strict", False))
-    except CorePatchTargetError as exc:
+    except (CorePatchTargetError, ValueError) as exc:
         print(f"hermes plugins patches: {exc}", file=sys.stderr)
         code = 2
     if code:
         raise SystemExit(code)
+
+
+def _record(name: str, reason: Any) -> int:
+    from hermes_cli import core_patches_prov as prov
+
+    if not reason:
+        print("--record needs --reason \"one line: the bug or purpose\"", file=sys.stderr)
+        return 2
+    done = prov.record(prov.find_record(name), str(reason))
+    ref = done["upstream_ref"]
+    print(f"{done['name']}: recorded {done['ast_sha']} ({done['target_file']}) against upstream {ref['commit']} "
+          f"(release {ref['release']}); lock and snapshot written under {done['plugin_dir']}")
+    if done["fork_dirty"]:
+        print(f"warning: {done['target_file']} has uncommitted changes; commit them, then record again",
+              file=sys.stderr)
+    if done["stale_expectation"]:
+        print(f"next: set expect_ast_sha to {done['ast_sha']} in the plugin ({done['patch_fn'] or 'register_core_patch call'})")
+    return 0
 
 
 def _check_core_patches(should_fix: bool) -> Any:
@@ -141,21 +191,34 @@ def _check_core_patches(should_fix: bool) -> Any:
 
 
 def _doctor_rows(should_fix: bool, f: Any) -> None:
-    from hermes_cli import core_patches
+    from hermes_cli import core_patches, core_patches_prov, core_patches_report as report
     from hermes_cli.doctor_report import _section, check_ok, check_warn
     from hermes_cli.plugins import discover_plugins
 
     discover_plugins()
     current = core_patches.records()
-    if not current:
+    missing = core_patches._missing_declared()
+    if not current and not missing:
         return
     _section("Core Patches")
+    counts = ", ".join(f"{status}={n}" for status, n in report._counts(report.row_of(r) for r in current).items())
+    problems = core_patches_prov.lock_problems(current)
+    summary = f"{len(current)} patch(es): {counts or 'none'}" + (f"; {len(problems)} provenance problem(s)" if problems else "")
+    note = "(see: hermes plugins patches; hermes plugins patches --agent-brief NAME)"
+    (check_ok if all(r.status == core_patches.ACTIVE for r in current) and not problems and not missing
+     else check_warn)("core patches", f"{summary} {note}")
     for record in current:
         label = f"{record.spec.key} -> {record.spec.target}"
         if record.status == core_patches.ACTIVE:
             check_ok(label, "(active)")
             continue
         check_warn(label, f"({record.status}: {record.detail})")
+        loud = "CRITICAL core patch" if record.critical else "Core patch"
         f.manual_issues.append(
-            f"Core patch {record.spec.key} on {record.spec.target} is {record.status}: {record.detail}. "
-            f"Run `hermes plugins patches --diff {record.spec.name}`.")
+            f"{loud} {record.spec.key} on {record.spec.target} is {record.status}: {record.detail}. "
+            f"Hermes runs the upstream behaviour for it. Run `hermes plugins patches --agent-brief {record.spec.name}`.")
+    for line in missing:
+        check_warn("critical core patch", f"({line})")
+        f.manual_issues.append(f"CRITICAL core patch not registered: {line}. Hermes starts without it.")
+    for line in problems:
+        check_warn("provenance", line)

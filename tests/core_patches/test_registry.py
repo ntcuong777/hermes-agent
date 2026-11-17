@@ -133,7 +133,7 @@ def test_an_undeclared_patch_is_an_error(target):
     assert "core_patches:" in cp.records()[0].detail
 
 
-def test_critical_drift_refuses_startup(target, no_discovery):
+def test_critical_drift_refuses_startup_when_the_flag_is_on(target, no_discovery, refusing):
     _install(_spec(target, "must", up, sha="1" * 64, critical=True))
     with pytest.raises(cp.CorePatchRefusal) as refused:
         cp.apply_core_patches("test")

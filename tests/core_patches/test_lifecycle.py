@@ -30,7 +30,7 @@ def _state():
 
 
 def test_a_critical_patch_whose_register_raises_after_staging_leaves_a_tombstone(plugin_homes, monkeypatch,
-                                                                                 no_discovery):
+                                                                                 no_discovery, refusing):
     make, log = plugin_homes
     log.CRITICAL, log.FAIL_AFTER_STAGING = True, True
     home = make("a", granted_config())
@@ -54,7 +54,7 @@ def test_a_non_critical_patch_whose_load_fails_leaves_nothing(plugin_homes, monk
     assert cp.apply_core_patches("test") == ()
 
 
-def test_a_declared_critical_name_with_no_record_refuses(plugin_homes, monkeypatch):
+def test_a_declared_critical_name_with_no_record_refuses(plugin_homes, monkeypatch, refusing):
     """register() raises before it stages anything: only plugin.yaml knows the patch was critical."""
     make, log = plugin_homes
     log.FAIL_BEFORE_STAGING = True
@@ -74,7 +74,7 @@ def test_a_declared_critical_name_of_a_disabled_plugin_is_not_required(plugin_ho
     assert cp.apply_core_patches("test") == ()
 
 
-def test_plugin_yaml_can_make_a_patch_critical(plugin_homes, monkeypatch, no_discovery):
+def test_plugin_yaml_can_make_a_patch_critical(plugin_homes, monkeypatch, no_discovery, refusing):
     make, log = plugin_homes
     log.SHA = "3" * 64  # drifted
     home = make("a", granted_config(), core_patches_yaml="[{name: shout, critical: true}]")

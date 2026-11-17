@@ -12,7 +12,7 @@ import pytest
 
 from hermes_cli import core_patches_ast as cpa
 from tests.core_patches.conftest import (
-    AGREET_SHA, BOX_MAKE_SHA, BOX_SIZE_SHA, CHANGED_GREET_SHA, FIXTURES, GREET_SHA,
+    AGREET_SHA, BOX_MAKE_SHA, BOX_SIZE_SHA, CHANGED_GREET_SHA, FIXTURES, GREET_SHA, PROVENANCE,
 )
 
 SCRIPT = Path(cpa.__file__).resolve()
@@ -55,15 +55,16 @@ def _copy_fixtures(tmp_path):
 
 def test_lock_roundtrip_diff_and_verify(tmp_path):
     root, plugin = _copy_fixtures(tmp_path)
-    assert cpa.write_lock_entry(plugin, "shout", "cpdemo_target:greet", root) == GREET_SHA
+    assert cpa.write_lock_entry(plugin, "shout", "cpdemo_target:greet", root, provenance=PROVENANCE) == GREET_SHA
     entry = cpa.read_lock(plugin)["shout"]
     assert entry["target"] == "cpdemo_target:greet" and entry["ast_sha"] == GREET_SHA
-    assert cpa.lock_diff(entry, root) == ""
+    assert entry["target_file"] == "cpdemo_target.py" and entry["snapshot"] == "upstream-source/shout.py.txt"
+    assert cpa.lock_diff(entry, root, plugin) == ""
     assert cpa.verify_locks(plugin.parent, root) == []
     source = root / "cpdemo_target.py"
     source.write_text(source.read_text(encoding="utf-8").replace('f"hello {name}"', 'f"hi {name}"', 1),
                       encoding="utf-8")
-    diff = cpa.lock_diff(entry, root)
+    diff = cpa.lock_diff(entry, root, plugin)
     assert '-    return f"hello {name}"' in diff and '+    return f"hi {name}"' in diff
     (problem,) = cpa.verify_locks(plugin.parent, root)
     assert problem.startswith("DRIFT demo/shout cpdemo_target:greet")
@@ -71,10 +72,13 @@ def test_lock_roundtrip_diff_and_verify(tmp_path):
 
 def test_pins_roundtrip(tmp_path):
     root, plugin = _copy_fixtures(tmp_path)
-    cpa.write_lock_entry(plugin, "shout", "cpdemo_target:greet", root)
+    cpa.write_lock_entry(plugin, "shout", "cpdemo_target:greet", root, provenance=PROVENANCE)
     pins = tmp_path / "pins.json"
     assert cpa.write_pins(plugin.parent, pins) == 1
-    assert json.loads(pins.read_text())["pins"] == {"demo/shout": {"target": "cpdemo_target:greet", "ast_sha": GREET_SHA}}
+    assert json.loads(pins.read_text())["pins"] == {"demo/shout": {
+        "target": "cpdemo_target:greet", "ast_sha": GREET_SHA, "plugin": "demo", "kind": "wrap",
+        "target_file": "cpdemo_target.py", "upstream_commit": PROVENANCE["upstream_ref"]["commit"],
+        "upstream_release": "0.23.0", "reason": "demo: upper-case the greeting"}}
     assert cpa.verify_pins(pins, root) == []
     (root / "cpdemo_target.py").write_text("def greet(name):\n    return name\n", encoding="utf-8")
     (problem,) = cpa.verify_pins(pins, root)
@@ -86,7 +90,7 @@ def test_it_runs_as_a_standalone_script(tmp_path):
                           str(FIXTURES)], capture_output=True, text=True, timeout=60)
     assert out.returncode == 0 and out.stdout.strip() == GREET_SHA
     root, plugin = _copy_fixtures(tmp_path)
-    cpa.write_lock_entry(plugin, "shout", "cpdemo_target:greet", root)
+    cpa.write_lock_entry(plugin, "shout", "cpdemo_target:greet", root, provenance=PROVENANCE)
     ok = subprocess.run([sys.executable, "-I", str(SCRIPT), "--verify-locks", str(plugin.parent), "--source-root",
                          str(root)], capture_output=True, text=True, timeout=60)
     assert ok.returncode == 0 and "no drift" in ok.stdout
@@ -140,7 +144,7 @@ def _plugin_with_literal(plugin, sha):
 
 def test_the_plugins_expect_ast_sha_must_equal_its_lock(tmp_path, capsys):
     root, plugin = _copy_fixtures(tmp_path)
-    cpa.write_lock_entry(plugin, "shout", "cpdemo_target:greet", root)
+    cpa.write_lock_entry(plugin, "shout", "cpdemo_target:greet", root, provenance=PROVENANCE)
     pins = tmp_path / "pins.json"
     cpa.write_pins(plugin.parent, pins)
     _plugin_with_literal(plugin, GREET_SHA)

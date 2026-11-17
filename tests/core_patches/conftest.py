@@ -16,6 +16,13 @@ AGREET_SHA = "71d8782ef89c9b922a051af785dd8a9080416a44c42c27f1e08375f0950e3362"
 BOX_SIZE_SHA = "19e7a1378beccf0d25ea81296a070de4ff76a617137d994bfb9850326b7bb045"
 BOX_MAKE_SHA = "f7c8b0832fe6eb843660fdf3d6fb4bee3cc3e2d43553a54bf246fde8ba285196"
 CHANGED_GREET_SHA = "030a2655c8f56f9c6fe15e0be92e866e157a568b84c6c723ff06a7aef75cf3f0"
+# A complete provenance record, as `hermes plugins patches --record` writes it (passed to write_lock_entry).
+PROVENANCE = {
+    "plugin": "demo", "kind": "wrap", "reason": "demo: upper-case the greeting",
+    "fork_head": "8fa8efda663b6a59076d47586a41a8a1df039873", "fork_dirty": False,
+    "upstream_ref": {"commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e", "release": "0.23.0", "date": "2026-11-16"},
+    "target_file_blob_sha": "", "fork_file_blob_sha": "", "patch_fn": "__init__.py:_shout", "copy_of": None,
+}
 
 
 @pytest.fixture(autouse=True)
@@ -25,6 +32,14 @@ def _clean_registry():
     core_patches._reset_for_tests()
     yield
     core_patches._reset_for_tests()
+
+
+@pytest.fixture
+def refusing(monkeypatch):
+    """`core_patches.refuse_on_critical: true` for the test (the default is false: nothing refuses)."""
+    from hermes_cli import core_patches_policy as policy
+
+    monkeypatch.setattr(policy, "load_settings", lambda: policy.Settings(refuse_on_critical=True))
 
 
 @pytest.fixture

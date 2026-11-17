@@ -2,10 +2,28 @@
   "patches": {
     "shout": {
       "ast_sha": "8ac9a553d27b157324c2b1e0477f32ed396d2195aec4e09bb1a95cca39ff219a",
-      "python": "3.14.9",
-      "source": "def greet(name: str) -> str:\n    \"\"\"Say hello.\"\"\"\n    return f\"hello {name}\"\n",
-      "target": "cpdemo_target:greet"
+      "authored_at": "2026-11-17T00:00:00Z",
+      "copy_of": null,
+      "fork_dirty": false,
+      "fork_file_blob_sha": "",
+      "fork_head": "8fa8efda663b6a59076d47586a41a8a1df039873",
+      "kind": "wrap",
+      "patch_fn": "__init__.py:_shout",
+      "plugin": "demo-core-patch",
+      "python": "3.12.0",
+      "reason": "demo: upper-case the greeting (test fixture of the core-patch registry)",
+      "recorded_at": "2026-11-17T00:00:00Z",
+      "snapshot": "upstream-source/shout.py.txt",
+      "snapshot_sha256": "12f59d09121b1a46f0f705beef34b228c7e8b468825bfecf7c85944db4ee19fc",
+      "target": "cpdemo_target:greet",
+      "target_file": "cpdemo_target.py",
+      "target_file_blob_sha": "",
+      "upstream_ref": {
+        "commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+        "date": "2026-11-16",
+        "release": "0.23.0"
+      }
     }
   },
-  "version": 1
+  "version": 2
 }

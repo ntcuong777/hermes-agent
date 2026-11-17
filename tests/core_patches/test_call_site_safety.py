@@ -63,7 +63,7 @@ def test_an_apply_site_survives_a_broken_registry(monkeypatch):
     assert safe.apply("cli") is None
 
 
-def test_an_apply_site_still_refuses(monkeypatch):
+def test_an_apply_site_still_refuses_when_the_flag_is_on(monkeypatch, refusing):
     def refuse(surface=""):
         raise cp.CorePatchRefusal("refusing to start: x")
     monkeypatch.setattr(cp, "apply_core_patches", refuse)
@@ -74,7 +74,7 @@ def test_an_apply_site_still_refuses(monkeypatch):
 # ── finding 6: the gateway publishes startup_failed; a cron worker refuses once ─────────────
 
 
-def test_the_gateway_refusal_publishes_startup_failed_and_exits_78(monkeypatch):
+def test_the_gateway_refusal_publishes_startup_failed_and_exits_78(monkeypatch, refusing):
     import gateway.run
     import hermes_cli.plugins
     import hermes_cli.plugins_cmd_remove
@@ -96,7 +96,7 @@ def test_the_gateway_refusal_publishes_startup_failed_and_exits_78(monkeypatch):
                                          "skipped-drift"}]
 
 
-def test_a_cron_worker_refusal_is_recorded_and_the_next_spawn_is_refused(tmp_path, monkeypatch):
+def test_a_cron_worker_refusal_is_recorded_and_the_next_spawn_is_refused(tmp_path, monkeypatch, refusing):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
 
     def refuse(surface=""):

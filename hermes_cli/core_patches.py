@@ -14,7 +14,14 @@ agents: it runs plugin discovery, installs the deferred patches and refuses star
 the patch must be in place before the first agent.
 
 Statuses: pending (staged, or published while its target module is not imported yet), active,
-skipped-drift, skipped-no-grant, skipped-error.
+skipped-drift, skipped-no-grant, skipped-error, disabled-after-errors (the safety shell switched a
+patch that kept raising at call time off for this process; see core_patches_shell.py).
+
+Fail-safe policy (core_patches_policy.py): nothing here may stop, refuse, hang or break the agent. A
+patch that is drifted, missing, ungranted, broken, slow or raising is skipped or switched off and the
+core runs its upstream behaviour; it is reported (core_patches_report.py: logs, status.json,
+events.jsonl, a home-channel notice, the doctor row). ``critical`` makes that louder (ERROR log,
+notice, doctor finding) and refuses startup ONLY when ``core_patches.refuse_on_critical: true``.
 
 Rules:
 - A patch is process-global, so one installed patch serves every profile home a multiplexed process
@@ -30,11 +37,12 @@ Rules:
   re-register it. A load that fails or times out after staging drops the patch; a ``critical`` one
   leaves a tombstone record (``skipped-error: plugin failed to load``) so the refusal still fires.
 - ``critical``: the patch argument, or ``core_patches: [{name: x, critical: true}]`` in plugin.yaml.
-  At startup a critical patch that is not active refuses the process (exit 78), and so does a
-  declared critical name with no record at all from a plugin that was enabled (its register()
-  raised or timed out before staging it). After startup (any later reload) the same conditions
-  are logged at ERROR only; the process keeps running without the patch until it is restarted.
-  A plugin disabled in config or removed from disk is not required: that is the user's choice.
+  A critical patch that is not active at startup, and a declared critical name with no record at all
+  from a plugin that was enabled (its register() raised or timed out before staging it), are
+  reported loudly (ERROR log, an event, a home-channel notice, a doctor finding) and the process
+  starts without the patch. With ``core_patches.refuse_on_critical: true`` the same conditions
+  refuse the process instead (exit 78). After startup (any later reload) they are logged at ERROR
+  only. A plugin disabled in config or removed from disk is not required: that is the user's choice.
 - Drift: the fingerprint is taken from the file the module was loaded from; the file's mtime and
   size are recorded at first resolution and any later change is ``skipped-drift: source changed
   since import`` (the process still runs the old code); the live function's ``co_name`` and
@@ -53,7 +61,7 @@ methods taken earlier, and modules that import the function after an undo.
 
 from __future__ import annotations
 
-import functools
+import contextvars
 import inspect
 import importlib
 import itertools
@@ -68,6 +76,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
+from hermes_cli import core_patches_policy as policy
+from hermes_cli import core_patches_shell as shell
 from hermes_cli.core_patches_ast import (
     SHA_RE, TARGET_RE, CorePatchTargetError, TargetSource, runtime_mismatch, split_target, target_source,
 )
@@ -78,7 +88,9 @@ NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 KINDS = ("wrap", "replace")
 PENDING, ACTIVE = "pending", "active"
 SKIPPED_DRIFT, SKIPPED_NO_GRANT, SKIPPED_ERROR = "skipped-drift", "skipped-no-grant", "skipped-error"
-REFUSE_STATUSES = frozenset({SKIPPED_DRIFT, SKIPPED_ERROR, PENDING})
+DISABLED = "disabled-after-errors"
+REFUSE_STATUSES = frozenset({SKIPPED_DRIFT, SKIPPED_ERROR, PENDING})  # "not installed" for a critical patch
+LOUD_STATUSES = REFUSE_STATUSES | {DISABLED}
 REFUSAL_EXIT_CODE = 78  # EX_CONFIG
 _MISSING = object()
 
@@ -103,6 +115,7 @@ class CorePatchSpec:
     critical: bool
     plugin_dir: Optional[str]
     seq: int
+    propagates: tuple = ()  # exception types the patch raises on purpose: the safety shell lets them through
 
     @property
     def key(self) -> str:
@@ -125,6 +138,7 @@ class PatchRecord:
     status: str
     detail: str = ""
     gens: tuple = ()     # () = a tombstone (a critical patch whose plugin failed to load)
+    current_sha: str = ""  # fingerprint of the target as last resolved ("" = never resolved)
 
     @property
     def owners(self) -> frozenset:
@@ -161,10 +175,10 @@ class _Link:
     """One installed patch in a target's chain. A wrap factory is called once, with a trampoline that
     forwards to ``inner``; rebuilding the chain only rewires ``inner``."""
 
-    __slots__ = ("key", "wrapped", "error", "inner")
+    __slots__ = ("key", "wrapped", "error", "inner", "guard")
 
     def __init__(self, key: str, wrapped: Any = None, error: str = "") -> None:
-        self.key, self.wrapped, self.error, self.inner = key, wrapped, error, None
+        self.key, self.wrapped, self.error, self.inner, self.guard = key, wrapped, error, None, None
 
 
 _LOCK = threading.RLock()
@@ -174,10 +188,9 @@ _TARGETS: dict[str, _TargetState] = {}
 _LINKS: dict[int, _Link] = {}             # spec.seq -> link
 _FILE_STATS: dict[str, tuple[int, int]] = {}  # source path -> (mtime_ns, size) at first resolution
 _SOURCES: dict[tuple, TargetSource] = {}   # (target, path, mtime_ns, size) -> parsed def
-_LOGGED: set[tuple[str, str, str]] = set()
-_ALERTED: set[tuple[str, str, str]] = set()
 _EAGER: set[str] = set()                   # surfaces that called apply_core_patches in this process
 _MANAGERS: "weakref.WeakSet[Any]" = weakref.WeakSet()
+_SETTINGS = policy.Settings()              # refreshed outside the lock by activate() and apply_core_patches()
 
 
 # ── spec validation ──────────────────────────────────────────────────────────────────────────
@@ -185,7 +198,7 @@ _MANAGERS: "weakref.WeakSet[Any]" = weakref.WeakSet()
 
 def make_spec(*, plugin_id: str, name: str, target: str, kind: str, fn: Callable[..., Any],
               expect_ast_sha: str, order: int = 0, critical: bool = False,
-              plugin_dir: Optional[str] = None) -> CorePatchSpec:
+              plugin_dir: Optional[str] = None, propagates: Iterable[type] = ()) -> CorePatchSpec:
     """Validate the arguments of ``ctx.register_core_patch``; a programming error raises."""
     if not isinstance(name, str) or not NAME_RE.match(name):
         raise ValueError(f"core patch name {name!r} must match {NAME_RE.pattern}")
@@ -201,9 +214,13 @@ def make_spec(*, plugin_id: str, name: str, target: str, kind: str, fn: Callable
         raise TypeError("order must be an int")
     if not isinstance(critical, bool):
         raise TypeError("critical must be a bool")
+    declared = tuple(propagates)
+    if not all(isinstance(t, type) and issubclass(t, Exception) for t in declared):
+        raise TypeError("propagates must be a tuple of Exception subclasses")
     return CorePatchSpec(plugin_id=plugin_id, name=name, target=target, kind=kind, fn=fn,
                          expect_ast_sha=expect_ast_sha, order=order, critical=critical,
-                         plugin_dir=str(plugin_dir) if plugin_dir else None, seq=next(_SEQ))
+                         plugin_dir=str(plugin_dir) if plugin_dir else None, seq=next(_SEQ),
+                         propagates=declared)
 
 
 # ── grant and declaration ────────────────────────────────────────────────────────────────────
@@ -404,25 +421,37 @@ def _abandon_target(target: str, state: _TargetState) -> None:
     _TARGETS[target] = replace(state, foreign=True, aliases=frozenset())
 
 
-def _trampoline(link: _Link, original: Callable[..., Any], is_async: bool) -> Callable[..., Any]:
-    if is_async:
-        async def forward(*args: Any, **kwargs: Any) -> Any:
-            return await link.inner(*args, **kwargs)
-    else:
-        def forward(*args: Any, **kwargs: Any) -> Any:
-            return link.inner(*args, **kwargs)
-    return functools.wraps(original)(forward)
+def _on_guard_failure(guard: shell.Guard, exc: BaseException, where: str, tripped: bool) -> None:
+    """Called by a shell on a logged (rate limited) patch-layer failure, on the thread of the patched
+    call: record the event, and on the failure that switches the patch off update the registry from a
+    helper thread (the call never waits for the registry lock)."""
+    from hermes_cli import core_patches_report as report
+
+    report.event("auto-disabled" if tripped else "error", key=guard.key, detail=f"{where}: {guard.last_error}",
+                 failures=guard.total)
+    if tripped:
+        detail = (f"switched off after {guard.consecutive} failures in a row (last: {guard.last_error}); the original "
+                  f"runs. Reload the plugin or restart to retry")
+        threading.Thread(target=disable_patch, args=(guard.key, detail), daemon=True,
+                         name="core-patches-disable").start()
 
 
 def _link(spec: CorePatchSpec, state: _TargetState) -> _Link:
-    """The cached link of ``spec``; created (factory called) on first use only."""
+    """The cached link of ``spec``; created (factory called) on first use only. The installed callable
+    is the patch behind its safety shell (core_patches_shell.py)."""
     cached = _LINKS.get(spec.seq)
     if cached is not None:
         return cached
+    flavor = shell.flavor_of(state.original_func)
     is_async = inspect.iscoroutinefunction(state.original_func)
     link = _Link(spec.key)
+    original = state.original_func
+
+    def inner() -> Callable[..., Any]:
+        return link.inner if link.inner is not None else original
+
     try:
-        candidate = spec.fn if spec.kind == "replace" else spec.fn(_trampoline(link, state.original_func, is_async))
+        candidate = spec.fn if spec.kind == "replace" else spec.fn(shell.trampoline(inner, original, flavor))
     except Exception as exc:  # health: allow BLE001 -- a broken factory skips its own patch only
         link.error = f"wrap factory raised {exc!r}"
     else:
@@ -431,7 +460,8 @@ def _link(spec: CorePatchSpec, state: _TargetState) -> _Link:
         elif inspect.iscoroutinefunction(candidate) != is_async:
             link.error = "async-ness differs from the target (async target needs an async function)"
         else:
-            link.wrapped = candidate
+            link.guard = shell.Guard(spec.key, spec.kind, _SETTINGS.max_failures, spec.propagates, _on_guard_failure)
+            link.wrapped = shell.make_shell(link.guard, candidate, inner, flavor)
     _LINKS[spec.seq] = link
     return link
 
@@ -494,6 +524,10 @@ def _commit(target: str, changed: Iterable[str], probe: Optional[_Probe]) -> Non
                      None if r.status == ACTIVE else (r.status, r.detail))
         for r in on_target
     }
+    for r in on_target:  # a patch the safety shell switched off stays off until its plugin reloads
+        link = _LINKS.get(r.spec.seq)
+        if verdicts[r.spec.key] is None and link is not None and link.guard is not None and link.guard.disabled:
+            verdicts[r.spec.key] = (DISABLED, r.detail if r.status == DISABLED else link.guard.last_error)
     replaces = sorted((r for r in on_target if verdicts[r.spec.key] is None and r.spec.kind == "replace"),
                       key=lambda r: (r.status != ACTIVE, r.spec.seq))
     verdicts.update({r.spec.key: (SKIPPED_ERROR, f"{target} is already replaced by {replaces[0].spec.key}")
@@ -501,8 +535,9 @@ def _commit(target: str, changed: Iterable[str], probe: Optional[_Probe]) -> Non
     members = sorted((r for r in on_target if verdicts[r.spec.key] is None),
                      key=lambda r: (r.spec.kind != "replace", r.spec.order, r.spec.seq))
     state = _target_state_or_error(target, members, verdicts)
+    sha = probe.sha if probe is not None else ""
     if state is None:
-        _apply_statuses(verdicts)
+        _apply_statuses(verdicts, sha)
         return
     current = state.original_func
     for record in members:
@@ -519,7 +554,7 @@ def _commit(target: str, changed: Iterable[str], probe: Optional[_Probe]) -> Non
             _abandon_target(target, state)
         verdicts.update({r.spec.key: (SKIPPED_ERROR, f"{target} was replaced outside the registry; restart to recover")
                          for r in on_target})
-    _apply_statuses(verdicts)
+    _apply_statuses(verdicts, sha)
 
 
 def _target_state_or_error(target: str, members: list, verdicts: dict) -> Optional[_TargetState]:
@@ -530,27 +565,19 @@ def _target_state_or_error(target: str, members: list, verdicts: dict) -> Option
         return None
 
 
-def _apply_statuses(verdicts: dict) -> None:
+def _apply_statuses(verdicts: dict, sha: str = "") -> None:
     for key, verdict in verdicts.items():
         status, detail = verdict if verdict is not None else (ACTIVE, "")
-        _set_status(key, status, detail)
+        _set_status(key, status, detail, sha)
 
 
-def _set_status(key: str, status: str, detail: str) -> None:
+def _set_status(key: str, status: str, detail: str, sha: str = "") -> None:
+    """Record a status (cheap, under the lock). Logging, events and notices happen in
+    core_patches_report.publish, after the lock is released (``_after_change``)."""
     record = _RECORDS.get(key)
     if record is None:
         return
-    _RECORDS[key] = replace(record, status=status, detail=detail)
-    if status not in (ACTIVE, PENDING):
-        _log_once(key, status, detail)
-
-
-def _log_once(key: str, status: str, detail: str) -> None:
-    marker = (key, status, detail)
-    if marker in _LOGGED:
-        return
-    _LOGGED.add(marker)
-    logger.warning("core patch %s %s: %s", key, status, detail)
+    _RECORDS[key] = replace(record, status=status, detail=detail, current_sha=sha or record.current_sha)
 
 
 def _drop_link(seq: int) -> None:
@@ -591,6 +618,7 @@ def _gen(record: Optional[PatchRecord], owner: str, seq: Optional[int], *, publi
 def activate(key: str, owner: str, seq: Optional[int] = None) -> None:
     """The plugin's load succeeded: promote this generation (dropping the owner's older one) and
     swap the chain in one step under the lock. ``seq`` None = the owner's newest staged one."""
+    refresh_settings()
     with _LOCK:
         record = _RECORDS.get(key)
         gen = _gen(record, owner, seq, published=False)
@@ -644,7 +672,6 @@ def _remove_owner(key: str, owner: str, seq: Optional[int], *, tombstone: str) -
         elif tombstone and record.critical:
             _RECORDS[key] = replace(record, gens=(), status=SKIPPED_ERROR,
                                     detail=f"plugin failed to load: {tombstone}")
-            _log_once(key, SKIPPED_ERROR, _RECORDS[key].detail)
         else:
             del _RECORDS[key]
         target = record.spec.target
@@ -680,6 +707,14 @@ def records() -> tuple[PatchRecord, ...]:
         return tuple(sorted(_RECORDS.values(), key=lambda r: (r.spec.target, r.spec.order, r.spec.seq)))
 
 
+def failure_stats() -> dict[str, tuple[int, int, str]]:
+    """``{key: (failures in total, failures in a row, last error)}`` of every patch the safety shell guards."""
+    with _LOCK:
+        links = list(_LINKS.values())
+    return {link.key: (link.guard.total, link.guard.consecutive, link.guard.last_error)
+            for link in links if link.guard is not None}
+
+
 def _on_load_worker() -> bool:
     try:
         from hermes_cli.plugins_loader import in_plugin_load_worker
@@ -687,6 +722,56 @@ def _on_load_worker() -> bool:
         return bool(in_plugin_load_worker())
     except Exception:  # health: allow BLE001 -- unknown: be conservative, do not import
         return True
+
+
+# ── settings, switch-off, error records ─────────────────────────────────────────────────────
+
+
+def refresh_settings() -> policy.Settings:
+    """Re-read ``core_patches:`` from the config (never under the registry lock; never raises)."""
+    global _SETTINGS
+    _SETTINGS = policy.load_settings()
+    try:
+        from hermes_cli import core_patches_report as report
+
+        report.configure(_SETTINGS)
+    except Exception:  # health: allow BLE001
+        logger.debug("core patches: could not configure the report module", exc_info=True)
+    return _SETTINGS
+
+
+def disable_patch(key: str, detail: str) -> None:
+    """The safety shell switched ``key`` off: record it and rebuild the target's chain without it (the
+    original is restored when it was the only patch). Never raises."""
+    try:
+        with _LOCK:
+            record = _RECORDS.get(key)
+            if record is None or record.status == DISABLED:
+                return
+            _RECORDS[key] = replace(record, status=DISABLED, detail=detail)
+            target = record.spec.target
+            if target in _TARGETS:
+                _commit(target, set(), None)
+        _after_change()
+    except Exception:  # health: allow BLE001 -- the shell already passes calls to the original
+        logger.warning("core patches: could not record that %s was switched off", key, exc_info=True)
+
+
+def record_error(plugin_id: str, name: Any, target: Any, kind: Any, message: str, *, critical: bool = False) -> str:
+    """Record a registration that could not even be staged (invalid arguments, a name clash) as a
+    ``skipped-error`` tombstone, so it shows up in the table and the reports instead of vanishing.
+    Never raises; returns the key."""
+    key = f"{plugin_id}:{name}"
+    try:
+        spec = CorePatchSpec(plugin_id=str(plugin_id), name=str(name), target=str(target), kind=str(kind),
+                             fn=lambda *a, **k: None, expect_ast_sha="0" * 64, order=0, critical=critical,
+                             plugin_dir=None, seq=next(_SEQ))
+        with _LOCK:
+            if key not in _RECORDS:
+                _RECORDS[key] = PatchRecord(spec=spec, status=SKIPPED_ERROR, detail=message, gens=())
+    except Exception:  # health: allow BLE001
+        logger.debug("core patches: could not record the registration error of %s", key, exc_info=True)
+    return key
 
 
 # ── refusal ─────────────────────────────────────────────────────────────────────────────────
@@ -740,16 +825,31 @@ def _missing_declared() -> list[str]:
     return lines
 
 
+def critical_problems(current: Optional[Iterable[PatchRecord]] = None) -> list[str]:
+    """One line per critical patch that is not installed (never raises)."""
+    try:
+        return _refused(records() if current is None else current) + _missing_declared()
+    except Exception:  # health: allow BLE001
+        logger.debug("core patches: could not evaluate the critical patches", exc_info=True)
+        return []
+
+
 def _after_change() -> None:
-    """After startup a critical patch that drops out is an ERROR (the process keeps running)."""
-    if not _EAGER:
-        return
-    for line in _refused(records()):
-        marker = ("after-startup", line, "")
-        if marker not in _ALERTED:
-            _ALERTED.add(marker)
-            logger.error("core patches: critical patch %s after startup; this process runs WITHOUT it until "
-                         "it is restarted", line)
+    """After every change, outside the lock: report it (logs, status.json, events, notices), and after
+    startup say that a critical patch dropped out (the process keeps running without it)."""
+    try:
+        from hermes_cli import core_patches_report as report
+
+        report.publish(records(), surface="", settings=_SETTINGS)
+        if _EAGER:
+            report.after_startup_alert(_refused_after_startup(records()))
+    except Exception:  # health: allow BLE001 -- reporting must never break a load, unload or call
+        logger.debug("core patches: reporting failed", exc_info=True)
+
+
+def _refused_after_startup(current: Iterable[PatchRecord]) -> list[str]:
+    return [f"{r.spec.key} on {r.spec.target} is {r.status} ({r.detail})"
+            for r in current if r.critical and r.status in LOUD_STATUSES]
 
 
 def _install_deferred() -> None:
@@ -765,12 +865,9 @@ def _install_deferred() -> None:
 
 # ── eager entry point ───────────────────────────────────────────────────────────────────────
 
-_SUMMARY_LOGGED: set[tuple[str, ...]] = set()
 
-
-def apply_core_patches(surface: str = "") -> tuple[PatchRecord, ...]:
-    """Discover plugins now (installing their patches) and refuse startup on a broken critical one.
-    Idempotent: safe to call from every entry point and more than once."""
+def _apply_body(surface: str) -> None:
+    """Discover plugins (installing their patches) and install the deferred ones. Never raises."""
     try:
         from hermes_cli.plugins import discover_plugins
 
@@ -778,15 +875,48 @@ def apply_core_patches(surface: str = "") -> tuple[PatchRecord, ...]:
     except Exception:  # health: allow BLE001 -- discovery failure is reported where it happens
         logger.warning("core patches: plugin discovery failed (%s)", surface or "?", exc_info=True)
     _EAGER.add(surface or "?")
-    _install_deferred()
+    try:
+        _install_deferred()
+    except Exception:  # health: allow BLE001 -- the patches stay pending; the core runs unpatched
+        logger.warning("core patches: installing the deferred patches failed (%s)", surface or "?", exc_info=True)
+
+
+def apply_core_patches(surface: str = "") -> tuple[PatchRecord, ...]:
+    """Discover plugins now (installing their patches), within ``core_patches.apply_timeout_s``, and
+    report what happened. Idempotent: safe to call from every entry point and more than once.
+
+    Fail-safe: this never blocks startup longer than the budget (a slow discovery or import goes on in
+    a daemon thread and its patches stay ``pending`` until it finishes) and never refuses it, except
+    when ``core_patches.refuse_on_critical`` is true and a critical patch is not installed (exit 78).
+    """
+    settings = refresh_settings()
+    worker = threading.Thread(target=contextvars.copy_context().run, args=(_apply_body, surface),
+                              name="core-patches-apply", daemon=True)
+    worker.start()
+    worker.join(settings.apply_timeout_s)
+    timed_out = worker.is_alive()
+    if timed_out:
+        logger.warning("core patches (%s): the %.1fs startup budget ran out; continuing without waiting (patches not "
+                       "installed yet stay pending and install when discovery finishes)", surface or "?",
+                       settings.apply_timeout_s)
+        with _LOCK:
+            for record in list(_RECORDS.values()):
+                if record.status == PENDING:
+                    _set_status(record.spec.key, PENDING, f"apply budget of {settings.apply_timeout_s:g}s exceeded; "
+                                                          "installing in the background")
     current = records()
-    summary = tuple(f"{r.spec.key}={r.status}" for r in current)
-    if current and summary not in _SUMMARY_LOGGED:
-        _SUMMARY_LOGGED.add(summary)
-        logger.info("core patches (%s): %s", surface or "?", ", ".join(summary))
-    refused = _refused(current) + _missing_declared()
-    if refused:
-        message = "refusing to start: critical core patch " + "; ".join(refused)
+    problems = critical_problems(current)
+    try:
+        from hermes_cli import core_patches_report as report
+
+        report.publish(current, surface=surface or "?", settings=settings, summary=True,
+                       wait_s=min(1.0, settings.apply_timeout_s))
+        if problems and not settings.refuse_on_critical:
+            report.critical_alert(problems)
+    except Exception:  # health: allow BLE001 -- reporting is best effort
+        logger.debug("core patches: reporting failed (%s)", surface or "?", exc_info=True)
+    if problems and settings.refuse_on_critical:
+        message = "refusing to start: critical core patch " + "; ".join(problems)
         logger.error("core patches: %s", message)
         print(f"hermes: {message}", file=sys.stderr)
         raise CorePatchRefusal(message)
@@ -795,12 +925,19 @@ def apply_core_patches(surface: str = "") -> tuple[PatchRecord, ...]:
 
 def _reset_for_tests() -> None:
     """Test-only: restore every patched target and forget all state."""
+    global _SETTINGS
     with _LOCK:
         for target, state in list(_TARGETS.items()):
             if not state.foreign and vars(state.owner).get(state.attr, _MISSING) is state.installed_raw:
                 _install(target, state, state.original_func, frozenset())
-        for container in (_RECORDS, _TARGETS, _LINKS, _FILE_STATS, _SOURCES, _LOGGED, _ALERTED, _EAGER,
-                          _SUMMARY_LOGGED):
+        for container in (_RECORDS, _TARGETS, _LINKS, _FILE_STATS, _SOURCES, _EAGER):
             container.clear()
         for manager in list(_MANAGERS):
             _MANAGERS.discard(manager)
+    _SETTINGS = policy.Settings()
+    try:
+        from hermes_cli import core_patches_report as report
+
+        report._reset_for_tests()
+    except Exception:  # health: allow BLE001
+        pass
