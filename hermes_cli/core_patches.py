@@ -711,12 +711,7 @@ def _sorted_records(recs: Iterable[PatchRecord]) -> tuple[PatchRecord, ...]:
 
 
 def records() -> tuple[PatchRecord, ...]:
-    if not _LOCK.acquire(timeout=_LOCK_WAIT_S):
-        return ()
-    try:
-        return _sorted_records(_RECORDS.values())
-    finally:
-        _LOCK.release()
+    return _snapshot_or_busy(_LOCK_WAIT_S)
 
 
 def failure_stats() -> dict[str, tuple[int, int, str]]:
