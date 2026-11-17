@@ -567,8 +567,8 @@ def _routes_for(task_list: list[dict[str, Any]], cfg: dict[str, Any], credential
     """Per-task routes: an internal caller's explicit ``credentials_cfg`` (e.g. /review → auxiliary.review) owns
     every task's route; otherwise the active delegation provider decides each one."""
     from tools.delegate_tool_routes import resolve_task_routes, route_for_config
-    if credentials_cfg is None:
-        return resolve_task_routes(task_list, cfg, parent_agent)
+    if credentials_cfg is None:  # the human confirmation is asked later, for the launches that survive every gate
+        return resolve_task_routes(task_list, cfg, parent_agent, confirm=False)
     try:
         route = route_for_config(credentials_cfg, parent_agent)
     except ValueError as exc:
@@ -688,9 +688,17 @@ def delegate_task(
     # Batch-level model/provider labels (transcript headers, completion block): blank when tasks took different
     # routes, so each child reports what it actually runs on.
     creds = runnable[0].creds if all(r.creds == runnable[0].creds for r in runnable) else dict.fromkeys(runnable[0].creds)
+    spent_before = getattr(parent_agent, "_oneshot_children_spawned", 0)
     err = _oneshot_spawn_budget(parent_agent, len(runnable))
     if err:
         return tool_error(err)
+    # Last gate, so a person is only asked about a launch that would otherwise run (not a duplicate of a child that
+    # is waiting to resume, not over the one-shot budget). A refusal here charged nothing: hand the budget back.
+    from tools.delegate_tool_scope import confirm_launches
+    if refusal := confirm_launches(runnable, parent_agent):
+        if getattr(parent_agent, "_oneshot_children_spawned", 0) != spent_before:
+            parent_agent._oneshot_children_spawned = spent_before
+        return tool_error(refusal)
 
     overall_start = time.monotonic()
     # Live transcripts: cache/delegation/live/<id>/task-<n>.log per task, a side channel with zero effect on message

@@ -88,8 +88,8 @@ def call_refusal(provider: DelegationProvider, declared: Mapping[str, Any], task
     check = getattr(provider, "check_tasks", None)  # a duck-typed or older proxied provider has none
     if check is None:
         return None
-    payloads = [{"goal": t.get("goal"), "context": t.get("context"), "index": i, "parent": dict(parent),
-                 **{name: t[name] for name in declared if t.get(name) is not None}}
+    payloads = [{**{name: t[name] for name in declared if t.get(name) is not None},
+                 "goal": t.get("goal"), "context": t.get("context"), "index": i, "parent": dict(parent)}  # core's keys win
                 for i, t in enumerate(task_list)]
     try:
         check(payloads, config)

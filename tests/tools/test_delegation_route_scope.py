@@ -360,3 +360,77 @@ def test_a_restarts_rebuild_does_not_ask_again():
     with patch("tools.delegate_tool_routes._active_provider", return_value=Roles()):
         routes, err = resolve_task_routes([_task("worker", model="chosen")], {}, parent, confirm=False)
     assert err is None and routes[0].creds["model"] == "chosen" and routes[0].confirm
+
+
+# -- the human is asked last: only about a launch that would otherwise run ---------------------------------------------
+
+
+def test_a_duplicate_of_a_waiting_child_is_refused_without_asking_the_person():
+    parent = _asking(side_effect=AssertionError("a refused launch must not ask"))
+    waiting = [{"subagent_id": "sa-1", "goal": "survey the repo layout", "note": "waiting to resume"}]
+    with patch("tools.delegate_tool_auto_resume.waiting_entries", return_value=waiting):
+        result, built, _, _ = _spawn([_task("worker", model="chosen")], parent=parent)
+    assert built == [] and "already has this exact goal" in result["error"]
+    parent.clarify_callback.assert_not_called()
+
+
+def test_only_the_launch_that_survives_the_duplicate_gate_is_asked_about():
+    parent = _asking(_answer(APPROVE))
+    waiting = [{"subagent_id": "sa-1", "goal": "waiting goal", "note": "waiting to resume"}]
+    tasks = [{**_task("worker", model="a"), "goal": "waiting goal"}, _task("worker", model="b")]
+    with patch("tools.delegate_tool_auto_resume.waiting_entries", return_value=waiting):
+        result, built, _, _ = _spawn(tasks, parent=parent)
+    assert len(built) == 1 and built[0]["model"] == "b" and result["refused"][0]["task_index"] == 0
+    assert parent.clarify_callback.call_count == 1
+    assert "b" in parent.clarify_callback.call_args.args[0][0]["question"]
+
+
+def test_a_launch_over_the_oneshot_budget_is_refused_without_asking_the_person():
+    parent = _asking(side_effect=AssertionError("a refused launch must not ask"))
+    parent._oneshot_children_spawned = 1
+    with (patch("agent.oneshot_footprint.is_single_query_session", return_value=True),
+          patch("tools.delegate_tool._get_oneshot_max_children", return_value=1)):
+        result, built, _, _ = _spawn([_task("worker", model="chosen")], parent=parent)
+    assert built == [] and "budget" in result["error"]
+    parent.clarify_callback.assert_not_called()
+
+
+def test_a_denied_launch_hands_the_oneshot_budget_back():
+    parent = _asking(_answer(DENY))
+    parent._oneshot_children_spawned = 1
+    with (patch("agent.oneshot_footprint.is_single_query_session", return_value=True),
+          patch("tools.delegate_tool._get_oneshot_max_children", return_value=5)):
+        result, built, _, _ = _spawn([_task("worker", model="chosen")], parent=parent)
+    assert built == [] and "not approved" in result["error"]
+    assert parent._oneshot_children_spawned == 1
+
+
+# -- core's payload keys are core's -------------------------------------------------------------------------------------
+
+
+def test_a_provider_cannot_declare_a_task_parameter_named_parent():
+    class Declares(Roles):
+        def task_parameters(self, config):
+            return {**super().task_parameters(config), "parent": {"type": "object"}}
+
+    with patch("tools.delegate_tool_routes._active_provider", return_value=Declares()):
+        props, _ = schema_extension({})
+    assert "parent" not in props and "role" in props
+
+
+def test_a_task_value_never_replaces_the_core_parent_in_the_route_or_check_payload():
+    seen = []
+
+    class Spy(Roles):
+        def check_tasks(self, tasks, config):
+            seen.extend(tasks)
+
+        def route_task(self, task, config):
+            seen.append(task)
+            return {}
+
+    declared = {"parent": {"type": "string"}}  # a declaration the name check would refuse, forced past it
+    with (patch("tools.delegate_tool_routes._active_provider", return_value=Spy()),
+          patch("tools.delegate_tool_routes._declared_parameters", return_value=declared)):
+        resolve_task_routes([{"goal": "g", "parent": "forged"}], {}, _parent())
+    assert len(seen) == 2 and all(p["parent"] == {"model": "claude-sonnet-5-5", "provider": "anthropic"} for p in seen)

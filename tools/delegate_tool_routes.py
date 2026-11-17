@@ -314,7 +314,7 @@ def _route_one(provider: DelegationProvider, declared: dict[str, dict[str, Any]]
         error = _param_error(index, name, value, declared[name])
         if error:
             raise DelegationRouteError(error)
-    payload = {"goal": task.get("goal"), "context": task.get("context"), "index": index, "parent": dict(parent), **params}
+    payload = {**params, "goal": task.get("goal"), "context": task.get("context"), "index": index, "parent": dict(parent)}
     try:
         return _clean_route(provider.name, provider.route_task(payload, config))
     except DelegationRouteError as exc:
@@ -330,7 +330,8 @@ def resolve_task_routes(task_list: list[dict[str, Any]], config: Mapping[str, An
     ``delegation.backend``), or ``([], error)`` when that backend cannot run (fails closed, never another backend).
     A task the backend cannot route gets a route with ``error`` set; its siblings are unaffected. Identical routes
     resolve credentials once per call (the default backend resolves exactly once). ``confirm=False`` skips the human
-    approval a route may ask for (a restart's rebuild of a child the person already approved)."""
+    approval a route may ask for (a restart's rebuild of a child the person already approved; ``delegate_task`` itself
+    asks later, with ``confirm_launches``, once the duplicate and budget gates have passed)."""
     from agent.delegation_backends import pinned_backend
     if pinned := pinned_backend(parent_agent):
         config = {**config, "backend": pinned}

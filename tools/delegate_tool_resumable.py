@@ -256,7 +256,8 @@ def _spec(child: Any) -> Optional[dict[str, Any]]:
     route = build.get("route")
     return {"goal": build.get("goal"), "context": build.get("context"), "toolsets": build.get("toolsets"),
             "endpoint": list(build.get("endpoint") or ()), "model": getattr(child, "model", None),
-            "session_id": session_id, "route_request": getattr(route, "request", None)}
+            "session_id": session_id, "route_request": getattr(route, "request", None),
+            "route_confirmed": bool(getattr(route, "confirm", None))}  # a human approved this launch (or its rebuild)
 
 
 def record_start(run: Any) -> None:

@@ -7,7 +7,10 @@ next user turn. It keeps its subagent_id AND its session id (the transcript
 appends, like ``--resume``), and runs as a new one-task call through the normal delegate_task dispatch, so delivery,
 the stale monitor and restart recovery are the spawn path's. After a restart or crash the registry is empty and the
 durable record (``delegate_tool_resumable``) is the source: the route is re-resolved from the task's own routing
-request and must land on the same endpoint. Either way the child resumes in the cwd and worktree it stopped in.
+request and must land on the same endpoint; a route that asks the person to approve a launch (``confirm``) asks again
+only when the record says the original launch was not approved (``route_confirmed``). Either way the child resumes in
+the cwd and worktree it stopped in. A child that ran with no tools is not continued (an empty toolset list reads as
+"inherit the parent's", which would widen it).
 A continue is a normal dispatch: closed-chat refusal, capacity, depth and the spawn pause all apply."""
 
 from __future__ import annotations
@@ -103,8 +106,10 @@ def _durable_spec(sid: str, record: dict[str, Any], parent_agent: Any) -> tuple[
     if not isinstance(request, dict) or not record.get("session_id"):
         return None, (f"Subagent '{sid}' ran on a route that cannot be rebuilt after a restart. "
                       "Spawn a new task instead.")
+    # A launch whose route asked for approval was approved when it first ran: not asked again. A route that did not
+    # ask then (config changed since) asks now, as its own launch would, so the follow-up is never unapproved text.
     routes, err = resolve_task_routes([{"goal": record.get("goal"), **request}], _load_config(), parent_agent,
-                                      confirm=False)  # the person approved this child's launch when it first ran
+                                      confirm=not record.get("route_confirmed"))
     if err or not routes or routes[0].error:
         return None, err or (routes[0].error if routes else "no route")
     return {**record, "route": routes[0], "endpoint": tuple(record.get("endpoint") or ()) or None}, None
@@ -163,6 +168,11 @@ def _start(
     from tools.delegation_live_log import create_live_transcripts
 
     route = spec["route"]
+    if spec.get("toolsets") == []:
+        # The child ran with no tools (its route's toolsets matched none of the parent's). The builder reads an empty
+        # list as "inherit the parent's", which would hand it tools it never had: refuse rather than widen it.
+        return None, (f"Subagent '{sid}' ran with no tools, which a continue cannot rebuild (it would inherit the "
+                      "parent's). Spawn a new task instead.")
     if run_origin == "auto":  # the scheduler has no turn to join a result into: it only ever detaches
         from tools.delegate_tool_dispatch import _resolve_async_wake_sid
         origin = _capture_origin()

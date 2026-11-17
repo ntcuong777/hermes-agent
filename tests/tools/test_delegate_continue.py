@@ -464,3 +464,50 @@ def test_timeout_continue_waits_for_worker_close_and_resource_cleanup(monkeypatc
             assert close_done.wait(10)
             if attempted and attempted.get("status") == "dispatched":
                 _completion(attempted["delegation_id"])
+
+
+# -- confirmation and empty toolsets on a continue ----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("confirmed, asks", [(True, False), (False, True), (None, True)],
+                         ids=["approved-before", "not-approved-before", "legacy-record"])
+def test_a_restart_rebuild_asks_only_when_the_original_launch_was_not_approved(confirmed, asks):
+    from tools.delegate_tool_continue import _durable_spec
+    from tools.delegate_tool_routes import TaskRoute
+
+    record = {"goal": "g", "session_id": "s", "route_request": {"option": "x"}, "endpoint": ["a", "b"],
+              **({} if confirmed is None else {"route_confirmed": confirmed})}
+    with patch("tools.delegate_tool_routes.resolve_task_routes",
+               return_value=([TaskRoute({}, {})], None)) as resolve:
+        spec, err = _durable_spec("sa-1", record, _parent())
+    assert err is None and spec["route"] is not None
+    assert resolve.call_args.kwargs["confirm"] is asks
+
+
+def test_the_durable_record_says_whether_a_human_approved_the_launch():
+    from tools.delegate_tool_resumable import _spec
+    from tools.delegate_tool_routes import TaskRoute
+
+    def child(confirm):
+        c = MagicMock()
+        c.session_id = "s"
+        c._delegate_resume = {"goal": "g", "context": None, "toolsets": [], "route": TaskRoute({}, {}, confirm=confirm)}
+        return c
+
+    assert _spec(child({"question": "q"}))["route_confirmed"] is True
+    assert _spec(child(None))["route_confirmed"] is False
+
+
+def test_a_child_that_ran_with_no_tools_is_not_continued_with_the_parents():
+    from tools.delegate_tool import delegate_task
+    from tools.delegate_tool_registry import _recent_subagents
+
+    parent = _parent()
+    _finished("sa-cont-notools", owner=parent.session_id)
+    _recent_subagents["sa-cont-notools"]["resume"]["toolsets"] = []  # the route's toolsets matched none of the parent's
+    model = _ScriptedModel()
+    with patch("run_agent.AIAgent", side_effect=model):
+        out = json.loads(delegate_task(action="continue", subagent_id="sa-cont-notools", message="more",
+                                       background=True, parent_agent=parent))
+    assert "no tools" in out["error"] and model.builds == []
+    assert "resume" in _recent_subagents["sa-cont-notools"]  # handed back: nothing ran
