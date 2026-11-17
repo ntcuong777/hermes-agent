@@ -6,7 +6,6 @@ import type {
   SlashExecResponse,
   VoiceRecordResponse
 } from '@hermes/shared/gateway-types'
-import { parseCommandDispatch } from '@hermes/shared/slash'
 import { applyCompletion, completionCursor, completionEnd } from '@hermes/shared/slash-input'
 import { useStore } from '@nanostores/react'
 import { useEffect, useRef } from 'react'
@@ -39,6 +38,7 @@ import {
   type OverlayState,
   type UiState
 } from './interfaces.js'
+import { keybindRunner } from './keybinds.js'
 import {
   $isBlocked,
   $overlayState,
@@ -51,7 +51,6 @@ import {
 import { togglePasteSections } from './pasteStore.js'
 import { respondToServerRequest } from './serverRequestStore.js'
 import { refreshStashCounts } from './stashCounts.js'
-import { applyStashSelection, openStashes, stashCommand, type StashScope, stashScopeOf } from './stashPicker.js'
 import { turnController } from './turnController.js'
 import { patchTurnState } from './turnStore.js'
 import { $uiState, getUiState } from './uiStore.js'
@@ -63,15 +62,6 @@ export const shouldAllowIdleHotkeyExit = (dashboardTuiMode = DASHBOARD_TUI_MODE)
 /** Text or attachments in the composer: Ctrl+D must not exit over an unsent draft (#116443). */
 export const composerHasDraft = (cState: { input: string; inputBuf: string[]; tokens?: unknown[] }): boolean =>
   Boolean(cState.input || cState.inputBuf.length || cState.tokens?.length)
-
-/**
- * The whole composer text: the lines already accepted with a trailing `\`, then the line
- * being typed. `submit` joins them exactly this way (useSubmission's
- * `dispatchSubmission([...inputBuf, value].join('\n'))`), so anything that captures "the
- * draft" — the Alt+S stash — has to as well, or it captures one line of a multi-line
- * draft and the clear that follows discards the rest (review S-S).
- */
-export const composerDraftText = (inputBuf: string[], input: string): string => [...inputBuf, input].join('\n')
 
 export function handleInputSelectionClipboard(
   selection: ReturnType<typeof getInputSelection>,
@@ -717,186 +707,10 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       })
   }
 
-  // Alt+S — stash the composer draft (Pi parity). Slash commands cannot read
-  // the draft (a handler only ever receives its own typed argument text), so
-  // this keybind is the capture point. Seam choice: the draft travels over
-  // the slash-RPC channel as a hidden `/stash push-draft <json>` invocation
-  // rather than the TUI writing the store file directly, so the store stays
-  // server-side and per-profile (each HERMES_HOME owns its stash.json, the
-  // same file `/stash pop` reads). JSON.stringify preserves exact text
-  // (newlines, leading/trailing whitespace) through the command string.
-  // Empty composers open the numbered stash picker. Only stash-saved clears a draft.
-  //
-  // The (session, draft) pair of the save currently in flight, or null. Two Alt+S
-  // presses before the first answer pushed the same draft twice (review S-V).
-  const stashInFlightRef = useRef<null | string>(null)
-
-  const stashDraft = (scope: StashScope) => {
-    const slashRpc = (method: 'slash.exec', params: { command: string; session_id: string }) =>
-      gateway.rpc<SlashExecResponse>(method, params)
-
-    // The composer is more than the line being typed: `inputBuf` holds the lines already
-    // accepted with a trailing `\`, and `tokensRef` holds attached images. Capturing only
-    // `inputRef` and then clearing the rest lost every line but the last and dropped the
-    // images with no copy anywhere (review S-S). The live refs still win over `cState`,
-    // because an RPC round-trip can outlive a re-render and `cState` is the state as of
-    // the last one.
-    const lastLine = cRefs.inputRef.current
-    const draft = composerDraftText(cState.inputBuf, lastLine)
-    const sid = getUiState().sid
-    const revision = cRefs.revisionRef.current
-
-    // `clearIn()` empties the tokens too, and the stash holds text only: saving here
-    // would discard the attachments. Refuse and say why rather than lose them silently.
-    if (cRefs.tokensRef.current.length) {
-      actions.sys('stash: images are attached — delete the [[ Image N ]] token(s) to stash the text')
-
-      return
-    }
-
-    if (draft.trim()) {
-      // One save at a time per (session, draft): two Alt+S presses before the first
-      // answer used to push the same draft twice (review S-V).
-      const inFlightKey = `${sid}\u0000${scope}\u0000${draft}`
-
-      if (stashInFlightRef.current === inFlightKey) {
-        return
-      }
-
-      stashInFlightRef.current = inFlightKey
-
-      // Clear only on the explicit save directive. `push-draft` answering with a
-      // plain string is an ordinary RESOLVED rpc response — "stash full", a plugin
-      // that is not loaded, an unknown subcommand — so a `.catch` cannot see it and
-      // treating any response as success cleared the composer without storing the
-      // draft.
-      return void gateway
-        .rpc<SlashExecResponse>('slash.exec', {
-          command: stashCommand(scope, `push-draft ${JSON.stringify(draft)}`),
-          session_id: sid
-        })
-        .then(r => {
-          const d = parseCommandDispatch(r)
-
-          if (d?.type === 'stash-saved') {
-            if (d.notice?.trim()) {
-              actions.sys(d.notice)
-            }
-
-            void refreshStashCounts(slashRpc, sid)
-
-            // Drop the composer only if it still holds what we stashed, and only
-            // from the session we stashed it in; text typed while the RPC was in
-            // flight must survive. Both checks read a live ref for that reason.
-            // Revision covers edits to continuation lines as well as the last line.
-            if (cRefs.revisionRef.current === revision && !cRefs.tokensRef.current.length && getUiState().sid === sid) {
-              cActions.clearIn()
-            }
-
-            return
-          }
-
-          if (r?.output) {
-            actions.sys(r.output)
-          }
-        })
-        .catch(() => {
-          actions.sys('stash: save failed — draft kept')
-        })
-        .finally(() => {
-          if (stashInFlightRef.current === inFlightKey) {
-            stashInFlightRef.current = null
-          }
-        })
-    }
-
-    // After a delete the list is fetched again; a lone survivor is not restored behind the
-    // person's back, the delete message ("stash (1 left)") already says it is there.
-    const openList = (revision: number, afterDelete = false): void =>
-      void gateway
-        .rpc<SlashExecResponse>('slash.exec', { command: stashCommand(scope, 'snapshot'), session_id: sid })
-        .then(r => {
-          if (getUiState().sid !== sid || cRefs.revisionRef.current !== revision) {
-            // Silent skips read as "the stash did nothing": say which guard tripped
-            // and that the entries are still held. A session switch posts this into
-            // the NEW session's view, so it must name the switch, not just the composer.
-            actions.sys(
-              getUiState().sid !== sid
-                ? 'stash: session switched — drafts kept in the stash'
-                : 'stash: drafts kept — the composer changed while the list loaded'
-            )
-
-            return
-          }
-
-          if (!r?.output) {
-            return
-          }
-
-          if (afterDelete && JSON.parse(r.output).count < 2) {
-            return
-          }
-
-          const apply = (index: number, text: string) => {
-            void applyStashSelection({
-              index,
-              text,
-              accept: draft => {
-                if (
-                  getUiState().sid !== sid ||
-                  cRefs.revisionRef.current !== revision ||
-                  cRefs.tokensRef.current.length > 0
-                ) {
-                  actions.sys('stash: draft kept in store; composer changed')
-
-                  return false
-                }
-
-                cActions.setInput(draft)
-
-                return true
-              },
-              acknowledge: async argument => {
-                const result = await gateway.rpc<SlashExecResponse>('slash.exec', {
-                  command: stashCommand(scope, `applied ${argument}`),
-                  session_id: sid
-                })
-
-                if (result?.output) {
-                  actions.sys(result.output)
-                }
-
-                void refreshStashCounts(slashRpc, sid)
-              }
-            }).catch(() => actions.sys('stash: draft restored; removal failed, entry still held'))
-          }
-
-          // `stash applied` removes exactly this entry when it is still the one stored.
-          const drop = (index: number, text: string) => {
-            void gateway
-              .rpc<SlashExecResponse>('slash.exec', {
-                command: stashCommand(scope, `applied ${JSON.stringify({ index, text })}`),
-                session_id: sid
-              })
-              .then(result => {
-                if (result?.output) {
-                  actions.sys(result.output)
-                }
-
-                void refreshStashCounts(slashRpc, sid)
-                openList(cRefs.revisionRef.current, true)
-              })
-              .catch(() => actions.sys('stash: delete failed — entry still held'))
-          }
-
-          if (openStashes(r.output, apply, drop, scope) === 'empty') {
-            actions.sys(`stash empty (0) — ${scope === 'global' ? 'profile' : 'session'}`)
-          }
-        })
-        .catch(() => actions.sys('stash: picker failed — stored drafts kept'))
-
-    return openList(revision)
-  }
+  const runChord = keybindRunner(
+    ctx,
+    () => void refreshStashCounts((method, params) => gateway.rpc<SlashExecResponse>(method, params), getUiState().sid)
+  )
 
   // Wheel scrolling: modifier-held wheel is precision mode (one row per frame,
   // no accel); otherwise momentum-accelerated rows from the wheel state.
@@ -1247,12 +1061,10 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       return voiceRecordToggle()
     }
 
-    // Alt+S stashes the draft / pops the last stash (see stashDraft above).
-    // meta+letter follows the Alt+G precedent below: Option (meta) on macOS,
-    // Alt (meta) elsewhere; !key.ctrl keeps Ctrl+Alt combos free.
-    // Alt+Shift+S is the per-profile stash (capital S, shift), Alt+S the per-session one.
-    if (key.meta && !key.ctrl && ch.toLowerCase() === 's') {
-      return stashDraft(stashScopeOf(key, ch))
+    // A `display.tui_keybinds` chord, or a plugin's default one, runs its slash command (keybinds.ts).
+    // After the built-in chords above, so those win.
+    if (runChord(key, ch)) {
+      return
     }
 
     // Cmd/Ctrl+G, plus Alt+G fallback for VSCode/Cursor (they bind the

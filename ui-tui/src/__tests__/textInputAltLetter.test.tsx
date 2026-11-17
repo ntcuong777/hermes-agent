@@ -7,10 +7,10 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { TextInput } from '../components/textInput.js'
 
-// B26: Alt+S ran the stash action AND typed "s" ("atmsss" after three presses). The insert
+// B26: a bound Alt+S ran its command AND typed "s" ("atmsss" after three presses). The insert
 // branch of TextInput used its own condition that never looked at `meta`, so any Alt+letter
 // the composer does not bind fell through and was typed. The typed key also bumped the
-// composer revision, which made the stash-saved clear (guarded by that revision) skip.
+// composer revision, which made a keybind's composer-clear (guarded by that revision) skip.
 class FakeInput extends EventEmitter {
   chunks: string[] = []
   isRaw = false

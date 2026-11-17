@@ -8,6 +8,7 @@ import { launchWidget } from '../sdk/host.js'
 import { getWidgetApp } from '../sdk/registry.js'
 
 import type { SlashHandler, SlashHandlerContext, SlashSubmission } from './interfaces.js'
+import { typedDirectives } from './keybinds.js'
 import { findSlashCommand } from './slash/registry.js'
 import type { SlashRunCtx } from './slash/types.js'
 import { captureDestination, isCurrentDestination } from './submissionDestination.js'
@@ -231,6 +232,10 @@ export function createSlashHandler(ctx: SlashHandlerContext): SlashHandler {
         }
 
         return d.message?.trim() ? sendDispatch(d.display, d.message) : sys(`/${parsed.name}: empty message`)
+      }
+
+      if (d.type === 'choices' || d.type === 'composer-clear') {
+        return void (sid && typedDirectives(gw, ctx.composer.setInput, sys, sid, stale).apply(raw))
       }
 
       if (d.type === 'prefill') {

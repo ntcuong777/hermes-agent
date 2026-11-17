@@ -17,6 +17,7 @@ import {
   type IndicatorStyle,
   type StatusBarMode
 } from './interfaces.js'
+import { setConfiguredKeybinds } from './keybinds.js'
 import { turnController } from './turnController.js'
 import { getUiState, patchUiState } from './uiStore.js'
 
@@ -342,6 +343,10 @@ export const applyDisplay = (
   // the last-good state and lets the next successful poll refresh it.
   if (setVoiceRecordKey && cfg) {
     setVoiceRecordKey(_voiceRecordKeyFromConfig(cfg))
+  }
+
+  if (cfg) {
+    setConfiguredKeybinds(d.tui_keybinds)
   }
 
   patchUiState({

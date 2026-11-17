@@ -184,7 +184,7 @@ export interface TextInsertResult {
 /**
  * Whether a key event inserts text into the composer. Ctrl chords and Alt/Option
  * letters (meta) are shortcuts, not typed text: Alt+S would otherwise insert "s"
- * on top of the stash action. A pasted payload is text even when it carries a
+ * on top of a `display.tui_keybinds` command. A pasted payload is text even when it carries a
  * control byte, so `isPasted` wins.
  *
  * One rule for both readers of it: the burst-flush gate and the insert branch of the

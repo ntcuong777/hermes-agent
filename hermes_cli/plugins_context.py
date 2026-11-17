@@ -461,6 +461,7 @@ class PluginContext(PluginCapabilityCtxMixin, PluginIdleTaskCtxMixin):
         subcommands: dict | list | tuple | None = None,
         run_while_busy: bool = False,
         client_local: bool = False,
+        keybinds: dict | None = None,
     ) -> Optional[PluginRegistration]:
         """Register an in-session slash command (``/name``); handler ``fn(raw_args: str) -> str | None``
         (sync or async), plus the session-context keywords it declares (``plugin_command_dispatch``). ``args_hint`` (e.g. ``"<file>"``) lets adapters like Discord surface an argument
@@ -494,6 +495,8 @@ class PluginContext(PluginCapabilityCtxMixin, PluginIdleTaskCtxMixin):
             # never the session's agent, so a local surface may run it on any session it can read
             # — including one a messaging lane (the Discord mirror's bound thread) now owns.
             "client_local": bool(client_local),
+            # `{"alt+s": "toggle"}`: default TUI chords that run `/name <args>`; `display.tui_keybinds` overrides.
+            "keybinds": {str(c).strip().lower(): str(a).strip() for c, a in (keybinds or {}).items()},
             "subcommands": subs,
             "argument_mode": argument_mode if argument_mode in {"options", "text", "mixed"}
             else ("text" if hint else None),

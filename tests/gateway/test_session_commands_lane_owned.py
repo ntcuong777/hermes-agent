@@ -65,6 +65,20 @@ def test_register_command_records_client_local(monkeypatch):
     assert plugins_mod.plugin_command_is_client_local('missing') is False
 
 
+def test_register_command_records_its_default_keybinds(monkeypatch):
+    from hermes_cli import plugins as plugins_mod
+    from hermes_cli.plugins import PluginManager, PluginManifest
+    from hermes_cli.plugins_context import PluginContext
+    manager = PluginManager()
+    monkeypatch.setattr(plugins_mod, '_ensure_plugins_discovered', lambda: manager)
+    ctx = PluginContext(PluginManifest(name='pi-commands'), manager)
+    ctx.register_command('stashx', handler=lambda raw: '', keybinds={' Alt+S ': ' toggle '})
+    ctx.register_command('prx', handler=lambda raw: '')
+    commands = plugins_mod.get_plugin_commands()
+    assert commands['stashx']['keybinds'] == {'alt+s': 'toggle'}
+    assert commands['prx']['keybinds'] == {}
+
+
 def test_permission_denied_is_logged_once_per_method_and_session(monkeypatch, caplog):
     session_controls._DENIED_LOGGED.clear()
     exc = RuntimeStoreError('permission_denied')

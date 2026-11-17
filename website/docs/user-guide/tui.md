@@ -198,6 +198,27 @@ display:
 
 Or in-session: `/indicator emoji` (etc.). Styles ship with matched glyph widths so the rest of the status bar doesn't jitter on rotation.
 
+## Key chords for slash commands
+
+`display.tui_keybinds` maps a key chord to a slash command; pressing the chord in the composer runs it on the live session. Plugins can declare default chords too (`register_command(..., keybinds={"alt+s": "toggle"})` runs `/name toggle`); your config is layered over them and an empty string turns a chord off.
+
+```yaml
+display:
+  tui_keybinds:
+    alt+s: "/stash toggle"
+    alt+shift+s: "/stash --global toggle"
+    alt+x: ""                  # switch a plugin's default chord off
+```
+
+A chord is `alt` and/or `ctrl` (`shift` optional) plus one letter or digit. Built-in shortcuts win over a chord, and Alt+letter never types the letter. The command receives the whole composer text as its `composer_text` keyword (`None` while an image is attached), and its answer may be:
+
+- plain text, shown as a system line;
+- `{"type": "prefill", "message": ..., "notice": ..., "ack": "/cmd"}`: replace the composer, then run `ack` once it really did;
+- `{"type": "composer-clear", "notice": ...}`: empty the composer;
+- `{"type": "choices", "title": ..., "items": [{"label": ..., "select": "/cmd", "drop": "/cmd"}], "selected": N}`: a picker (Up/Down, Enter or 1-9 runs `select`, `x` runs `drop`, Esc cancels); each command's answer is handled the same way.
+
+Composer changes apply only if the session and the composer are still what they were when the chord was pressed; otherwise nothing is touched and a line says so.
+
 ## Auto-resume
 
 By default, `hermes --tui` starts a fresh session each launch. To re-attach to the most recent TUI session automatically (useful when your terminal or SSH connection drops unexpectedly), opt in:

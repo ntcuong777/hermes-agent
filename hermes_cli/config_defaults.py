@@ -895,6 +895,9 @@ DEFAULT_CONFIG = {
         "language": "en",
         # TUI busy indicator: kaomoji | emoji | unicode (braille) | ascii. `/indicator <style>`.
         "tui_status_indicator": "kaomoji",
+        # Ink TUI key chords that run a slash command: {"alt+s": "/stash toggle"}. Layered over the
+        # chords plugins declare (register_command(keybinds=)); "" turns a chord off.
+        "tui_keybinds": {},
         # Seconds between idle prompt_toolkit redraws in the classic CLI; keeps wall-clock
         # status-bar read-outs ticking and the bottom chrome from going stale. 0 disables it if it
         # fights terminal auto-scroll in non-fullscreen mode.

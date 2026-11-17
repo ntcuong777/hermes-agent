@@ -54,16 +54,40 @@ describe('parseCommandDispatch', () => {
     })
     expect(parseCommandDispatch({ type: 'prefill', message: 'edit me', notice: '↶ rewound' })).toEqual({
       type: 'prefill',
+      ack: undefined,
       message: 'edit me',
       notice: '↶ rewound'
     })
-    // The Alt+S save confirmation: the only response the keybind may clear the
-    // composer on, so "stash full" (a plain string) keeps the draft.
-    expect(parseCommandDispatch({ type: 'stash-saved', count: 2, max: 9, notice: '📋 Stashed' })).toEqual({
-      type: 'stash-saved',
-      count: 2,
-      max: 9,
+    // A prefill may name the command to run once the composer really holds the message.
+    expect(parseCommandDispatch({ type: 'prefill', message: 'm', ack: '/stash applied 1' })).toMatchObject({
+      ack: '/stash applied 1'
+    })
+    // A keybind's save confirmation: the only response that clears the composer, so a plain
+    // string ("stash full") keeps the draft.
+    expect(parseCommandDispatch({ type: 'composer-clear', notice: '📋 Stashed' })).toEqual({
+      type: 'composer-clear',
       notice: '📋 Stashed'
+    })
+    expect(
+      parseCommandDispatch({
+        type: 'choices',
+        title: 'Stash',
+        selected: 1,
+        notice: 'stash (2 left)',
+        items: [
+          { label: 'a', select: '/s 1', drop: '/d 1' },
+          { label: 'b', select: '/s 2' }
+        ]
+      })
+    ).toEqual({
+      type: 'choices',
+      title: 'Stash',
+      notice: 'stash (2 left)',
+      selected: 1,
+      items: [
+        { label: 'a', select: '/s 1', drop: '/d 1' },
+        { label: 'b', select: '/s 2', drop: undefined }
+      ]
     })
   })
 
@@ -76,12 +100,10 @@ describe('parseCommandDispatch', () => {
     expect(parseCommandDispatch({ type: 'send', message: 42 })).toBeNull()
     expect(parseCommandDispatch({ type: 'prefill', notice: 'x' })).toBeNull()
     expect(parseCommandDispatch({ type: 'nope' })).toBeNull()
-    // A bare stash-saved is still a valid directive: the counts are informative.
-    expect(parseCommandDispatch({ type: 'stash-saved' })).toEqual({
-      type: 'stash-saved',
-      count: undefined,
-      max: undefined,
-      notice: undefined
-    })
+    expect(parseCommandDispatch({ type: 'stash-saved' })).toBeNull()
+    // A picker needs a title and at least one row that names a command to run.
+    expect(parseCommandDispatch({ type: 'choices', items: [{ label: 'a', select: '/s' }] })).toBeNull()
+    expect(parseCommandDispatch({ type: 'choices', title: 't', items: [] })).toBeNull()
+    expect(parseCommandDispatch({ type: 'choices', title: 't', items: [{ label: 'a' }] })).toBeNull()
   })
 })
