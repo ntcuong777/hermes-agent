@@ -1,7 +1,7 @@
 """Tests for the configurable Discord interactive-view timeout.
 
 ExecApprovalView, SlashConfirmView, UpdatePromptView, and ClarifyChoiceView read
-``approvals.discord_prompt_timeout`` with the same 300s default, clamped to
+``approvals.discord_prompt_timeout`` with the same 1800s default, clamped to
 ``[_DISCORD_PROMPT_TIMEOUT_MIN, _DISCORD_PROMPT_TIMEOUT_MAX]`` so a typo
 can't make prompts disappear or exceed the shared platform-safe timeout cap.
 """
@@ -94,7 +94,8 @@ async def test_all_prompt_types_use_owning_profile_discord_timeout(tmp_path):
         ExecApprovalView, SlashConfirmView, UpdatePromptView, ClarifyChoiceView,
     )
 
-    for name, expected in (("default", 300), ("other", 3600)):
+    # (other prompts' timeout, exec card's timeout): the exec card also covers approvals.timeout (7200).
+    for name, (expected, exec_expected) in (("default", (1800, 7200)), ("other", (3600, 7200))):
         home = tmp_path / name
         home.mkdir()
         (home / "config.yaml").write_text(
@@ -109,7 +110,7 @@ async def test_all_prompt_types_use_owning_profile_discord_timeout(tmp_path):
                 UpdatePromptView("session", set()),
                 ClarifyChoiceView(["yes"], "clarify", set()),
             ]
-            assert [view.timeout for view in views] == [expected] * 4
+            assert [view.timeout for view in views] == [exec_expected] + [expected] * 3
             for view in views:
                 view.stop()
         finally:

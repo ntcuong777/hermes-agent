@@ -28,14 +28,14 @@ def _read_dm_role_auth_guild() -> Optional[int]:
 
 
 # All Discord prompt views share this setting; command approval waits have their own timeout.
-_DISCORD_PROMPT_TIMEOUT_DEFAULT = 300
+_DISCORD_PROMPT_TIMEOUT_DEFAULT = 1800
 _DISCORD_PROMPT_TIMEOUT_MIN = 30
 _DISCORD_PROMPT_TIMEOUT_MAX = int(MAX_SAFE_TIMEOUT_S)
 
 
 def _read_discord_prompt_timeout() -> int:
     """Timeout (seconds) for Discord button views from ``approvals.discord_prompt_timeout``
-    (default 300), clamped to [MIN, MAX] to keep their UI lifetime bounded."""
+    (default 1800), clamped to [MIN, MAX] to keep their UI lifetime bounded."""
     raw: Any = None
     try:
         from hermes_cli.config import read_raw_config
@@ -55,6 +55,19 @@ def _read_discord_prompt_timeout() -> int:
     if seconds > _DISCORD_PROMPT_TIMEOUT_MAX:
         return _DISCORD_PROMPT_TIMEOUT_MAX
     return seconds
+
+
+def _read_exec_approval_view_timeout() -> int:
+    """Lifetime (seconds) of an exec-approval card's buttons: the larger of the prompt-view timeout and
+    ``approvals.timeout``. The card answers a wait that lasts ``approvals.timeout``; a view that died
+    earlier left an expired-looking card (and a click on stale buttons that nothing answers) while the
+    agent was still blocked. The result is clamped to [MIN, MAX] like the prompt timeout."""
+    try:
+        from tools.approval_context import _get_approval_timeout
+        approval_s = int(_get_approval_timeout())
+    except Exception:
+        approval_s = 0
+    return min(max(_read_discord_prompt_timeout(), approval_s), _DISCORD_PROMPT_TIMEOUT_MAX)
 
 
 def _resolve_exec_approval_admin_gate(config_extra: Optional[dict]) -> tuple[bool, set]:

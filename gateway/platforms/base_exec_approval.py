@@ -106,7 +106,7 @@ def approval_timed_out_notice(window: str) -> str:
 
 
 def approval_timeout_seconds() -> int:
-    """The configured ``approvals.timeout`` (default 300s); module attribute so tests can pin it."""
+    """The configured ``approvals.timeout`` (default 1800s); module attribute so tests can pin it."""
     from tools.approval_context import _get_approval_timeout
     return _get_approval_timeout()
 
