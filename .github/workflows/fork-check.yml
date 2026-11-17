@@ -61,12 +61,20 @@ jobs:
           OPENAI_API_KEY: ''
           NOUS_API_KEY: ''
 
-      - name: Core patch pins (an upstream change to a function a plugin patches)
+      - name: Core patch pins (an upstream change to a function a plugin patches, or a patch without provenance)
         run: |
           # .github/core-patch-pins.json mirrors every nix-darwin plugin's core_patches.lock.json
-          # While no plugin patches core the pins are {} and this step verifies nothing: it prints
-          # 'no pins recorded (nothing verified)' and passes.
+          # (target, fingerprint, reason, the upstream commit it was written against). It fails on
+          # drift AND on a pin without a reason or an upstream commit. While no plugin patches core
+          # the pins are {} and this step verifies nothing: it prints 'no pins recorded (nothing
+          # verified)' and passes. This is a CI check only: it can never stop the agent.
           "$HERMES_PYTHON" -I hermes_cli/core_patches_ast.py --verify-pins .github/core-patch-pins.json --source-root .
+
+      - name: Core patch locks of the plugins checked out in this fork
+        run: |
+          # Same verification, plus the snapshot files, for any plugin that keeps a
+          # core_patches.lock.json inside this repository (none today: prints 'no locks found').
+          "$HERMES_PYTHON" -I hermes_cli/core_patches_ast.py --verify-locks plugins --source-root .
 
       - name: Install JS workspace
         run: npm ci --ignore-scripts
