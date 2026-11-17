@@ -20,6 +20,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import subprocess
 import threading
 import time
@@ -39,7 +40,7 @@ NOTIFY_POLL_S = 2.0
 PROBLEM_STATUSES = ("skipped-drift", "skipped-error", "disabled-after-errors")
 _STARTED_AT = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-_IO = threading.Lock()
+_IO = threading.RLock()  # re-entrant: event() runs under _write_files, which holds it
 _LOGGED: set[tuple[str, str, str]] = set()
 _ALERTED: set[tuple[str, str]] = set()
 _LOCKS: dict[tuple[str, int], dict] = {}
@@ -347,13 +348,18 @@ def _fingerprint(row: Mapping[str, Any]) -> str:
     return f"{row['plugin']}:{row['name']}|{row['status']}|{row['current_sha']}"
 
 
+def _exception_type(row: Mapping[str, Any]) -> str:
+    """The exception type name of the patch's last failure ("" when none or not a plain name)."""
+    head = str(row.get("last_error") or "").split(": ", 1)[0]
+    return head if re.fullmatch(r"[A-Za-z_][\w.]*", head) else ""
+
+
 def notice_text(rows: list[Mapping[str, Any]], recovered: list[Mapping[str, Any]]) -> str:
+    """Key, status and the exception type name only: never a detail, a path or an exception message."""
     lines = []
     for row in rows:
-        lines.append(f"- {row['plugin']}:{row['name']}: {row['status']} ({row['target']}; expected "
-                     f"{_short(row['expect_ast_sha'])}, now {_short(row['current_sha'])}; recorded upstream "
-                     f"{_short(row['upstream_commit'])}). Hermes runs the upstream behaviour for it. "
-                     f"`hermes plugins patches --agent-brief {row['name']}`")
+        kind = _exception_type(row)
+        lines.append(f"- {row['plugin']}:{row['name']}: {row['status']}" + (f" ({kind})" if kind else ""))
     lines += [f"- {e['key']}: back to normal (drift recovered)" for e in recovered]
     return "Core patches need attention:\n" + "\n".join(lines)
 

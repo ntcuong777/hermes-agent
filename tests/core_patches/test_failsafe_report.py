@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 
 import pytest
 
@@ -129,7 +130,7 @@ def test_a_new_problem_is_announced_once_to_the_home_channel(target, no_discover
     cp.apply_core_patches("gateway")
     cp.apply_core_patches("gateway")
     assert len(surfaces_gateway) == 1 and "demo:up" in surfaces_gateway[0]
-    assert "--agent-brief up" in surfaces_gateway[0]
+    assert "skipped-drift" in surfaces_gateway[0] and "--agent-brief" not in surfaces_gateway[0]
     assert (policy.state_dir() / "notified.json").is_file()
 
 
@@ -185,3 +186,39 @@ def test_identity_prefers_the_environment_a_nix_install_exports(tmp_path, monkey
 def test_a_start_without_patches_writes_nothing(no_discovery):
     assert cp.apply_core_patches("cli") == ()
     assert not (policy.state_dir() / "status.json").exists() and report._STATE["identity"] is None
+
+
+def test_an_event_written_under_the_io_lock_by_the_same_thread_does_not_deadlock(tmp_path, monkeypatch):
+    monkeypatch.setattr(policy, "safe_state_dir", lambda: tmp_path)
+    done = threading.Event()
+
+    def under_the_lock():
+        report.event("applied", key="demo:x")  # _write_files holds _IO when it reaches event()
+
+    def caller():
+        with report._IO:
+            under_the_lock()
+        done.set()
+    worker = threading.Thread(target=caller, daemon=True)
+    worker.start()
+    worker.join(5)
+    assert not worker.is_alive() and done.is_set()
+
+
+def test_the_notice_names_the_key_status_and_exception_type_and_nothing_of_the_detail(tmp_path, monkeypatch):
+    sent, delivered = [], threading.Event()
+
+    def sender(text):
+        sent.append(text)
+        delivered.set()
+    monkeypatch.setattr(report, "_send_when_possible", sender)
+    monkeypatch.setattr(policy, "safe_state_dir", lambda: tmp_path)
+    row = {"plugin": "demo", "name": "up", "target": "pkg.mod:greet", "status": "skipped-error",
+           "expect_ast_sha": "a" * 64, "current_sha": "b" * 64, "upstream_commit": "c" * 40,
+           "detail": "/Users/x/secret/path: boom", "last_error": "RuntimeError: /Users/x/secret/path: boom"}
+    report.notify([row], [], policy.Settings(), "gateway")
+    assert delivered.wait(5) and len(sent) == 1
+    text = sent[0]
+    assert "/Users/x" not in text and "secret" not in text and "boom" not in text
+    assert "demo:up" in text and "skipped-error" in text and "RuntimeError" in text
+    assert "a" * 12 not in text and "pkg.mod" not in text  # no fingerprints, no targets: key, status, type only
