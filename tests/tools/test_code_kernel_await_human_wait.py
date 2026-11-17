@@ -44,3 +44,14 @@ def test_cell_parked_on_an_approval_outlives_its_budget_and_gets_the_late_reply(
     finally:
         approval_context.get_current_session_key = original
     assert (status, payload) == ("success", {"status": "ok"})
+
+
+def test_human_wait_extension_is_capped_whatever_approvals_timeout_says(monkeypatch):
+    # A waiter reporting a year of human wait must not keep the cell alive past the fixed cap.
+    reads = iter([0.0])  # the baseline read at cell start; every later read reports a year
+    monkeypatch.setattr(code_kernel, "_human_wait_seconds", lambda: next(reads, 31536000.0))
+    monkeypatch.setattr(code_kernel, "HUMAN_WAIT_CELL_CAP_S", 0.4)
+    start = time.monotonic()
+    status, _ = code_kernel._await_cell(_kernel(), 0.2, lambda: False)
+    assert status == "timeout"
+    assert 0.5 < time.monotonic() - start < 2.0
