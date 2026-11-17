@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 
 CARRY_PREFIX = 'gateway.lane_model.v1:'
 CARRIED = 'lane_model_carried'
+# The lane's own effort pick (a viewer's or a typed ``/reasoning``), in the routing entry's metadata. The
+# in-memory ``SessionState.reasoning_override`` dies with the process; this is what a restart reads back.
+LANE_REASONING = 'lane_reasoning'
 # ``created_source`` of a conversation created by a local surface (``session_policy.created_surface``).
 LOCAL_CREATED = frozenset({'cli', 'tui', 'desktop', 'acp', 'tool', 'oneshot'})
 _ROUTE_KEYS = ('model', 'provider', 'base_url', 'api_mode')
@@ -202,3 +205,42 @@ def forget_carried_reasoning(runner, session_key: Optional[str]) -> None:
             store.set_session_metadata(session_key, CARRIED, {**marked, 'reasoning': None})
     except Exception:
         logger.debug('Could not drop the carried reasoning of session=%s', session_key, exc_info=True)
+
+
+def persisted_reasoning(runner, session_key: Optional[str]) -> Optional[dict]:
+    """The effort the lane's user picked (``/reasoning`` or a viewer's pick), read back after a restart,
+    a compression repoint or any other loss of the in-memory override. None when there is none."""
+    store = getattr(runner, 'session_store', None)
+    if not session_key or store is None:
+        return None
+    try:
+        value = store.get_session_metadata(session_key, LANE_REASONING)
+    except Exception:
+        logger.debug('Could not read the persisted reasoning of session=%s', session_key, exc_info=True)
+        return None
+    return dict(value) if isinstance(value, dict) and value else None
+
+
+def persist_reasoning(runner, session_key: Optional[str], reasoning_config: Optional[dict]) -> None:
+    """Record the lane's effort pick (None: the pick was reset) so it outlives this process.
+
+    Written to the routing entry (a restart, a tip repoint) and to the conversation's row as its
+    ``reasoning_config`` (what ``route_from_row`` hands the next lane the mirror binds the session to). A
+    session that is not a messaging lane keeps its level in its launch policy and is left alone. Never raises."""
+    store = getattr(runner, 'session_store', None)
+    if not session_key or store is None:
+        return
+    try:
+        from gateway.config import Platform
+        entry = store.lookup_by_session_key(session_key)
+        if entry is None or entry.platform in (None, Platform.LOCAL):
+            return
+        value = dict(reasoning_config) if reasoning_config else None
+        def apply(held):
+            if held.metadata.get(LANE_REASONING) == value:
+                return False  # nothing to persist
+            held.metadata.__setitem__(LANE_REASONING, value) if value else held.metadata.pop(LANE_REASONING)
+        store._update_entry(session_key, apply)
+        store._db.patch_session_model_config(entry.session_id, {'reasoning_config': value})
+    except Exception:
+        logger.warning('Could not persist the reasoning pick of lane session=%s', session_key, exc_info=True)

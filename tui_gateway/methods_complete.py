@@ -305,11 +305,12 @@ def _model_skew_err(rid) -> dict | None:
     code — the TUI/desktop would otherwise resolve a post-update model string against
     stale cached modules (the reporter's agent_init_failed). Mirrors the dashboard's
     ``_dashboard_code_skew_guard`` and the gateway's ``_model_switch_skew_guard``;
-    never a false positive (non-git installs detect nothing)."""
-    from gateway.code_skew import detect_code_skew
+    never a false positive (non-git installs detect nothing). ``gateway.model_switch_skew_guard``
+    (``refuse`` default | ``warn`` | ``off``) lets the RPC through under ``warn`` and ``off``."""
+    from gateway.code_skew import model_switch_skew
 
-    skew = detect_code_skew()
-    if not skew:
+    mode, skew = model_switch_skew()
+    if not skew or mode != "refuse":
         return None
     boot_rev, disk_rev = skew
     from agent.i18n import t

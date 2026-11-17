@@ -70,6 +70,8 @@ gateway:
     reset_done: "Override de modelo de la sesión eliminado — ahora se usa `{model}` (el predeterminado del canal/global). Se conserva el historial de la conversación."
     reset_none: "No hay override de modelo activo en esta sesión — ya se usa `{model}` (el predeterminado del canal/global)."
     err_skew: "Este gateway ejecuta código de {boot_rev}, pero el checkout en disco ahora es {disk_rev}. Cambiar de modelo podría provocar un fallo por módulos obsoletos: reinicia el gateway para cargar el código nuevo: hermes gateway restart"
+    err_skew_short: "Este gateway ejecuta un código más antiguo que el checkout. Reinícialo para cambiar de modelo: hermes gateway restart"
+    warn_skew: "Nota: este gateway aún ejecuta código de {boot_rev} (el checkout ahora es {disk_rev}); reinícialo cuando te convenga: hermes gateway restart"
     err_switch_failed: "El cambio al modelo {model} falló ({error}); se mantiene {current}."
     err_config_not_updated: "config.yaml no se actualizó ({error})"
     err_stale_override: "guardado en config.yaml, pero no se pudo borrar la anulación obsoleta de la sesión ({error})"
