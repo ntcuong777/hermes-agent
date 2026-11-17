@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "slots": {
+    "approvalCard": {
+      "file": "apps/desktop/src/components/assistant-ui/tool/approval.tsx",
+      "host": [],
+      "kind": "component",
+      "props": 1,
+      "summary": "Desktop approval card: upstream's paging plus the fork's MCP header, tool description and full arguments",
+      "symbols": ["ApprovalCard"]
+    }
+  }
+}

@@ -44,7 +44,15 @@ import {
 import { isSecondaryWindow } from '@/store/windows'
 
 import { MessageRenderBoundary } from '../message-render-boundary'
-import { PendingApprovalStack } from '../tool/approval'
+import { PendingApprovalStack as StockPendingApprovalStack } from '../tool/approval'
+import { PendingApprovalStack as ForkPendingApprovalStack } from '@/fork/approval.fork'
+import { forkSlot } from '@/fork/slot'
+const PendingApprovalStack = forkSlot(
+  'approvalCard',
+  StockPendingApprovalStack,
+  ForkPendingApprovalStack,
+  '3b85239a1ace096a3d7a67dae9beb246a32029002e1ec800f0bf97e7b9845bd3'
+) // fork: tui slot (stage 8)
 
 import { responseMessageRole, ResponseMessages } from './response-group'
 import { holdSessionSwitching } from './session-switching'
