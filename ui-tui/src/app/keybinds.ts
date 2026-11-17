@@ -309,14 +309,20 @@ export function runKeybind(command: string, host: KeybindHost, done: () => void 
 
   running.add(key)
 
-  const intact = () => host.sid() === sid && composer.revision() === revision && !composer.attachments()
+  // A paste result landing does not move the revision (see useComposerState), so text that arrived while the
+  // command ran is told apart by comparing the text itself with what the command was handed.
+  const textKept = () => text === undefined || composer.text() === text
+
+  const intact = () => host.sid() === sid && composer.revision() === revision && !composer.attachments() && textKept()
 
   const why = () =>
     host.sid() !== sid
       ? 'the session changed'
       : composer.attachments()
         ? 'an image was attached'
-        : 'the composer changed meanwhile'
+        : composer.revision() === revision && !textKept()
+          ? 'text arrived meanwhile'
+          : 'the composer changed meanwhile'
 
   void directives(host, sid, intact, done, why)
     .run(command, text)
