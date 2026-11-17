@@ -138,8 +138,10 @@ def _approval_mcp_context(server_name: str, tool_name: str, args: Optional[dict]
     from tools import mcp_tool
     from tools.mcp_tool_scope import _server_key
 
-    context = {"server": server_name, "tool": tool_name,
-               "arguments": _format_trust_gate_arguments(args or {}, max_chars=_MCP_CONTEXT_ARGUMENTS_MAX_CHARS)}
+    arguments = _format_trust_gate_arguments(args or {}, max_chars=_MCP_CONTEXT_ARGUMENTS_MAX_CHARS)
+    context = {"server": server_name, "tool": tool_name, "arguments": arguments,
+               # A card cannot prove what was approved when the arguments were cut: it offers Deny only.
+               **({"arguments_cut": True} if arguments.endswith(_TRUST_GATE_ARGUMENTS_TRUNCATION_MARKER) else {})}
     description = mcp_tool._tool_descriptions.get(_server_key(server_name), {}).get(tool_name)
     return {**context, "tool_description": description} if description else context
 

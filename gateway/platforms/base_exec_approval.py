@@ -57,6 +57,12 @@ def ea_mcp_block(mcp: dict, command: str) -> str:
     return "\n\n".join(p for p in parts if p)
 
 
+def mcp_arguments_cut(mcp: Optional[dict]) -> bool:
+    """True when an MCP call's arguments were cut even in the structured context (over 4,000 characters):
+    no card can show the whole call, so none offers Approve (the TUI and Desktop show the same cut)."""
+    return bool(mcp and mcp.get("arguments_cut"))
+
+
 def approval_card_parts(command: str, description: str, mcp: Optional[dict] = None) -> tuple[str, str]:
     """``(body, reason)`` as every surface shows a request: the description's first line is the reason (the
     headline), and the lines under it (a plugin approval's command, path, URL or query, which the gate
@@ -171,7 +177,8 @@ def render_exec_approval(adapter: Any, command: str, description: str, smart_den
         header = adapter._ea_mcp_header(str(mcp.get("server") or ""), str(mcp.get("tool") or ""))
     if adapter._EA_REASON_BUDGET:
         description = adapter._ea_fit(str(description or ""), adapter._EA_REASON_BUDGET)
-    key = "truncated_full_above" if full_command_shown else "truncated_deny_only"
+    args_cut = mcp_arguments_cut(mcp)
+    key = "truncated_full_above" if full_command_shown and not args_cut else "truncated_deny_only"
     cut_notice = "\n\n" + adapter._ea_escape(t(f"gateway.exec_approval.{key}", total=len(body)))
     capped = bool(adapter._EA_CARD_CAP)
     # The budgets below measure _EA_HEADER's fixed frame; the MCP headline differs in length, and a
@@ -195,7 +202,7 @@ def render_exec_approval(adapter: Any, command: str, description: str, smart_den
         return adapter._ea_fit(body, max(left, 0) if capped else max(left, budget // 2))
 
     preview, fence = fit_fenced(body, fit)
-    truncated = preview != body
+    truncated = preview != body or args_cut
     notice = cut_notice if truncated else ""
     code_open, code_close = (part.replace("```", fence, 1) for part in (adapter._EA_CODE_OPEN, adapter._EA_CODE_CLOSE))
     text = (f"{header}"

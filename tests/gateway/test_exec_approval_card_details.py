@@ -124,6 +124,35 @@ async def test_the_prompt_handed_to_an_adapter_carries_the_whole_body_and_the_sh
     assert prompt.command.endswith("<web_fetch> (plugin approval rule)")
 
 
+@pytest.mark.asyncio
+async def test_an_mcp_call_whose_arguments_were_cut_is_deny_only_and_says_so():
+    """Over 4,000 characters the structured context itself is cut: sending that same text ahead of the card
+    cannot make it whole, so nobody can approve it from a card ("nobody approves a cut call")."""
+    adapter = _Chat()
+    mcp = {"server": "files", "tool": "write", "arguments": '{"a": 1}\n... [arguments truncated]', "arguments_cut": True}
+    await adapter.send_exec_approval("c1", "MCP tool 'write' wants to run.", "sk", description="MCP call",
+                                     request_id="r1", mcp=mcp)
+    prompt = adapter.prompts[-1]
+    assert [c for _, c, _ in prompt.actions] == ["deny"]
+    assert "only Deny" in prompt.text or "Deny" in prompt.text
+    assert adapter.sent == [], "no full-command send that would imply the call is whole"
+
+
+@pytest.mark.asyncio
+async def test_an_mcp_call_with_whole_arguments_still_offers_approve():
+    adapter = _Chat()
+    mcp = {"server": "files", "tool": "write", "arguments": '{"a": 1}'}
+    await adapter.send_exec_approval("c1", "MCP tool 'write' wants to run.", "sk", description="MCP call",
+                                     request_id="r1", mcp=mcp)
+    assert "once" in [c for _, c, _ in adapter.prompts[-1].actions]
+
+
+def test_the_mcp_context_flags_arguments_cut_at_the_bound():
+    from tools.mcp_tool_handlers import _approval_mcp_context
+    assert "arguments_cut" not in _approval_mcp_context("s", "t", {"q": "small"})
+    assert _approval_mcp_context("s", "t", {"q": "x" * 6000})["arguments_cut"] is True
+
+
 def test_blank_lines_in_a_multi_line_command_survive():
     body, _ = approval_card_parts("python - <<EOF\nprint(1)\n\nprint(2)\nEOF", "Run a script")
     assert body == "python - <<EOF\nprint(1)\n\nprint(2)\nEOF"

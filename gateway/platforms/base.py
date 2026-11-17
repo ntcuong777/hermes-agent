@@ -443,7 +443,7 @@ from gateway.platforms.base_delivery_ledger import (
 from gateway.platforms.base_exec_approval import (
     approval_timeout_seconds, ea_action_labels, ea_default_reason_text, ea_header_text,
     ea_mcp_header_text, ea_reason_label_text, ea_smart_deny_line_text, exec_approval_cmd_budget,
-    format_approval_deadline_line, card_shows_whole_command, render_exec_approval,
+    format_approval_deadline_line, card_shows_whole_command, mcp_arguments_cut, render_exec_approval,
     approval_card_parts)
 from gateway.platforms.base_streaming_tts import (
     AudioFormat, StreamingTTSHandle, streaming_tts_should_skip_whole_file, streaming_tts_turn_key)
@@ -2762,7 +2762,10 @@ class BasePlatformAdapter(_SessionModelSettingsMixin, ABC):
         # What must be readable before Approve goes live: the command AND the detail lines (the URL, path,
         # query) the reason carries, or an MCP call's whole body, exactly what the preview is cut from.
         whole = approval_card_parts(command, description, mcp)[0]
-        if not await card_shows_whole_command(self, chat_id, session_key, request_id, whole, metadata, truncated):
+        # An MCP call whose arguments were cut even in the structured context stays Deny-only: sending the
+        # same cut text ahead of the card would not make it whole.
+        if mcp_arguments_cut(mcp) or not await card_shows_whole_command(
+                self, chat_id, session_key, request_id, whole, metadata, truncated):
             text = render_exec_approval(self, command, description, smart_denied, False, mcp=mcp)[0]
             actions = [row for row in actions if row[1] == "deny"]
         # Adapters that render from the prompt's own fields (Teams) must show what the preview was cut from:
