@@ -118,6 +118,22 @@ def test_an_unrelated_edit_of_the_same_file_is_not_drift(fork, plugin):
     assert tsc.main(["--verify-locks", str(plugin.parent), "--fork-root", str(root)]) == 0
 
 
+def test_an_empty_symbols_list_is_a_present_field_whole_file_contract(fork, plugin, capsys):
+    # symbols: [] is the documented whole-file slot (sha256-lf); the REQUIRED gate must treat it as present,
+    # and the whole-file hash must verify. The lock is rewritten coherently: empty symbols and the whole-file
+    # hash of the checkout's file, so the only question the run answers is the REQUIRED-gate one.
+    root, _ = fork
+    record(root, plugin)
+    path = plugin / "tui_slots.lock.json"
+    lock = json.loads(path.read_text())
+    current = (root / "ui-tui/src/components/sw.tsx").read_text()
+    lock["slots"]["sessionSwitcher"]["symbols"] = []
+    lock["slots"]["sessionSwitcher"]["upstream_snapshot"]["sha"] = tsc.region_hash(current, [])
+    path.write_text(json.dumps(lock))
+    assert tsc.main(["--verify-locks", str(plugin.parent), "--fork-root", str(root)]) == 0
+    assert "missing field 'symbols'" not in capsys.readouterr().out
+
+
 @pytest.mark.parametrize("damage,needle", [
     (lambda e: e.pop("reason"), "missing field 'reason'"),
     (lambda e: e["upstream_ref"].update(commit=""), "missing upstream_ref.commit"),

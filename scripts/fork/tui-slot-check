@@ -149,7 +149,8 @@ def entries(plugins_root: Path) -> list[tuple[Path, str, dict[str, Any]]]:
 
 def check_entry(root: Path, plugin_dir: Optional[Path], slot: str, entry: dict[str, Any]) -> dict[str, Any]:
     """``{slot, status: ok|drift|missing-provenance|missing-file, problems, diff}``; never raises."""
-    problems = [f"missing field '{f}'" for f in REQUIRED if not entry.get(f)]
+    # An empty list is a present field (symbols: [] is the documented whole-file contract), not a missing one.
+    problems = [f"missing field '{f}'" for f in REQUIRED if f not in entry or entry.get(f) is None]
     if not (entry.get("upstream_ref") or {}).get("commit"):
         problems.append("missing upstream_ref.commit")
     symbols = [s for s in entry.get("symbols") or [] if isinstance(s, str)]
