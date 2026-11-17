@@ -80,6 +80,14 @@
       "props": 1,
       "summary": "The composer key handlers (fork: Ctrl+C order, double-Esc doc, Ctrl+G raw, completion apply at caret)",
       "symbols": []
+    },
+    "submission": {
+      "file": "ui-tui/src/app/useSubmission.ts",
+      "host": ["ink", "react", "pkg/@nanostores/react", "config/timing", "domain/attachments", "gatewayClient", "hooks/useQueue", "i18n/runtime", "lib/rpc", "types", "app/backtrackStore", "app/createSlashHandler", "app/interfaces", "app/pasteStore", "app/queueSlash", "app/slash/registry", "app/submissionCore", "app/submissionDestination", "app/turnController", "app/uiStore", "app/userMessages", "shared/gateway-types", "shared/interpolation", "shared/slash", "shared/slash-input"],
+      "kind": "hook",
+      "props": 1,
+      "summary": "The submission hook (fork: completion apply with the caret end)",
+      "symbols": []
     }
   }
 }

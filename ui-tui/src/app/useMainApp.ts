@@ -89,7 +89,8 @@ import {
   lastStderrLine
 } from './userMessages.js'
 import { useSessionLifecycle } from './useSessionLifecycle.js'
-import { useSubmission } from './useSubmission.js'
+import { useSubmission as StockUseSubmission } from './useSubmission.js'
+const useSubmission = slotHook('submission', StockUseSubmission) // fork: tui slot (reuses the stage 5b-2 slotHook import)
 
 const BRACKET_PASTE_ON = '\x1b[?2004h'
 const BRACKET_PASTE_OFF = '\x1b[?2004l'

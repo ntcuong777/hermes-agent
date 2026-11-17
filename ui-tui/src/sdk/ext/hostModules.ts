@@ -59,6 +59,16 @@ import * as stashCounts from '../../app/stashCounts.js' // fork: tui slot host m
 import * as turnController from '../../app/turnController.js' // fork: tui slot host modules (stage 5)
 import * as gatewayCanonical from '@hermes/shared/gateway-canonical' // fork: tui slot host modules (stage 5)
 import * as gatewayTypes from '@hermes/shared/gateway-types' // fork: tui slot host modules (stage 5)
+import * as gatewayClient from '../../gatewayClient.js' // fork: tui slot host modules (stage 5)
+import * as attachments2 from '../../domain/attachments.js' // fork: tui slot host modules (stage 5)
+import * as useQueue from '../../hooks/useQueue.js' // fork: tui slot host modules (stage 5)
+import * as submissionDestination from '../../app/submissionDestination.js' // fork: tui slot host modules (stage 5)
+import * as createSlashHandler from '../../app/createSlashHandler.js' // fork: tui slot host modules (stage 5)
+import * as queueSlash from '../../app/queueSlash.js' // fork: tui slot host modules (stage 5)
+import * as slashRegistry from '../../app/slash/registry.js' // fork: tui slot host modules (stage 5)
+import * as submissionCore from '../../app/submissionCore.js' // fork: tui slot host modules (stage 5)
+import * as userMessages from '../../app/userMessages.js' // fork: tui slot host modules (stage 5)
+import * as interpolation from '@hermes/shared/interpolation' // fork: tui slot host modules (stage 5)
 
 export const HOST_MODULES: Readonly<Record<string, unknown>> = Object.freeze({
   ink,
@@ -112,5 +122,15 @@ export const HOST_MODULES: Readonly<Record<string, unknown>> = Object.freeze({
   'app/stashCounts': stashCounts,
   'app/turnController': turnController,
   'shared/gateway-canonical': gatewayCanonical,
-  'shared/gateway-types': gatewayTypes
+  'shared/gateway-types': gatewayTypes,
+  'gatewayClient': gatewayClient,
+  'domain/attachments': attachments2,
+  'hooks/useQueue': useQueue,
+  'app/submissionDestination': submissionDestination,
+  'app/createSlashHandler': createSlashHandler,
+  'app/queueSlash': queueSlash,
+  'app/slash/registry': slashRegistry,
+  'app/submissionCore': submissionCore,
+  'app/userMessages': userMessages,
+  'shared/interpolation': interpolation
 })

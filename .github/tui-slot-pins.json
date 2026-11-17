@@ -43,6 +43,14 @@
       "target_file": "ui-tui/src/components/appChrome.tsx",
       "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
     },
+    "submission": {
+      "plugin": "tui-input",
+      "reason": "completion apply keeps the text after the caret end on submit",
+      "sha": "712c2e9a61ce8b281c00986e40e0ba42856875efea6f2fa23e993d47a40012a0",
+      "symbols": [],
+      "target_file": "ui-tui/src/app/useSubmission.ts",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
+    },
     "textInput": {
       "plugin": "tui-input",
       "reason": "Alt-letters typing fix, kitty Ctrl+V paste hotkey, caretRef plumbing and the typed-text/backspace guards on the composer input",
