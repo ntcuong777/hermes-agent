@@ -214,5 +214,5 @@ def build_plugins_parser(subparsers, *, cmd_plugins: Callable) -> None:
         "show", aliases=["info"], help="Show details for a single plugin (including emits/listens)")
     plugins_show.add_argument("name", help="Plugin name or key to show")
 
-    __import__("hermes_cli.core_patches_cmd").core_patches_cmd.add_patches_parser(plugins_subparsers)  # fork: core-patch registry
+    __import__("hermes_cli.core_patches_safe").core_patches_safe.add_patches_parser(plugins_subparsers)  # fork: core-patch registry
     plugins_parser.set_defaults(func=cmd_plugins)

@@ -2427,7 +2427,7 @@ def _dashboard_prepare_runtime(args, headless_backend) -> bool:
     try:
         from hermes_cli.plugins import discover_plugins
         discover_plugins()
-        __import__("hermes_cli.core_patches").core_patches.apply_core_patches("dashboard")  # fork: core-patch registry
+        __import__("hermes_cli.core_patches_safe").core_patches_safe.apply("dashboard")  # fork: core-patch registry
     except Exception as exc:
         # Must not block startup; the gate's fail-closed branch surfaces a
         # missing provider if it matters.
@@ -2714,7 +2714,7 @@ def _prepare_agent_startup(args) -> None:
                 "plugin discovery failed at CLI startup",
                 exc_info=True,
             )
-        __import__("hermes_cli.core_patches").core_patches.apply_core_patches("cli")  # fork: core-patch registry
+        __import__("hermes_cli.core_patches_safe").core_patches_safe.apply("cli")  # fork: core-patch registry
     # -t/--toolsets narrows which configured MCP servers get spawned, on
     # every discovery path (background thread, TUI/desktop
     # deferred start). Built-in toolset names never match a server key, so

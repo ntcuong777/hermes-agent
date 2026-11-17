@@ -3660,6 +3660,7 @@ def _launch_external_cron_worker(job: dict) -> bool:
     if dispatch.mode == "in_process":
         return False
 
+    __import__("hermes_cli.core_patches_safe").core_patches_safe.cron_dispatch_guard(_get_hermes_home())  # fork: core-patch registry
     if mark_execution_handoff_pending(execution_id) is None:
         raise RuntimeError(
             "cron execution claim changed before external worker handoff"
@@ -3890,7 +3891,7 @@ def _run_external_worker_payload(payload_path: Path, ack_path: Path) -> bool:
         from hermes_cli.plugins import discover_plugins
 
         discover_plugins()
-        __import__("hermes_cli.core_patches").core_patches.apply_core_patches("cron")  # fork: core-patch registry
+        __import__("hermes_cli.core_patches_safe").core_patches_safe.cron_apply()  # fork: core-patch registry
         hydrate_profile_secret_sources(profile_home)
         secret_token = set_secret_scope(build_profile_secret_scope(profile_home), profile_home=str(profile_home))
         # This process never ran gateway startup, so the OWNING profile's ``hooks:`` block (shell

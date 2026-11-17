@@ -60,7 +60,7 @@ from hermes_cli.doctor_state import (
     _check_skills_hub,
     _check_state_db,
 )
-from hermes_cli.core_patches_cmd import _check_core_patches  # fork: core-patch registry
+_check_core_patches = __import__("hermes_cli.core_patches_safe").core_patches_safe.doctor_check  # fork: core-patch registry
 
 _PROVIDER_ENV_HINTS = (
     "DEEPINFRA_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN",

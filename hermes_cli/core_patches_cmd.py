@@ -1,13 +1,19 @@
-"""``hermes plugins patches`` and the ``hermes doctor`` row for the core-patch registry (fork-owned)."""
+"""``hermes plugins patches`` and the ``hermes doctor`` row for the core-patch registry (fork-owned).
+
+Only the standard library at module level: ``build_plugins_parser`` imports this for every
+``hermes`` invocation, so an upstream rename in ``doctor_report`` must not break the CLI.
+"""
 
 from __future__ import annotations
 
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
-from hermes_cli.doctor_report import Finding, _section, check_ok, check_warn, doctor_check
+FOOTER = ("(status from this command's own plugin discovery in a fresh process, not the running gateway: "
+          "see the gateway log line 'core patches (gateway)')")
 
 
 def add_patches_parser(plugins_subparsers: Any) -> None:
@@ -23,6 +29,12 @@ def add_patches_parser(plugins_subparsers: Any) -> None:
     parser.add_argument("--lock", metavar="PLUGIN_DIR", help="Write/refresh a lock entry (needs --name and --target)")
     parser.add_argument("--name", help="Patch name for --lock")
     parser.add_argument("--target", help="Target for --lock")
+    parser.add_argument("--strict", action="store_true",
+                        help="Exit 1 when any patch is skipped-drift or skipped-error")
+    parser.add_argument("--verify-pins", metavar="PINS_FILE",
+                        help="Verify a pins file (.github/core-patch-pins.json) against this checkout")
+    parser.add_argument("--plugins-root", metavar="DIR",
+                        help="With --verify-pins: also check each plugin's expect_ast_sha against its lock")
 
 
 def _rows() -> list[dict[str, Any]]:
@@ -32,7 +44,7 @@ def _rows() -> list[dict[str, Any]]:
     discover_plugins()
     return [
         {"plugin": r.spec.plugin_id, "name": r.spec.name, "target": r.spec.target, "kind": r.spec.kind,
-         "order": r.spec.order, "critical": r.spec.critical, "status": r.status, "detail": r.detail}
+         "order": r.spec.order, "critical": r.critical, "status": r.status, "detail": r.detail}
         for r in core_patches.records()
     ]
 
@@ -46,6 +58,11 @@ def _print_table(rows: list[dict[str, Any]]) -> None:
         detail = f"  {row['detail']}" if row["detail"] else ""
         print(f"{row['status']:<17} {row['plugin']}:{row['name']}  {row['kind']}{flag} order={row['order']}  "
               f"{row['target']}{detail}")
+    print(FOOTER)
+
+
+def _strict_code(rows: list[dict[str, Any]], strict: bool) -> int:
+    return 1 if strict and any(row["status"] in ("skipped-drift", "skipped-error") for row in rows) else 0
 
 
 def _diff(name: str) -> int:
@@ -93,12 +110,22 @@ def cmd_patches(args: Any) -> None:
                 code = 2
             else:
                 print(f"{args.name}: {write_lock_entry(Path(args.lock), args.name, args.target)}")
+        elif getattr(args, "verify_pins", None):
+            from hermes_cli.core_patches_ast import run
+
+            code = run(SimpleNamespace(sha=None, write_pins=None, verify_locks=None, verify_pins=args.verify_pins,
+                                       plugins_root=Path(args.plugins_root) if args.plugins_root else None,
+                                       source_root=None))
         elif getattr(args, "diff", None) is not None:
             code = _diff(args.diff)
         elif getattr(args, "patches_json", False):
-            print(json.dumps(_rows(), indent=2))
+            rows = _rows()
+            print(json.dumps(rows, indent=2))
+            code = _strict_code(rows, getattr(args, "strict", False))
         else:
-            _print_table(_rows())
+            rows = _rows()
+            _print_table(rows)
+            code = _strict_code(rows, getattr(args, "strict", False))
     except CorePatchTargetError as exc:
         print(f"hermes plugins patches: {exc}", file=sys.stderr)
         code = 2
@@ -106,9 +133,16 @@ def cmd_patches(args: Any) -> None:
         raise SystemExit(code)
 
 
-@doctor_check("")  # best-effort: a broken registry must never break doctor
-def _check_core_patches(should_fix: bool, f: Finding) -> None:
+def _check_core_patches(should_fix: bool) -> Any:
+    """The ``hermes doctor`` row (best-effort: a broken registry must never break doctor)."""
+    from hermes_cli.doctor_report import doctor_check
+
+    return doctor_check("")(_doctor_rows)(should_fix)
+
+
+def _doctor_rows(should_fix: bool, f: Any) -> None:
     from hermes_cli import core_patches
+    from hermes_cli.doctor_report import _section, check_ok, check_warn
     from hermes_cli.plugins import discover_plugins
 
     discover_plugins()
