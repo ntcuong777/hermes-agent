@@ -124,3 +124,11 @@ def test_the_stamp_of_this_checkout_matches_its_history_when_the_history_is_ther
     assert stamp.is_file(), "run scripts/fork/upstream-ref.sh --stamp and commit hermes-upstream-commit"
     assert stamp.read_text(encoding="utf-8").strip() == expected, (
         "hermes-upstream-commit is stale: run scripts/fork/upstream-ref.sh --stamp and commit it")
+
+
+def test_a_release_with_a_double_quote_and_a_backslash_is_still_valid_json(fork):
+    repo, shas = fork
+    git(repo, "merge", "-q", "--no-ff", shas["u2"], "-m", "Merge branch 'main' into personal")
+    (repo / "hermes-upstream-release").write_text('0."2"\\x\n', encoding="utf-8")
+    data = json.loads(ref(repo, "--json"))
+    assert data["release"] == '0."2"\\x' and data["commit"] == shas["u2"]

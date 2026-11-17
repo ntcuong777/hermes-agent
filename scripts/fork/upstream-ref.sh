@@ -86,7 +86,7 @@ release="$(cat "$repo/hermes-upstream-release" 2>/dev/null | tr -d '[:space:]' |
 [ -n "$release" ] || release="unknown"
 date="unknown"
 if [ "$commit" != "unknown" ]; then
-  date="$(g show -s --format=%cs "$commit")"
+  date="$(g show -s --format=%ad --date=short "$commit")"  # %cs needs git 2.21+
   [ -n "$date" ] || date="unknown"
 fi
 
@@ -96,7 +96,8 @@ if [ "$stamp" = 1 ] && [ "$commit" != "unknown" ]; then
 fi
 
 if [ "$mode" = json ]; then
-  printf '{"commit": "%s", "release": "%s", "date": "%s", "via": "%s"}\n' "$commit" "$release" "$date" "$via"
+  release_json="$(printf '%s' "$release" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+  printf '{"commit": "%s", "release": "%s", "date": "%s", "via": "%s"}\n' "$commit" "$release_json" "$date" "$via"
 else
   printf '%s\n' "$commit"
 fi
