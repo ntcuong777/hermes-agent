@@ -32,7 +32,10 @@ import { ActiveWidgetSlot, AmbientDock, AmbientRail, useAmbientRailWidth } from 
 
 import { AgentsOverlay } from './agentsOverlay.js'
 import { LiveAgentsPanel } from './agentsPanel.js'
-import { GoodVibesHeart, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
+import { GoodVibesHeart, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
+import { StatusRule as StockStatusRule } from './appChrome.js' // fork: tui slot
+const StatusRule = slotComponent<Parameters<typeof StockStatusRule>[0] & { stashCounts?: { global: number; session: number } }>('statusRule', StockStatusRule) // fork: tui slot. The fork's kept glue passes stashCounts, which upstream's StatusRuleProps lacks; the slot contract admits it as an optional field (adding an optional field is not a props bump, master spec 6.6).
+import { slotComponent } from '../sdk/ext/slotReact.js' // fork: tui slot
 import { FloatingOverlays, PromptZone } from './appOverlays.js'
 import { Banner, Panel, SessionPanel } from './branding.js'
 import { HalfBlockImage, KittyImage } from './cellImage.js'

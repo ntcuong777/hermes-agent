@@ -26,6 +26,14 @@
       "symbols": [],
       "target_file": "ui-tui/src/components/activeSessionSwitcher.tsx",
       "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
+    },
+    "statusRule": {
+      "plugin": "tui-chrome",
+      "reason": "medium effort shown, opt-in plugin segments (cost/quota) and the stash count on the status bar",
+      "sha": "43a8ab0f67d86c665f6482737ed8f6268edef0b5ed9c0e96344446d561f5ba79",
+      "symbols": [],
+      "target_file": "ui-tui/src/components/appChrome.tsx",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
     }
   },
   "version": 1

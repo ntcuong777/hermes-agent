@@ -56,6 +56,14 @@
       "props": 1,
       "summary": "The TUI approval panel (rule 6.9: a fallback must not hide what the person approves)",
       "symbols": []
+    },
+    "statusRule": {
+      "file": "ui-tui/src/components/appChrome.tsx",
+      "host": ["ink", "react", "app/delegationStore", "app/interfaces", "app/turnStore", "config/env", "content/faces", "content/verbs", "domain/messages", "domain/viewport", "i18n/runtime", "lib/statusUsage", "lib/subagentTree", "lib/viewportStore", "appTheme", "types", "components/overlayPrimitives", "shared/format", "shared/gateway-events", "pkg/@nanostores/react", "pkg/unicode-animations"],
+      "kind": "component",
+      "props": 1,
+      "summary": "The status bar rule (fork: medium effort shown, plugin segments, stash count)",
+      "symbols": []
     }
   }
 }

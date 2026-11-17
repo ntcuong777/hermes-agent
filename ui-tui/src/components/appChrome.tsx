@@ -15,7 +15,6 @@ import { VERBS } from '../content/verbs.js'
 import { fmtDuration } from '../domain/messages.js'
 import { stickyPromptFromViewport } from '../domain/viewport.js'
 import { messages, t as tr } from '../i18n/runtime.js'
-import { stashLabel, type StatusField } from '../lib/statusUsage.js'
 import { buildSubagentTree, treeTotals, widthByDepth } from '../lib/subagentTree.js'
 import { useScrollbarSnapshot, useViewportSnapshot } from '../lib/viewportStore.js'
 import type { Theme } from '../theme.js'
@@ -486,9 +485,7 @@ const effortLabel = (effort?: string, wire?: string) => {
     .trim()
     .toLowerCase()
 
-  // `medium` is shown too: hiding it made a session on the middle level look like one with no effort
-  // set. Only "unset" and the route's own unnamed default stay hidden.
-  if (!value || value === 'normal' || value === 'default') {
+  if (!value || value === 'medium' || value === 'normal' || value === 'default') {
     return ''
   }
 
@@ -533,15 +530,6 @@ export function GoodVibesHeart({ tick, t }: { tick: number; t: Theme }) {
   return <Text color={color}>♥</Text>
 }
 
-const toneColor = (tone: StatusField['tone'], t: Theme) =>
-  tone === 'bad'
-    ? t.color.statusBad
-    : tone === 'warn'
-      ? t.color.statusWarn
-      : tone === 'good'
-        ? t.color.statusGood
-        : t.color.muted
-
 export function StatusRule({
   battery,
   focusView,
@@ -551,7 +539,6 @@ export function StatusRule({
   compacting = false,
   status,
   statusBarFields = null,
-  stashCounts,
   statusColor,
   model,
   modelFast,
@@ -668,22 +655,6 @@ export function StatusRule({
       : ''
 
   const showBar = !!bar && fits(SEP + stringWidth(`[${bar}] ${pct != null ? `${contextMark}${pct}%` : ''}`))
-
-  // Plugin segments (usage.status_fields, e.g. a plugin's cost and quota) and the stash: opt-in
-  // (display.status_bar.fields must list them), and ranked right under the context bar, above the clock
-  // and perf read-outs, because they are meant to be seen at all times, not only when there is room left over.
-  const optIn = (name: string) => statusBarFields !== null && statusBarFields.has(name)
-
-  const pluginSegments = (usage.status_fields ?? []).flatMap(field => {
-    const text = field.text.trim()
-
-    return text && optIn(field.id) && cols >= (field.min_cols ?? 60) && fits(SEP + stringWidth(text))
-      ? [{ color: toneColor(field.tone, t), id: field.id, text }]
-      : []
-  })
-
-  const stashText = optIn('stash') && stashCounts ? stashLabel(stashCounts) : ''
-  const showStash = cols >= 60 && !!stashText && fits(SEP + stringWidth(stashText))
   const showDuration = segs.duration && ok('duration') && !!sessionStartedAt && fits(SEP + MAX_DURATION_WIDTH)
 
   // Idle clock — time since the last final agent response. Hidden while busy
@@ -815,18 +786,6 @@ export function StatusRule({
             {' │ '}
             <Text color={barColor}>[{bar}]</Text>{' '}
             <Text color={barColor}>{pct != null ? `${contextMark}${pct}%` : ''}</Text>
-          </Text>
-        ) : null}
-        {pluginSegments.map(segment => (
-          <Text color={t.color.muted} key={segment.id} wrap="truncate-end">
-            {' │ '}
-            <Text color={segment.color}>{segment.text}</Text>
-          </Text>
-        ))}
-        {showStash ? (
-          <Text color={t.color.muted} wrap="truncate-end">
-            {' │ '}
-            {stashText}
           </Text>
         ) : null}
         {showDuration ? (
@@ -1050,9 +1009,6 @@ interface StatusRuleProps {
   // display.status_bar.fields — segment visibility filter shared with the
   // classic CLI bar. null = defaults (everything shows).
   statusBarFields?: null | ReadonlySet<string>
-  // Drafts held in the session stash and the profile stash; shown only when `stash` is listed in
-  // display.status_bar.fields (opt-in, like the plugin segments).
-  stashCounts?: { global: number; session: number }
   statusColor: string
   t: Theme
   turnStartedAt?: null | number

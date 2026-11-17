@@ -25,6 +25,21 @@ import * as textInputModule from '../../components/textInput.js' // fork: tui sl
 import * as libText from '../../lib/text.js' // fork: tui slot host modules (stage 4)
 import * as appTheme from '../../theme.js' // fork: tui slot host modules (stage 4)
 import * as types from '../../types.js' // fork: tui slot host modules (stage 4)
+import * as delegationStore from '../../app/delegationStore.js' // fork: tui slot host modules (stage 6)
+import * as interfaces from '../../app/interfaces.js' // fork: tui slot host modules (stage 6)
+import * as turnStore from '../../app/turnStore.js' // fork: tui slot host modules (stage 6)
+import * as configEnv from '../../config/env.js' // fork: tui slot host modules (stage 6)
+import * as faces from '../../content/faces.js' // fork: tui slot host modules (stage 6)
+import * as verbs from '../../content/verbs.js' // fork: tui slot host modules (stage 6)
+import * as domainMessages from '../../domain/messages.js' // fork: tui slot host modules (stage 6)
+import * as domainViewport from '../../domain/viewport.js' // fork: tui slot host modules (stage 6)
+import * as statusUsage from '../../lib/statusUsage.js' // fork: tui slot host modules (stage 6)
+import * as subagentTree from '../../lib/subagentTree.js' // fork: tui slot host modules (stage 6)
+import * as viewportStore from '../../lib/viewportStore.js' // fork: tui slot host modules (stage 6)
+import * as sharedFormat from '@hermes/shared/format' // fork: tui slot host modules (stage 6)
+import * as sharedGatewayEvents from '@hermes/shared/gateway-events' // fork: tui slot host modules (stage 6)
+import * as nanostoresReact from '@nanostores/react' // fork: tui slot host modules (stage 6)
+import * as unicodeAnimations from 'unicode-animations' // fork: tui slot host modules (stage 6)
 
 export const HOST_MODULES: Readonly<Record<string, unknown>> = Object.freeze({
   ink,
@@ -44,5 +59,20 @@ export const HOST_MODULES: Readonly<Record<string, unknown>> = Object.freeze({
   'components/textInput': textInputModule,
   'lib/text': libText,
   appTheme: appTheme,
-  types: types
+  types: types,
+  'app/delegationStore': delegationStore,
+  'app/interfaces': interfaces,
+  'app/turnStore': turnStore,
+  'config/env': configEnv,
+  'content/faces': faces,
+  'content/verbs': verbs,
+  'domain/messages': domainMessages,
+  'domain/viewport': domainViewport,
+  'lib/statusUsage': statusUsage,
+  'lib/subagentTree': subagentTree,
+  'lib/viewportStore': viewportStore,
+  'shared/format': sharedFormat,
+  'shared/gateway-events': sharedGatewayEvents,
+  'pkg/@nanostores/react': nanostoresReact,
+  'pkg/unicode-animations': unicodeAnimations
 })
