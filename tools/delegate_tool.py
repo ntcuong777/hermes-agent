@@ -32,11 +32,11 @@ from tools.delegate_tool_config import (
     _DEFAULT_MAX_CONCURRENT_CHILDREN, _get_child_timeout, _get_max_async_children, _get_max_concurrent_children,
     _get_max_spawn_depth, _get_oneshot_max_children, _get_orchestrator_enabled, _get_subagent_approval_callback, _get_worktree_isolation,
     _inherit_parent_capabilities, _load_config, _merge_request_overrides, _resolve_child_credential_pool,
-    _resolve_child_runtime, _resolve_delegation_credentials, _runtime_provider_credentials,
+    _resolve_child_runtime, _resolve_delegation_credentials,
     _subagent_auto_approve, _subagent_auto_deny,
 )
 from tools.delegate_tool_dispatch import _Batch, _announce_batch, _capture_origin, _run_batch
-from tools.delegate_roles import RoleProfile, profile_for, reasoning_kwargs, role_catalog
+from tools.delegate_tool_scope import with_instructions
 from tools.delegate_tool_progress import (
     DelegateEvent, SUBAGENT_FAILURE_STATUSES, _batch_prefix, _build_child_progress_callback,
     _build_child_system_prompt, _clean_error_text, _emit_parent_console, _quiet, _resolve_workspace_hint,
@@ -227,14 +227,11 @@ def _build_child_agent(
     routing_cfg: Optional[dict[str, Any]] = None,
     # Legacy; accepted for wire compat but ignored (capability is depth-derived).
     role: str = "leaf",
-    reasoning_config: Optional[dict[str, Any]] = None,
-    # A plugin-declared role (tools.delegate_roles): its instructions join the child's prompt and its name rides on
-    # the child and the subagent_start event. Toolsets, model and effort are resolved by the caller.
-    profile: Optional[RoleProfile] = None,
     # Per-task route from the delegation provider (tools/delegate_tool_routes.py): a reasoning
     # effort that beats delegation.reasoning_effort, and the profile home the child runs as.
     override_reasoning_effort: Any = None,
     profile_home: Optional[Path] = None,
+    instructions: str = "", child_profile: Optional[str] = None,  # route child-scope fields (delegate_tool_scope.py)
     override_service_tier: Optional[str] = None,  # a route's checked speed tier (tools/delegate_tool_tuning.py)
     # action='continue' rebuilds a finished child under its own id and session (tools/delegate_tool_continue.py).
     subagent_id: Optional[str] = None,
@@ -264,29 +261,12 @@ def _build_child_agent(
     # global. Only fallback policy follows the owner of a per-call route such
     # as auxiliary.review.
     delegation_cfg = _load_config()
-    if profile is not None:
-        # A role fixes what the child may use and runs on (a toolset the parent lacks is dropped by the intersection
-        # below, never added). An explicit argument from the caller still wins over the role's toolsets.
-        if not toolsets and profile.toolsets:
-            toolsets = list(profile.toolsets)
-        model = profile.model or model
-        if profile.provider:
-            try:
-                creds = _runtime_provider_credentials({"provider": profile.provider, "model": model}, None)
-            except ValueError as exc:
-                raise ValueError(f"Role {profile.name!r} pins provider {profile.provider!r}: {exc}") from exc
-            override_provider, override_base_url = creds["provider"], creds["base_url"]
-            override_api_key, override_api_mode = creds["api_key"], creds["api_mode"]
-            override_request_overrides = creds.get("request_overrides")
-            override_acp_command, override_acp_args = creds.get("command"), creds.get("args")
-            model = creds["model"] or model
-        if reasoning_config is None:
-            reasoning_config = reasoning_kwargs(profile).get("reasoning_config")
     child_toolsets, child_disabled_toolsets = _resolve_child_toolsets(parent_agent, toolsets, effective_role)
     child_prompt = _build_child_system_prompt(
         workspace_path=_resolve_workspace_hint(parent_agent), role=effective_role,
-        max_spawn_depth=max_spawn, child_depth=child_depth, profile=profile,
+        max_spawn_depth=max_spawn, child_depth=child_depth,
     )
+    child_prompt = with_instructions(child_prompt, child_profile, instructions)
     parent_api_key = getattr(parent_agent, "api_key", None)
     if (not parent_api_key) and hasattr(parent_agent, "_client_kwargs"):
         parent_api_key = parent_agent._client_kwargs.get("api_key")
@@ -307,10 +287,6 @@ def _build_child_agent(
             override_acp_args=override_acp_args,
             routing_cfg=routing_cfg, override_reasoning_effort=override_reasoning_effort,
         )
-        if reasoning_config is not None:
-            # rt always carries a reasoning_config (the parent's level or delegation.reasoning_effort): the caller's
-            # replaces it. Passing it as a second keyword raised "multiple values for keyword argument".
-            rt = {**rt, "reasoning_config": reasoning_config}
         # An inherited route re-resolves from the parent, which may have switched provider since: its transcript
         # must not continue on another backend (or send another provider's key to its endpoint).
         if expect_endpoint is not None and endpoint_identity(rt["provider"], rt["base_url"]) != tuple(expect_endpoint):
@@ -378,7 +354,7 @@ def _build_child_agent(
     child_session_ref["session_id"] = getattr(child, "session_id", "") or ""
     child._progress_identity_ref = child_session_ref
     child._delegate_depth, child._delegate_role = child_depth, effective_role  # post-degrade role
-    child._delegate_profile = profile.name if profile else None  # the plugin-declared role the task named, if any
+    child._delegate_profile = child_profile  # the route's profile name, if any
     # Plugins see one conversation per delegation tree.
     from agent.prompt_cache_scope import conversation_id, sibling_cache_scope
     child._inherited_conversation_id = conversation_id(parent_agent)
@@ -418,7 +394,7 @@ def _build_child_agent(
             "subagent_start", parent_session_id=parent_sid,
             parent_turn_id=getattr(parent_agent, "_current_turn_id", "") or "", parent_subagent_id=parent_subagent_id,
             child_session_id=getattr(child, "session_id", None), child_subagent_id=subagent_id,
-            child_role=effective_role, child_goal=goal, child_profile=profile.name if profile else None,
+            child_role=effective_role, child_goal=goal, child_profile=child_profile,
         )
     return child
 
@@ -519,6 +495,7 @@ def _route_overrides(route: Any) -> dict[str, Any]:
     return {
         **_credential_overrides(route.creds, route.routing_cfg),
         "override_reasoning_effort": route.reasoning_effort, "profile_home": route.profile_home,
+        "instructions": route.instructions, "child_profile": route.child_profile,
     }
 
 
@@ -531,19 +508,10 @@ def _build_children(
     """Build every child on the main thread (construction is not thread-safe), each on its task's route;
     ``(children, None)`` or ``([], error)`` on an explicit-pin preflight failure. ``rebuild`` (action='continue')
     gives per-task builder kwargs (toolsets, model, subagent_id, session_id) that replace the spawn defaults."""
-    from tools.delegate_model_override import confirmed_model_profile
     from tools.delegation_live_log import wrap_progress_callback
     from tools.delegation_output_schema import append_output_contract
-    # Resolve every task's role first: one unknown role refuses the whole call before any child exists.
-    try:
-        profiles = [profile_for(t.get("role")) for t in task_list]
-        profiles = [None if route.error else confirmed_model_profile(task, profile, parent_agent, route.creds)
-                    for task, profile, route in zip(task_list, profiles, routes)]
-    except ValueError as exc:
-        return [], str(exc)
     children = []
     for i, t in enumerate(task_list):
-        profile = profiles[i]
         route = routes[i]
         if route.error:
             continue  # refused by its backend: no child; its result entry is the refusal
@@ -555,11 +523,10 @@ def _build_children(
             child = _build_child_preserving_parent_tools(
                 task_index=i, goal=t["goal"], context=_child_context, max_iterations=max_iterations,
                 task_count=len(task_list), parent_agent=parent_agent,
-                role=_normalize_role(None if profile else (t.get("role") or top_role)),
-                # The role's toolsets, model and effort are applied inside _build_child_agent, from `profile`.
-                profile=profile, **_route_overrides(route),
-                # A spawn always inherits the parent's toolsets; a continued child keeps its own.
-                **{"toolsets": None, "model": route.creds["model"], **(rebuild[i] if rebuild else {})},
+                role=_normalize_role(None if route.child_profile else (t.get("role") or top_role)),
+                **_route_overrides(route),
+                # A spawn takes the route's toolsets (intersected with the parent's); a continued child keeps its own.
+                **{"toolsets": list(route.toolsets) or None, "model": route.creds["model"], **(rebuild[i] if rebuild else {})},
             )
         except ValueError as exc:
             # An owner refusal can land mid-batch: the siblings built so far hold reservations.
@@ -862,24 +829,6 @@ def _build_dynamic_schema_overrides() -> dict:
         tasks["items"] = {**tasks["items"], "properties": {
             k: v for k, v in tasks["items"]["properties"].items() if k != "group"
         }}
-    catalog = role_catalog()
-    if catalog:  # a plugin declared roles (tools.delegate_roles): tell the model which, and what each is for
-        tasks = overrides_params["properties"]["tasks"]
-        roles_text = "; ".join(f"{name}: {text}" if text else name for name, text in sorted(catalog.items()))
-        tasks["items"] = {**tasks["items"], "properties": {**tasks["items"]["properties"], "role": _p(
-            "string",
-            f"The declared role this task runs as; it fixes tools and limits, and supplies the default model. Roles: {roles_text}.",
-            enum=sorted(catalog),
-        )}}
-        tasks["items"]["properties"].update({
-            "model": _p("string", "Optional model ID overriding this role's default for this launch. "
-                        "A different route requires explicit user confirmation and model_rationale. "
-                        "Use provider separately; do not prefix this ID with a provider."),
-            "provider": _p("string", "Optional provider for this launch; inherits the role/delegation route otherwise. "
-                           "A changed provider also requires explicit user confirmation."),
-            "model_rationale": _p("string", "Why this task needs a model/provider different from its role default; "
-                                  "shown with both routes and the task before this launch is approved."),
-        })
 
     # The active delegation provider's per-task parameters and guidance (delegation.backend; none for the
     # built-in default). Built from config with the rest of the definition, never per turn.

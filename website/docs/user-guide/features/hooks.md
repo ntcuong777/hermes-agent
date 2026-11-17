@@ -1277,6 +1277,7 @@ def my_callback(parent_session_id: str | None,
                 child_subagent_id: str,
                 child_role: str,
                 child_goal: str,
+                child_profile: str | None = None,
                 **kwargs):
 ```
 
@@ -1289,6 +1290,7 @@ def my_callback(parent_session_id: str | None,
 | `child_subagent_id` | `str` | Stable subagent ID used by delegation observability and controls. |
 | `child_role` | `str` | Effective child role after delegation policy is applied, for example `"leaf"` or `"orchestrator"`. |
 | `child_goal` | `str` | Delegated goal/prompt that the child agent will execute. |
+| `child_profile` | `str \| None` | The `child_profile` a delegation provider's route named for this child (`None` when it named none); see [Delegation provider plugins](../../developer-guide/delegation-provider-plugin.md). |
 
 **Fires:** In `tools/delegate_tool.py`, inside `_build_child_agent()`, after the child `AIAgent` has been constructed and annotated with subagent identity metadata, and before `_run_single_child()` runs the child.
 
