@@ -2479,7 +2479,6 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
         InlineToolContext, apply_transform_tool_result, emit_terminal_post_tool_call,
         resolve_invoke_tool_executor, tool_hook_ids
     )
-    from agent.tool_executor import sandbox_tool_names
     if not isinstance(function_args, dict):
         function_args = {}
     hook_ids = tool_hook_ids(agent, effective_task_id, tool_call_id)
@@ -2532,7 +2531,7 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
                 tool_call_id=tool_call_id, session_id=agent.session_id or "", conversation_id=hook_ids["conversation_id"],
                 turn_id=getattr(agent, "_current_turn_id", "") or "",
                 api_request_id=getattr(agent, "_current_api_request_id", "") or "",
-                enabled_tools=sandbox_tool_names(agent),
+                enabled_tools=list(agent.valid_tool_names) if agent.valid_tool_names else None,
                 skip_pre_tool_call_hook=True, skip_tool_request_middleware=True,
                 enabled_toolsets=getattr(agent, "enabled_toolsets", None),
                 disabled_toolsets=getattr(agent, "disabled_toolsets", None),
