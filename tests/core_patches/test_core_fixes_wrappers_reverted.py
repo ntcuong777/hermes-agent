@@ -12,7 +12,10 @@ from __future__ import annotations
 import hashlib
 import importlib
 import inspect
+import subprocess
 from pathlib import Path
+
+import pytest
 
 # agent/tool_executor.py is not byte-identical to upstream: spec 04 (hooks) keeps one fork line in
 # _budget_for_agent. The test checks that restoring upstream's line makes the file upstream's blob.
@@ -69,3 +72,26 @@ def test_tool_executor_is_upstream_except_the_spec_04_hook():
     restored = text.replace(TOOL_EXECUTOR_HOOK_LINE, TOOL_EXECUTOR_UPSTREAM_LINE).encode("utf-8")
     blob = hashlib.sha1(b"blob %d\x00" % len(restored) + restored).hexdigest()
     assert blob == TOOL_EXECUTOR_UPSTREAM_BLOB
+
+
+# Upstream blob ids (git rev-parse e96221fa73d:<path>) of the files the core-fixes wrappers patch
+# back: the reverted fork edits must leave these byte-identical to upstream.
+REVERTED_FILES_UPSTREAM_BLOBS = (
+    ("tools/checkpoint_manager.py", "99d5296a0e56c4ca1b292cb2e767788c0348c29a"),
+    ("hermes_cli/terminal_notify.py", "db57eae7c8ad847616e814f0470cde984d09914a"),
+    ("agent/turn_tool_round.py", "7440ffc2ec73b75a7e4507e1b49f91deefbdebf1"),
+    ("agent/turn_tool_validation.py", "55fc7fd0e0642efebb4c0bd0421f06af721f2af2"),
+    ("cron/scheduler_script.py", "82ca6447ae718fc96ec47b4e867906f070577a21"),
+    ("agent/display.py", "0a129b056c2da0bc42a189dad1ce4e5e2505a3ce"),
+    ("agent/tool_dispatch_helpers.py", "2812259cbad4c30056d89240243661339e84b077"),
+    ("agent/agent_runtime_helpers.py", "634c46fa21b1990c1df4e037638f0d6619b54fb1"),
+)
+
+
+@pytest.mark.parametrize("path, upstream_blob", REVERTED_FILES_UPSTREAM_BLOBS)
+def test_the_reverted_files_are_byte_identical_to_upstream(path, upstream_blob):
+    repo_root = Path(__file__).resolve().parents[2]
+    working_blob = subprocess.run(
+        ["git", "hash-object", path], cwd=repo_root, capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    assert working_blob == upstream_blob
