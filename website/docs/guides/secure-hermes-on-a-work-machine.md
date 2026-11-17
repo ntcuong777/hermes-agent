@@ -16,7 +16,7 @@ Fresh install, no configuration — these protections are active:
 
 **Dangerous commands require approval.** Before executing any command, Hermes checks it against a curated list of dangerous patterns — recursive deletes, writes to `/etc/`, disk operations, pipe-to-shell, and more. The default `approvals.mode: smart` uses an auxiliary LLM to assess risk: low-risk commands are auto-approved for that command only, genuinely dangerous commands are auto-denied, and uncertain cases escalate to a manual prompt.
 
-**Approval prompts fail closed.** If you don't respond to an approval prompt within the timeout (default 300 seconds), the command is **denied**. Walking away from your desk never silently approves anything.
+**Approval prompts fail closed.** If you don't respond to an approval prompt within the timeout (default 1800 seconds), the command is **denied**. Walking away from your desk never silently approves anything.
 
 **A hardline blocklist is the always-on floor.** Some commands — `rm -rf /`, fork bombs, zeroing a physical disk — are refused **regardless** of approval mode, `--yolo`, or an explicit "allow always". The blocklist trips before the approval layer even sees the command, and there is no override flag.
 

@@ -1081,7 +1081,7 @@ class CLIModalMixin:
         from cli import CLI_CONFIG, _DIM, _RST, _cprint
 
         with self._approval_lock:
-            timeout = int(CLI_CONFIG.get("approvals", {}).get("timeout", 300))
+            timeout = int(CLI_CONFIG.get("approvals", {}).get("timeout", 1800))
             response_queue = queue.Queue()
             self._approval_state = {
                 "command": command,
