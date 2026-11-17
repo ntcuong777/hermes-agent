@@ -203,7 +203,6 @@ _SNAPSHOTS: tuple[tuple[str, Optional[str], str, dict], ...] = (
     ("anthropic", _ANTHROPIC_URL, "anthropic-pricing-2026-09", {
         "claude-opus-5": _OPUS,
         "claude-opus-5-5": _OPUS_5_5,
-        "claude-sonnet-5-5": ("2.00", "10.00", "0.10", "2.50"),
     }),
     # Fable 5.2 and Mythos 5.2 share rates; cache hits are 0.025x input.
     ("anthropic", _ANTHROPIC_URL, "anthropic-pricing-2026-11", {
@@ -259,11 +258,6 @@ _SNAPSHOTS: tuple[tuple[str, Optional[str], str, dict], ...] = (
         ("anthropic.claude-sonnet-4-6", "anthropic.claude-sonnet-4-5"): _SONNET,
         "anthropic.claude-haiku-4-5": ("0.80", "4.00", "0.08", "1.00"),
         "amazon.nova-pro": ("0.80", "3.20"), "amazon.nova-lite": ("0.06", "0.24"), "amazon.nova-micro": ("0.035", "0.14"),
-    }),
-    # Z.AI publishes per-1M-token rates on its pricing page (cached input is the cache-read rate).
-    ("zai", "https://docs.z.ai/guides/overview/pricing", "zai-pricing-2026-10", {
-        "glm-5.3-flash": ("0.15", "0.50", "0.03"),
-        "glm-5.3": ("1.40", "4.40", "0.26"),
     }),
     ("minimax", None, "minimax-pricing-2026-04", {"minimax-m2.7": ("0.30", "1.20")}),
     ("minimax-cn", None, "minimax-pricing-2026-04", {"minimax-m2.7": ("0.30", "1.20")}),

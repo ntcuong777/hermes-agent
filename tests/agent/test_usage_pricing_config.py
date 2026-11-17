@@ -78,9 +78,9 @@ def test_a_bare_model_key_matches_any_provider():
 
 
 def test_without_a_pricing_block_the_bundled_table_still_answers():
-    _write_config("model:\n  default: claude-sonnet-5-5\n")
+    _write_config("model:\n  default: claude-sonnet-4-6\n")
 
-    entry = get_pricing_entry("claude-sonnet-5-5", provider="anthropic")
+    entry = get_pricing_entry("claude-sonnet-4-6", provider="anthropic")
 
     assert entry is not None and entry.source == "official_docs_snapshot"
 
