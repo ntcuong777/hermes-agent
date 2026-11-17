@@ -31,6 +31,7 @@ from hermes_cli.observability.shared_metrics_busy import note_running_chat_owner
 from gateway.shutdown_watchdog import (
     DEFAULT_HEARTBEAT_INTERVAL_S, loop_heartbeat_forever,
 )
+from gateway.loop_lag_monitor import loop_lag_monitor
 from typing import Any, Dict, Optional, Tuple
 
 # Log-record parity with the origin module.
@@ -1622,6 +1623,7 @@ class GatewayStartupMixin:
         """Spawn the long-lived supervised background watchers."""
         for method in self._PRE_RECONNECT_WATCHERS:
             self._spawn_supervised(getattr(self, method), method[1:])
+        self._spawn_supervised(loop_lag_monitor, "loop_lag_monitor")  # stack dump on a blocked loop; gateway.loop_lag_warn_s
         if self._failed_platforms:
             logger.info(
                 "Starting reconnection watcher for %d failed platform(s): %s",
