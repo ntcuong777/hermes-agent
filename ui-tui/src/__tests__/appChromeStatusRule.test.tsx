@@ -481,49 +481,67 @@ describe('StatusRule perf read-outs (cache hit / latency / tps)', () => {
   })
 })
 
-describe('StatusRule cost and quota read-outs', () => {
+describe('StatusRule plugin segments (usage.status_fields)', () => {
   const spendUsage = {
     ...baseProps.usage,
-    cost_status: 'estimated' as const,
-    cost_usd: 0.4231,
-    quota: [
-      { label: 'Session', used_percent: 12 },
-      { label: 'Weekly', used_percent: 60 }
+    status_fields: [
+      { id: 'cost', text: '~$0.42' },
+      { id: 'quota', min_cols: 76, text: '◔ 5h 12% wk 60%', tone: 'warn' as const }
     ]
   }
 
   const listed = new Set(['model', 'context_pct', 'cost', 'quota'])
 
-  it('renders cost and the active account\'s quota when the fields list them', () => {
+  it('renders each segment the plugin sent when the fields list its id', () => {
     const rendered = textContent(StatusRule({ ...baseProps, cols: 120, statusBarFields: listed, usage: spendUsage }))
 
     expect(rendered).toContain('~$0.42')
-    expect(rendered).toContain('5h 12% wk 60%')
+    expect(rendered).toContain('◔ 5h 12% wk 60%')
   })
 
-  it('is opt-in: the default bar and a list without them show neither', () => {
+  it('is opt-in per id: the default bar and an unlisted id show nothing', () => {
     expect(textContent(StatusRule({ ...baseProps, cols: 120, usage: spendUsage }))).not.toContain('$0.42')
 
     const rendered = textContent(
-      StatusRule({ ...baseProps, cols: 120, statusBarFields: new Set(['model']), usage: spendUsage })
+      StatusRule({ ...baseProps, cols: 120, statusBarFields: new Set(['model', 'cost']), usage: spendUsage })
     )
 
-    expect(rendered).not.toContain('$0.42')
+    expect(rendered).toContain('~$0.42')
     expect(rendered).not.toContain('5h 12%')
   })
 
-  it('self-hides when the server sends no data', () => {
+  it('self-hides when the server sends no segments', () => {
     const rendered = textContent(StatusRule({ ...baseProps, cols: 120, statusBarFields: listed }))
 
     expect(rendered).not.toContain('$')
     expect(rendered).not.toContain('5h')
   })
 
-  it('keeps cost on a narrow terminal and drops quota first', () => {
+  it('honours min_cols: a narrow terminal keeps the 60-column default and drops the 76-column one', () => {
     const rendered = textContent(StatusRule({ ...baseProps, cols: 64, statusBarFields: listed, usage: spendUsage }))
 
     expect(rendered).toContain('~$0.42')
     expect(rendered).not.toContain('5h 12%')
+  })
+
+  it('knows no segment by name: any listed id draws, in the order sent', () => {
+    const rendered = textContent(
+      StatusRule({
+        ...baseProps,
+        cols: 120,
+        statusBarFields: new Set(['model', 'zeta', 'alpha']),
+        usage: {
+          ...baseProps.usage,
+          status_fields: [
+            { id: 'zeta', text: 'Z-seg' },
+            { id: 'alpha', text: 'A-seg' }
+          ]
+        }
+      })
+    )
+
+    expect(rendered).toContain('Z-seg')
+    expect(rendered.indexOf('Z-seg')).toBeLessThan(rendered.indexOf('A-seg'))
   })
 })
 

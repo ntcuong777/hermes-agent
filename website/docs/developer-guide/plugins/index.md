@@ -1609,6 +1609,7 @@ Each hook is documented in full on the **[Event Hooks reference](../../user-guid
 | [`post_tool_call`](../../user-guide/features/hooks.md#post_tool_call) | After any tool returns | `tool_name: str, args: dict, result: str, task_id: str, duration_ms: int` | ignored |
 | [`pre_llm_call`](../../user-guide/features/hooks.md#pre_llm_call) | Once per turn, before the tool-calling loop | `session_id: str, user_message: str, conversation_history: list, is_first_turn: bool, model: str, platform: str` | [context injection](#pre_llm_call-context-injection) |
 | [`post_llm_call`](../../user-guide/features/hooks.md#post_llm_call) | Once per turn, after the tool-calling loop (successful turns only) | `session_id: str, user_message: str, assistant_response: str, conversation_history: list, model: str, platform: str, side_question_token: str \| None, review_signals: dict` | ignored |
+| `transform_status_bar_fields` | A `session.usage` frame is built for a TUI whose `display.status_bar.fields` lists names (embedded ticker and shared gateway) | `fields: list[dict], session_id: str, agent, wanted: tuple[str, ...]` | list of `{id, text, tone?, min_cols?}` rows replaces `fields` (chained across plugins); only ids in `wanted` are kept |
 | `pre_api_request` | Before each raw provider API request (several per turn when the model calls tools) | `session_id: str, model: str, provider: str, base_url: str, api_mode: str, api_call_count: int, message_count: int, tool_count: int, approx_input_tokens: int, max_tokens: int, request: dict` | ignored |
 | `post_api_request` | After each raw provider API request returns | `pre_api_request` fields plus `api_duration: float, finish_reason: str, response_model: str \| None, usage: dict, response: dict, assistant_content_chars: int, assistant_tool_call_count: int` | ignored |
 | `api_request_error` | A provider API call raised | correlation fields plus `status_code: int \| None, retry_count: int \| None, max_retries: int \| None, retryable: bool \| None, reason: str \| None, error: dict, request: dict` | ignored |
@@ -1655,6 +1656,7 @@ Every name in `hermes_cli.plugins.VALID_HOOKS` has at least one core fire site. 
 | `post_api_request` | `agent/turn_response_intake.py` `_fire_post_api_request_hook` |
 | `api_request_error` | `agent/api_request_hooks.py` `ApiRequestHooksMixin._invoke_api_request_error_hook` |
 | `pre_auxiliary_call` / `post_auxiliary_call` | `agent/auxiliary_hooks.py` `_AuxCallHooks.pre` / `_AuxCallHooks.post` |
+| `transform_status_bar_fields` | `tui_gateway/status_bar_fields.py` `status_bar_fields`, called from `tui_gateway/server.py` `_get_usage` and `gateway/session_usage.py` `usage_stats` |
 | `transform_api_error_classification` | `hermes_cli/plugins.py` `get_plugin_error_classification`, called from `agent/error_classifier.py` `_plugin_verdict` |
 | `on_session_start` | `agent/conversation_loop.py` `_restore_or_build_system_prompt` |
 | `on_session_end` | `agent/turn_finalizer.py` `finalize_turn`; interrupted exits: `hermes_cli/cli_shutdown.py` `_invoke_interrupted_session_end`, `tui_gateway/session_lifecycle.py` `_finalize_session` |

@@ -8,6 +8,8 @@ may keep spending after the fork; the branch must not inherit that.
 from __future__ import annotations
 
 import json
+
+import pytest
 from pathlib import Path
 
 
@@ -101,7 +103,7 @@ def test_a_parent_that_cannot_be_read_still_gets_a_branch(tmp_path, monkeypatch)
         assert _config(db, "child") == {"_branched_from": "parent"}
 
 
-def test_the_bar_shows_the_branch_at_the_parents_cost_then_counts_on(
+def test_a_resumed_branch_carries_the_parents_cost_at_the_fork_then_counts_on(
     tmp_path, monkeypatch
 ):
     """Fork, let the parent spend more, then resume the branch: it carries the snapshot."""
@@ -122,13 +124,4 @@ def test_the_bar_shows_the_branch_at_the_parents_cost_then_counts_on(
             "child", estimated_cost_usd=0.25, cost_status="estimated", api_call_count=1
         )
 
-        class Agent:
-            _session_db = db
-            session_id = "child"
-            session_estimated_cost_usd = 0.0
-            session_cost_status = "unknown"
-
-        assert usage_status.cost_fields(Agent()) == {
-            "cost_usd": 2.25,
-            "cost_status": "estimated",
-        }
+        assert usage_status.lineage_cost(db, "child")[0] == pytest.approx(2.25)
