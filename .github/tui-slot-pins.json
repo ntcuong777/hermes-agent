@@ -19,6 +19,14 @@
       "target_file": "ui-tui/src/hooks/useCompletion.ts",
       "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
     },
+    "inputHandlers": {
+      "plugin": "tui-input",
+      "reason": "Ctrl+C order with the compress hold, double-Esc doc, Ctrl+G raw on macOS, sessions Esc guard and completion apply at the caret end",
+      "sha": "d84a7128317f50a15446dc5080993b7e4680439e6641ba3e364e517807d01497",
+      "symbols": [],
+      "target_file": "ui-tui/src/app/useInputHandlers.ts",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
+    },
     "sessionSwitcher": {
       "plugin": "tui-switcher",
       "reason": "workspace filter, + new row with prompt and model draft, reasoning in the model picker, Esc modes",

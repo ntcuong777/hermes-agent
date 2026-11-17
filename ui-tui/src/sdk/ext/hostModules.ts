@@ -46,6 +46,19 @@ import * as platform from '../../lib/platform.js' // fork: tui slot host modules
 import * as termux from '../../lib/termux.js' // fork: tui slot host modules (stage 5)
 import * as inputSelectionStore from '../../app/inputSelectionStore.js' // fork: tui slot host modules (stage 5)
 import * as clipboard from '../../lib/clipboard.js' // fork: tui slot host modules (stage 5)
+import * as configTiming from '../../config/timing.js' // fork: tui slot host modules (stage 5)
+import * as precisionWheel from '../../lib/precisionWheel.js' // fork: tui slot host modules (stage 5)
+import * as wheelAccel from '../../lib/wheelAccel.js' // fork: tui slot host modules (stage 5)
+import * as sdkHost from '../../sdk/host.js' // fork: tui slot host modules (stage 5)
+import * as agentRoster from '../../app/agentRoster.js' // fork: tui slot host modules (stage 5)
+import * as backtrackStore from '../../app/backtrackStore.js' // fork: tui slot host modules (stage 5)
+import * as keybinds from '../../app/keybinds.js' // fork: tui slot host modules (stage 5)
+import * as pasteStore from '../../app/pasteStore.js' // fork: tui slot host modules (stage 5)
+import * as serverRequestStore from '../../app/serverRequestStore.js' // fork: tui slot host modules (stage 5)
+import * as stashCounts from '../../app/stashCounts.js' // fork: tui slot host modules (stage 5)
+import * as turnController from '../../app/turnController.js' // fork: tui slot host modules (stage 5)
+import * as gatewayCanonical from '@hermes/shared/gateway-canonical' // fork: tui slot host modules (stage 5)
+import * as gatewayTypes from '@hermes/shared/gateway-types' // fork: tui slot host modules (stage 5)
 
 export const HOST_MODULES: Readonly<Record<string, unknown>> = Object.freeze({
   ink,
@@ -86,5 +99,18 @@ export const HOST_MODULES: Readonly<Record<string, unknown>> = Object.freeze({
   'lib/platform': platform,
   'lib/termux': termux,
   'app/inputSelectionStore': inputSelectionStore,
-  'lib/clipboard': clipboard
+  'lib/clipboard': clipboard,
+  'config/timing': configTiming,
+  'lib/precisionWheel': precisionWheel,
+  'lib/wheelAccel': wheelAccel,
+  'sdk/host': sdkHost,
+  'app/agentRoster': agentRoster,
+  'app/backtrackStore': backtrackStore,
+  'app/keybinds': keybinds,
+  'app/pasteStore': pasteStore,
+  'app/serverRequestStore': serverRequestStore,
+  'app/stashCounts': stashCounts,
+  'app/turnController': turnController,
+  'shared/gateway-canonical': gatewayCanonical,
+  'shared/gateway-types': gatewayTypes
 })

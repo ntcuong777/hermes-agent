@@ -74,7 +74,10 @@ import { useApprovalAnswers } from './useApprovalAnswers.js'
 import { useBatteryPoll } from './useBatteryPoll.js'
 import { useComposerState } from './useComposerState.js'
 import { useConfigSync } from './useConfigSync.js'
-import { shouldDetachEditedHistoryInput, useInputHandlers } from './useInputHandlers.js'
+import { shouldDetachEditedHistoryInput } from './useInputHandlers.js'
+import { useInputHandlers as StockUseInputHandlers } from './useInputHandlers.js' // fork: tui slot
+import { slotHook } from '../sdk/ext/slotReact.js' // fork: tui slot
+const useInputHandlers = slotHook('inputHandlers', StockUseInputHandlers) // fork: tui slot
 import { useLongRunToolCharms } from './useLongRunToolCharms.js'
 import {
   backendGaveUp,

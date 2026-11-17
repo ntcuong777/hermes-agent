@@ -72,6 +72,14 @@
       "props": 1,
       "summary": "The composer TextInput (fork: Alt-letters typing, kitty paste hotkey, caretRef, guards)",
       "symbols": []
+    },
+    "inputHandlers": {
+      "file": "ui-tui/src/app/useInputHandlers.ts",
+      "host": ["ink", "react", "pkg/@nanostores/react", "config/env", "config/timing", "i18n/runtime", "lib/platform", "lib/precisionWheel", "lib/wheelAccel", "sdk/host", "app/agentRoster", "app/backtrackStore", "app/inputSelectionStore", "app/interfaces", "app/keybinds", "app/overlayStore", "app/pasteStore", "app/serverRequestStore", "app/stashCounts", "app/turnController", "app/turnStore", "app/uiStore", "shared/gateway-canonical", "shared/gateway-types", "shared/slash-input"],
+      "kind": "hook",
+      "props": 1,
+      "summary": "The composer key handlers (fork: Ctrl+C order, double-Esc doc, Ctrl+G raw, completion apply at caret)",
+      "symbols": []
     }
   }
 }

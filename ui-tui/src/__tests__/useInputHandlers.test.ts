@@ -78,9 +78,9 @@ describe('shouldDetachEditedHistoryInput', () => {
   })
 })
 
-describe('resolveCtrlCComposerAction — a running turn wins over the draft', () => {
-  it('interrupts the turn mid-stream and leaves the draft untouched', () => {
-    expect(resolveCtrlCComposerAction({ busy: true, hasDraft: true, hasSession: true })).toBe('interrupt')
+describe('resolveCtrlCComposerAction — draft wins over interrupt', () => {
+  it('clears a non-empty composer even while the agent is streaming', () => {
+    expect(resolveCtrlCComposerAction({ busy: true, hasDraft: true, hasSession: true })).toBe('clear')
   })
 
   it('interrupts a running turn when the composer is empty', () => {
@@ -97,24 +97,6 @@ describe('resolveCtrlCComposerAction — a running turn wins over the draft', ()
 
   it('does not interrupt a busy session that has no sid yet', () => {
     expect(resolveCtrlCComposerAction({ busy: true, hasDraft: false, hasSession: false })).toBe('exit')
-  })
-
-  it('holds the reflex chord while a manual compress is in flight, instead of exiting', () => {
-    expect(
-      resolveCtrlCComposerAction({ busy: false, hasDraft: false, hasSession: true, compressPending: true })
-    ).toBe('hold')
-  })
-
-  it('still clears a draft typed during a pending manual compress', () => {
-    expect(
-      resolveCtrlCComposerAction({ busy: false, hasDraft: true, hasSession: true, compressPending: true })
-    ).toBe('clear')
-  })
-
-  it('still interrupts a running turn over a pending manual compress', () => {
-    expect(resolveCtrlCComposerAction({ busy: true, hasDraft: false, hasSession: true, compressPending: true })).toBe(
-      'interrupt'
-    )
   })
 })
 

@@ -1,12 +1,7 @@
 import { forceRedraw, type Key, useInput } from '@hermes/ink'
 import { sharedControlParams } from '@hermes/shared/gateway-canonical'
-import type {
-  ConfigSetResponse,
-  SharedControlRespondResponse,
-  SlashExecResponse,
-  VoiceRecordResponse
-} from '@hermes/shared/gateway-types'
-import { applyCompletion, completionCursor, completionEnd } from '@hermes/shared/slash-input'
+import type { ConfigSetResponse, SharedControlRespondResponse, VoiceRecordResponse } from '@hermes/shared/gateway-types'
+import { applyCompletion } from '@hermes/shared/slash-input'
 import { useStore } from '@nanostores/react'
 import { useEffect, useRef } from 'react'
 
@@ -19,13 +14,7 @@ import { computeWheelStep, initWheelAccelForHost } from '../lib/wheelAccel.js'
 import { closeWidget, dispatchWidgetInput } from '../sdk/host.js'
 
 import { $agentDockCollapsed } from './agentRoster.js'
-import {
-  $backtrackPrime,
-  $pendingRewind,
-  cancelBacktrackPrime,
-  cancelPendingRewind,
-  primeBacktrack
-} from './backtrackStore.js'
+import { $backtrackPrime, $pendingRewind, cancelBacktrackPrime, cancelPendingRewind, primeBacktrack } from './backtrackStore.js'
 import { getInputSelection } from './inputSelectionStore.js'
 import {
   type ComposerActions,
@@ -38,11 +27,9 @@ import {
   type OverlayState,
   type UiState
 } from './interfaces.js'
-import { keybindRunner } from './keybinds.js'
 import {
   $isBlocked,
   $overlayState,
-  $sessionsOverlayInputMode,
   capturePromptResponseGuard,
   hasSensitivePrompt,
   patchOverlayState,
@@ -50,7 +37,6 @@ import {
 } from './overlayStore.js'
 import { togglePasteSections } from './pasteStore.js'
 import { respondToServerRequest } from './serverRequestStore.js'
-import { refreshStashCounts } from './stashCounts.js'
 import { turnController } from './turnController.js'
 import { patchTurnState } from './turnStore.js'
 import { $uiState, getUiState } from './uiStore.js'
@@ -90,34 +76,24 @@ export function handleIdleHotkeyExit(
   return actions.die()
 }
 
-export type CtrlCComposerAction = 'clear' | 'hold' | 'interrupt' | 'exit'
+export type CtrlCComposerAction = 'clear' | 'interrupt' | 'exit'
 
 /**
- * Ctrl+C (and terminals that rewrite Cmd+C to it) is the stop-the-machine
- * chord: a running turn wins over whatever is typed, and the draft survives
- * the interrupt. Upstream (#0593293962) put a non-empty composer first —
- * mid-stream the chord cleared the draft instead of interrupting, which read
- * as an accidental wipe of both the draft and the run. Dumping a draft
- * mid-stream keeps a chord: double-Esc (resolveDoubleEscAction) still
- * resolves draft-first. With a manual /compress in flight there is nothing
- * to interrupt and `hold` keeps the reflex chord from exiting the app.
+ * Ctrl+C (and terminals that rewrite Cmd+C to it) is clear / interrupt / exit
+ * in that order. A non-empty composer always wins — mid-stream, the chord
+ * used to interrupt the turn even when the user was trying to dump a draft.
  */
 export function resolveCtrlCComposerAction(opts: {
   busy: boolean
   hasDraft: boolean
   hasSession: boolean
-  compressPending?: boolean
 }): CtrlCComposerAction {
-  if (opts.busy && opts.hasSession) {
-    return 'interrupt'
-  }
-
   if (opts.hasDraft) {
     return 'clear'
   }
 
-  if (opts.compressPending) {
-    return 'hold'
+  if (opts.busy && opts.hasSession) {
+    return 'interrupt'
   }
 
   return 'exit'
@@ -127,11 +103,9 @@ export type DoubleEscAction = 'clear' | 'interrupt' | 'none'
 
 /**
  * Double-Esc (#62478): while a turn runs with no draft in the composer, the
- * second Esc interrupts it — the same path /stop uses. A single Esc
+ * second Esc interrupts it — the same path Ctrl+C and /stop use. A single Esc
  * never cancels work, and the idle composer keeps the existing discard-only
- * behaviour. Draft-first is this chord's contract (also mid-stream, where
- * Ctrl+C interrupts first): it is how a draft gets dumped without touching
- * the turn.
+ * behaviour, so a draft always clears instead of interrupting.
  */
 export function resolveDoubleEscAction(opts: {
   busy: boolean
@@ -471,20 +445,6 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
   useEffect(() => () => clearTimeout(scrollIdleTimer.current ?? undefined), [])
 
-  // The status bar's stash counts follow the live session: read them when it changes (start, resume,
-  // switch). subscribe() fires once with the current value, so a session already open is read too.
-  useEffect(() => {
-    let last: null | string | undefined
-
-    return $uiState.subscribe(ui => {
-      if (ui.sid !== last) {
-        last = ui.sid
-
-        void refreshStashCounts((method, params) => gateway.rpc<SlashExecResponse>(method, params), ui.sid)
-      }
-    })
-  }, [gateway])
-
   const scrollTranscript = (delta: number) => {
     if (getUiState().busy) {
       turnController.boostStreamingForScroll()
@@ -533,10 +493,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       // legacy server→client request resolves its response frame locally.
       if (overlay.approval.sharedControl) {
         return gateway
-          .rpc<SharedControlRespondResponse>('approval.respond', {
-            choice: 'deny',
-            ...sharedControlParams(overlay.approval)
-          })
+          .rpc<SharedControlRespondResponse>('approval.respond', { choice: 'deny', ...sharedControlParams(overlay.approval) })
           .then(r => r && fresh() && settle())
       }
 
@@ -707,11 +664,6 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       })
   }
 
-  const runChord = keybindRunner(
-    ctx,
-    () => void refreshStashCounts((method, params) => gateway.rpc<SlashExecResponse>(method, params), getUiState().sid)
-  )
-
   // Double-Esc discards the draft, matching Claude Code / Gemini CLI. It
   // sits above the isBlocked early-return so a prompt overlay cannot swallow
   // it. Ctrl+C now clears a non-empty composer even mid-stream; Esc Esc is
@@ -818,9 +770,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
       if (isCtrl(key, ch, 'c') || (key.escape && hasSensitivePrompt(overlay))) {
         cancelOverlayFromCtrlC()
-      } else if (key.escape && overlay.sessions && !$sessionsOverlayInputMode.get()) {
-        // The switcher owns Esc while its filter / workspace input is open
-        // (clear, then back) — closing the overlay here would skip both.
+      } else if (key.escape && overlay.sessions) {
         patchOverlayState({ sessions: false })
       }
 
@@ -988,18 +938,13 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       const ctrlC = resolveCtrlCComposerAction({
         busy: live.busy,
         hasDraft: Boolean(cState.input || cState.inputBuf.length),
-        hasSession: Boolean(live.sid),
-        compressPending: live.manualCompacting
+        hasSession: Boolean(live.sid)
       })
 
       if (ctrlC === 'clear') {
         cancelPendingRewind(actions.sys)
 
         return cActions.clearIn()
-      }
-
-      if (ctrlC === 'hold') {
-        return actions.sys(t('canonical.controls.compressPending'))
       }
 
       if (ctrlC === 'interrupt' && live.sid) {
@@ -1048,18 +993,10 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       return voiceRecordToggle()
     }
 
-    // A `display.tui_keybinds` chord, or a plugin's default one, runs its slash command (keybinds.ts).
-    // After the built-in chords above, so those win; chords the TUI handles below or in the composer
-    // (Alt+G, Ctrl+G, Ctrl+K, Alt+B/F/D, ...) are reserved there and never reach a command.
-    if (runChord(key, ch)) {
-      return
-    }
-
     // Cmd/Ctrl+G, plus Alt+G fallback for VSCode/Cursor (they bind the
     // primary keystroke to "Find Next" before the TUI sees it; Alt+G
-    // arrives as meta+g across platforms). On macOS the action modifier is Cmd,
-    // which no terminal sends, so raw Ctrl+G is accepted there as well.
-    if (ch.toLowerCase() === 'g' && (isAction(key, ch, 'g') || isMacActionFallback(key, ch, 'g') || key.meta)) {
+    // arrives as meta+g across platforms).
+    if (ch.toLowerCase() === 'g' && (isAction(key, ch, 'g') || key.meta)) {
       return void cActions.openEditor().catch((err: unknown) => {
         actions.sys(
           err instanceof Error
@@ -1096,11 +1033,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       const row = cState.completions[cState.compIdx]
 
       if (row?.text) {
-        // Splice the row in at the word before the caret and keep the rest of the prompt, caret after the row.
-        const end = completionEnd(cState.input, cRefs.caretRef.current)
-        const next = applyCompletion(cState.input, row.text, cState.compReplace, end)
-        cRefs.caretRef.current = { cursor: completionCursor(cState.input, row.text, cState.compReplace), value: next }
-        cActions.setInput(next)
+        cActions.setInput(applyCompletion(cState.input, row.text, cState.compReplace))
       }
 
       return
