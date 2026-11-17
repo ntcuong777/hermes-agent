@@ -11,7 +11,7 @@ function eventFor(sequence: string) {
 }
 
 // Alt+S (ESC s) arrives as input "s" with meta set. The composer must not type
-// it: meta letters are shortcuts (Alt+S stash, Alt+G ...), not text.
+// it: meta letters are shortcuts (a bound Alt+S, Alt+G ...), not text.
 describe('Alt-letter is a shortcut, not typed text', () => {
   it('Alt+S is not typed text', () => {
     expect(isTypedTextEvent(eventFor('\x1bs'))).toBe(false)
