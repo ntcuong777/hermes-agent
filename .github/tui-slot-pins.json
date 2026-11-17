@@ -1,5 +1,13 @@
 {
   "slots": {
+    "approvalPrompt": {
+      "plugin": "tui-approval",
+      "reason": "expand/scroll, description title and the structured MCP body on the approval panel (rule 6.9)",
+      "sha": "ab0fd7fa7721cb224ddf85360929f4a7bd62041f86ec3c74e78c40af7a4edc36",
+      "symbols": [],
+      "target_file": "ui-tui/src/components/prompts.tsx",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
+    },
     "completion.request": {
       "plugin": "tui-ports",
       "reason": "mid-prompt @file and inline /skill completion at the caret; replaceTo keeps the text after it",

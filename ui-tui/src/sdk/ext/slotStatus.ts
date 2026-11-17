@@ -54,6 +54,11 @@ export const fileStatusSink = (
   sdk = 1
 ): StatusSink => ({
   announce: key => {
+    // fork: tui slot. Rule 6.9: an approvalPrompt problem state is announced EVERY start (never deduped):
+    // its fallback changes what the person sees before acting, so it must not hide behind the 24 h window.
+    if (key.startsWith('approvalPrompt:')) {
+      return true
+    }
     const path = join(dir, 'notified.json')
     const seen = readJson(path)
     const last = typeof seen[key] === 'number' ? (seen[key] as number) : 0

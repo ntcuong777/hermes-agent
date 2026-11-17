@@ -20,13 +20,14 @@ import { OverlayHint } from './overlayControls.js'
 import { listRowStyle } from './overlayPrimitives.js'
 import { PetPicker } from './petPicker.js'
 import { PluginsHub } from './pluginsHub.js'
-import { ApprovalPrompt, ClarifyPrompt, ConfirmPrompt } from './prompts.js'
+import { ApprovalPrompt as StockApprovalPrompt, ClarifyPrompt, ConfirmPrompt } from './prompts.js'
 import { RewindBrowse } from './rewindBrowse.js'
 import { SkillsHub } from './skillsHub.js'
 import { SubscriptionOverlay } from './subscriptionOverlay.js'
 import { WidgetGrid, type WidgetGridWidget } from './widgetGrid.js'
 
 const ActiveSessionSwitcher = slotComponent('sessionSwitcher', StockSessionSwitcher) // fork: tui slot
+const ApprovalPrompt = slotComponent('approvalPrompt', StockApprovalPrompt) // fork: tui slot
 const COMPLETION_WINDOW = 16
 
 /**

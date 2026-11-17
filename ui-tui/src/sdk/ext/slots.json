@@ -38,6 +38,24 @@
       "props": 1,
       "summary": "The active session switcher overlay",
       "symbols": []
+    },
+    "approvalPrompt": {
+      "file": "ui-tui/src/components/prompts.tsx",
+      "host": [
+        "ink",
+        "react",
+        "i18n/runtime",
+        "i18n/useT",
+        "lib/text",
+        "appTheme",
+        "types",
+        "components/overlayPrimitives",
+        "components/textInput"
+      ],
+      "kind": "component",
+      "props": 1,
+      "summary": "The TUI approval panel (rule 6.9: a fallback must not hide what the person approves)",
+      "symbols": []
     }
   }
 }

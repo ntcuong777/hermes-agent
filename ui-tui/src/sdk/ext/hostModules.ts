@@ -22,6 +22,9 @@ import * as modelPicker from '../../components/modelPicker.js' // fork: tui slot
 import * as overlayControls from '../../components/overlayControls.js' // fork: tui slot host modules (stage 3)
 import * as overlayPrimitives from '../../components/overlayPrimitives.js' // fork: tui slot host modules (stage 3)
 import * as textInputModule from '../../components/textInput.js' // fork: tui slot host modules (stage 3)
+import * as libText from '../../lib/text.js' // fork: tui slot host modules (stage 4)
+import * as appTheme from '../../theme.js' // fork: tui slot host modules (stage 4)
+import * as types from '../../types.js' // fork: tui slot host modules (stage 4)
 
 export const HOST_MODULES: Readonly<Record<string, unknown>> = Object.freeze({
   ink,
@@ -38,5 +41,8 @@ export const HOST_MODULES: Readonly<Record<string, unknown>> = Object.freeze({
   'components/modelPicker': modelPicker,
   'components/overlayControls': overlayControls,
   'components/overlayPrimitives': overlayPrimitives,
-  'components/textInput': textInputModule
+  'components/textInput': textInputModule,
+  'lib/text': libText,
+  appTheme: appTheme,
+  types: types
 })

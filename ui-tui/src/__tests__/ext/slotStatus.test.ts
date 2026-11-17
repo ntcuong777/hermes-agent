@@ -103,6 +103,17 @@ describe('fileStatusSink', () => {
     expect(sink.announce('a:skipped-drift:x')).toBe(true)
   })
 
+  it('never dedupes an approvalPrompt notice (rule 6.9: the fallback changes what the person approves)', () => {
+    const d = dir()
+    let clock = Date.parse('2026-11-17T10:00:00Z')
+    const sink = fileStatusSink(d, () => clock)
+
+    expect(sink.announce('approvalPrompt:skipped-drift:x')).toBe(true)
+    expect(sink.announce('approvalPrompt:skipped-drift:x')).toBe(true)
+    expect(sink.announce('c:skipped-drift:x')).toBe(true)
+    expect(sink.announce('c:skipped-drift:x')).toBe(false)
+  })
+
   it('never throws on an unwritable home', () => {
     const sink = fileStatusSink('/proc/definitely/not/writable/tui-slots')
 
