@@ -141,14 +141,20 @@ class GatewayPluginInjectionMixin:
         loop at startup: its context is the one every plugin-triggered turn starts from."""
         from hermes_cli.plugins import publish_gateway_message_host
 
+        from gateway import busy_report
+
         self._plugin_injection_context = contextvars.copy_context()
         publish_gateway_message_host(self, self._schedule_plugin_message_injection)
+        busy_report.bind_runner(self)  # the busy report and graceful restart seams reach the runner through this
 
     def _clear_plugin_message_injector(self) -> None:
         """Remove this runner's scheduler without clobbering a newer owner."""
         from hermes_cli.plugins import clear_published_gateway_message_host
 
+        from gateway import busy_report
+
         clear_published_gateway_message_host(self)
+        busy_report.unbind_runner(self)
 
     def _schedule_plugin_message_injection(
         self, *, content: str, plugin_id: str, session_key: Optional[str] = None,

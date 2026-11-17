@@ -773,6 +773,14 @@ class PluginContext(PluginCapabilityCtxMixin, PluginIdleTaskCtxMixin):
                 _facade().logger.warning("Plugin '%s' locale file %s skipped: %s", self.manifest.name, file, exc)
         return handles
 
+    def register_busy_probe(self, name: str, fn: Callable[[], Any]) -> PluginRegistration:
+        """Add a section to the gateway busy report (``gateway/busy_report.py``): ``fn()`` runs on the gateway
+        loop thread, must not block, and returns an int, a list of ``{"id", "label"?, "age_s"?, "blocking"?}``
+        dicts or ``{"items": [...]}``. What it lists keeps a "restart when idle" waiting."""
+        from gateway import busy_report
+        key = f"{self.plugin_id}:{name}"
+        return self._track("busy_probe", key, busy_report.register_probe(key, fn))
+
     def register_hook(self, hook_name: str, callback: Callable, *, hold_stream: bool = False) -> PluginRegistration:
         """Register a lifecycle hook callback (``PluginDispatchMixin.track_hook``)."""
         return self._manager.track_hook(self, hook_name, callback, hold_stream=hold_stream)
