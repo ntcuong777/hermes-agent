@@ -213,6 +213,98 @@ def test_an_unconfirmed_forward_is_never_reported_as_not_sent(monkeypatch, tmp_p
         db.close()
 
 
+def _gateway_turn_running(monkeypatch, tmp_path):
+    """A legacy session whose stored chat has a gateway turn running (the ledger refuses a legacy turn)."""
+    db = SessionDB(db_path=tmp_path / "state.db")
+    sid, key, turns, _emitted = _legacy(monkeypatch, db)
+    db.create_session(key, "test")
+    epoch = begin_runtime_epoch(db, instance_id="gateway")
+    admit_session_input(db, epoch=epoch, principal_id="bot", session_id=key, request_id="dm-1",
+                        payload={"text": "a DM"})
+    claim_session_input(db, epoch=epoch, session_id=key)
+    _owner(monkeypatch, db, key, epoch)
+    return db, sid, turns
+
+
+def _submit_timed(sid):
+    import time
+    started = time.monotonic()
+    reply = server.handle_request({"id": "p", "method": "prompt.submit",
+                                   "params": {"session_id": sid, "text": "hi"}})
+    return reply, time.monotonic() - started
+
+
+def test_a_slow_owner_admit_holds_the_inline_submit_only_for_the_admit_bound(monkeypatch, tmp_path):
+    """``prompt.submit`` runs inline on the stdio reader, which cannot read ``session.interrupt`` or
+    ``approval.respond`` meanwhile: the wait for the owner's receipt is short, and a slow owner is the
+    same "may be queued, check the chat" answer as ever."""
+    import threading
+    from tui_gateway import owner_forward
+    assert owner_forward.ADMIT_TIMEOUT_S <= 10.0  # the shipped bound (the reader's worst-case block)
+    db, sid, turns = _gateway_turn_running(monkeypatch, tmp_path)
+    release = threading.Event()
+    try:
+        monkeypatch.setattr(owner_forward, "ADMIT_TIMEOUT_S", 0.3)
+
+        @contextlib.asynccontextmanager
+        async def slow(_home, _endpoint):
+            await asyncio.to_thread(release.wait, 5)  # the owner does not answer inside the bound
+            yield
+        monkeypatch.setattr(owner_forward, "connect_owner", slow)
+        reply, elapsed = _submit_timed(sid)
+        assert elapsed < 2.0, elapsed
+        assert reply["error"]["data"] == {"reason": "SESSION_OWNER_UNCONFIRMED"}
+        assert "Nothing was sent" not in reply["error"]["message"] and turns == []
+    finally:
+        release.set()
+        server._sessions.pop(sid, None)
+        db.close()
+
+
+def test_a_slow_owner_discovery_is_inside_the_same_admit_deadline(monkeypatch, tmp_path):
+    """Discovery used to run on the submit's own thread BEFORE the deadline started, so the reader waited
+    for it and then the whole admit wait on top. It runs on the relay's thread now: one deadline."""
+    import threading
+    from tui_gateway import owner_forward
+    db, sid, turns = _gateway_turn_running(monkeypatch, tmp_path)
+    release = threading.Event()
+    try:
+        monkeypatch.setattr(owner_forward, "ADMIT_TIMEOUT_S", 0.3)
+        monkeypatch.setattr(owner_forward, "discover_owner", lambda _home: release.wait(5) and "ready-owner")
+        reply, elapsed = _submit_timed(sid)
+        assert elapsed < 2.0, elapsed  # not the 5 s discovery
+        assert reply["error"]["data"] == {"reason": "SESSION_OWNER_UNCONFIRMED"}
+        assert turns == []
+    finally:
+        release.set()
+        server._sessions.pop(sid, None)
+        db.close()
+
+
+def test_no_running_owner_is_still_the_not_owned_refusal_from_the_relay_thread(monkeypatch, tmp_path):
+    """The discovery's own verdict reaches ``prompt.submit`` through the relay unchanged: work no running
+    gateway will finish keeps its refusal (not a "busy" or "unconfirmed" one), and nothing is dialled."""
+    from tui_gateway import owner_forward
+    db, sid, turns = _gateway_turn_running(monkeypatch, tmp_path)
+    try:
+        def not_running(_home):
+            raise owner_forward.OwnerNotRunning("the gateway that owns it is stopped")
+        monkeypatch.setattr(owner_forward, "discover_owner", not_running)
+
+        @contextlib.asynccontextmanager
+        async def never(_home, _endpoint):
+            raise AssertionError("dialled an owner that is not running")
+            yield
+        monkeypatch.setattr(owner_forward, "connect_owner", never)
+        reply, elapsed = _submit_timed(sid)
+        assert elapsed < 2.0, elapsed
+        assert reply["error"]["code"] == 4090 and reply["error"]["data"]["reason"] == "SESSION_NOT_OWNED"
+        assert turns == []
+    finally:
+        server._sessions.pop(sid, None)
+        db.close()
+
+
 def test_a_receipt_lost_after_the_owner_queued_it_is_unconfirmed_not_resendable(monkeypatch, tmp_path):
     """The owner COMMITS the forwarded admission, then its socket drops before the receipt reaches
     serve (a gateway restart mid-forward). The prompt sits in the owner's durable FIFO and survives
