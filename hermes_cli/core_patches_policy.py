@@ -11,6 +11,7 @@ Config (top-level ``core_patches:`` in config.yaml; unknown top-level keys are n
     core_patches:
       refuse_on_critical: false   # true: a critical patch that is not installed refuses startup (exit 78)
       max_failures: 3             # consecutive call-time failures before a patch is switched off
+      replace_fallback: bug-class # replace patches: "bug-class" (default), "always" or "never" (see core_patches_shell)
       apply_timeout_s: 5          # startup budget of apply_core_patches; it never blocks start longer
       notify: true                # one notice per new state to the home channel (gateway only)
       events_max_bytes: 262144    # events.jsonl rotates past this size
