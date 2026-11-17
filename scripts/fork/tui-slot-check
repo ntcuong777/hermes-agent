@@ -1,0 +1,383 @@
+#!/usr/bin/env python3
+"""tui-slot-check: provenance and drift check of TUI slot copies (spec-06b; schema of docs/agents/core-patches.md section 7).
+
+A slot copy is a plugin-owned copy of an upstream-owned TUI component or function. The plugin records, in
+``<plugin>/tui_slots.lock.json``, the hash of the upstream REGION (the top-level declarations of the copied symbols) it was
+copied from. This script recomputes that hash from the checkout and reports a difference as DRIFT. It runs in CI and by hand;
+it can never affect a running Hermes (the TUI makes its own runtime check against hashes embedded at build time).
+
+  tui-slot-check --verify-locks PLUGINS_ROOT --fork-root DIR     exit 1 on drift or missing provenance
+  tui-slot-check --verify-pins FILE --fork-root DIR              the same for the fork-side pins file (fork CI)
+  tui-slot-check --write-pins PLUGINS_ROOT FILE                  write the pins file from the locks
+  tui-slot-check --report PLUGINS_ROOT --fork-root DIR           markdown table + diffs, always exit 0
+  tui-slot-check --agent-brief SLOT --plugins-root DIR --fork-root DIR
+  tui-slot-check --record SLOT --plugin-dir DIR --fork-root DIR --reason TEXT [--upstream-commit SHA]
+                 [--extension NAME] [--patch-fn FILE:EXPORT] [--copy-of FILE:SYMBOL]
+  tui-slot-check --hash FILE SYMBOL...                           print the region hash (no symbols: whole file)
+
+The slot table is <fork-root>/ui-tui/src/sdk/ext/slots.json (id -> file, symbols, props). Standard library only.
+The region rule is the same as ui-tui/src/sdk/ext/slotRegion.mjs; ui-tui/src/sdk/ext/slotRegion.vectors.json pins both.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import difflib
+import hashlib
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, Optional
+
+ALGO_REGION = "sha256-lf-region"
+ALGO_FILE = "sha256-lf"
+LOCK_NAME = "tui_slots.lock.json"
+REQUIRED = ("reason", "upstream_snapshot", "upstream_ref", "snapshot", "snapshot_sha256", "target_file", "symbols")
+
+
+# ── the region rule (mirror of slotRegion.mjs) ────────────────────────────────────────────────────────────
+
+
+def normalize(text: str) -> str:
+    lines = re.sub(r"\r\n?", "\n", text).split("\n")
+    return re.sub(r"\n+$", "", "\n".join(re.sub(r"[ \t]+$", "", line) for line in lines))
+
+
+def _is_doc(line: str) -> bool:
+    return line.startswith(("//", "/*", " *", "*/"))
+
+
+def _is_start(line: str) -> bool:
+    return len(line) > 0 and line[0] not in " \t})]" and not _is_doc(line)
+
+
+def statements(source: str) -> list[tuple[str, str]]:
+    """``[(head, text)]`` for every top-level statement; ``head`` is its first non-doc line."""
+    lines = normalize(source).split("\n")
+    starts = [i for i, line in enumerate(lines) if _is_start(line)]
+
+    def first_of(start: int) -> int:
+        first = start
+        while first > 0 and _is_doc(lines[first - 1]):
+            first -= 1
+        return first
+
+    firsts = [first_of(s) for s in starts]
+    return [
+        (
+            lines[s],
+            re.sub(r"\n+$", "", "\n".join(lines[firsts[k] : firsts[k + 1] if k + 1 < len(firsts) else len(lines)])),
+        )
+        for k, s in enumerate(starts)
+    ]
+
+
+def _declares(name: str) -> "re.Pattern[str]":
+    return re.compile(
+        r"^(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:async\s+)?(?:function\*?|const|let|var|class|interface|type|enum)\s+"
+        + re.escape(name)
+        + r"\b"
+    )
+
+
+def region_text(source: str, symbols: list[str]) -> str:
+    if not symbols:
+        return normalize(source)
+    allstmts = statements(source)
+
+    def found(name: str) -> list[str]:
+        hits = [text for head, text in allstmts if _declares(name).match(head)]
+        if not hits:
+            raise KeyError(f"symbol '{name}' not found among the top-level declarations")
+        return hits
+
+    return "\n".join(part for name in symbols for part in found(name))
+
+
+def region_hash(source: str, symbols: list[str]) -> str:
+    return hashlib.sha256((region_text(source, symbols) + "\n").encode("utf-8")).hexdigest()
+
+
+# ── git and files ──────────────────────────────────────────────────────────────────────────────────────────
+
+
+def git(root: Path, *args: str) -> tuple[int, str]:
+    done = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
+    return done.returncode, done.stdout
+
+
+def read_current(root: Path, rel: str) -> Optional[str]:
+    path = root / rel
+    return path.read_text(encoding="utf-8") if path.is_file() else None
+
+
+def read_at(root: Path, commit: str, rel: str) -> Optional[str]:
+    code, out = git(root, "show", f"{commit}:{rel}")
+    return out if code == 0 else None
+
+
+def blob_sha(root: Path, spec: str) -> str:
+    code, out = git(root, "rev-parse", spec)
+    return out.strip() if code == 0 else ""
+
+
+def load_json(path: Path) -> dict[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def slot_table(root: Path) -> dict[str, Any]:
+    return load_json(root / "ui-tui/src/sdk/ext/slots.json").get("slots", {})
+
+
+def locks_under(plugins_root: Path) -> list[tuple[Path, dict[str, Any]]]:
+    return [(p.parent, load_json(p)) for p in sorted(plugins_root.glob(f"*/{LOCK_NAME}"))]
+
+
+def entries(plugins_root: Path) -> list[tuple[Path, str, dict[str, Any]]]:
+    return [(d, slot, e) for d, lock in locks_under(plugins_root) for slot, e in sorted((lock.get("slots") or {}).items())]
+
+
+# ── checking ───────────────────────────────────────────────────────────────────────────────────────────────
+
+
+def check_entry(root: Path, plugin_dir: Optional[Path], slot: str, entry: dict[str, Any]) -> dict[str, Any]:
+    """``{slot, status: ok|drift|missing-provenance|missing-file, problems, diff}``; never raises."""
+    problems = [f"missing field '{f}'" for f in REQUIRED if not entry.get(f)]
+    if not (entry.get("upstream_ref") or {}).get("commit"):
+        problems.append("missing upstream_ref.commit")
+    symbols = [s for s in entry.get("symbols") or [] if isinstance(s, str)]
+    rel = str(entry.get("target_file") or "")
+    current = read_current(root, rel) if rel else None
+    snapshot_text = None
+    if plugin_dir is not None and entry.get("snapshot"):
+        snap = plugin_dir / str(entry["snapshot"])
+        if snap.is_file():
+            snapshot_text = snap.read_text(encoding="utf-8")
+            if hashlib.sha256(snap.read_bytes()).hexdigest() != entry.get("snapshot_sha256"):
+                problems.append("snapshot file does not match snapshot_sha256")
+        else:
+            problems.append(f"snapshot file {entry['snapshot']} not found")
+    if problems:
+        return {"slot": slot, "status": "missing-provenance", "problems": problems, "diff": ""}
+    if current is None:
+        return {"slot": slot, "status": "missing-file", "problems": [f"{rel} not found in the checkout"], "diff": ""}
+    try:
+        now_text = region_text(current, symbols)
+        now = region_hash(current, symbols)
+    except KeyError as error:
+        return {"slot": slot, "status": "drift", "problems": [str(error)], "diff": ""}
+    recorded = (entry.get("upstream_snapshot") or {}).get("sha", "")
+    if now == recorded:
+        return {"slot": slot, "status": "ok", "problems": [], "diff": ""}
+    old = (snapshot_text if snapshot_text is not None else "").rstrip("\n").split("\n")
+    commit = (entry.get("upstream_ref") or {}).get("commit", "?")[:10]
+    diff = "\n".join(difflib.unified_diff(old, now_text.split("\n"), f"upstream@{commit}", "current", lineterm=""))
+    return {"slot": slot, "status": "drift", "problems": [f"recorded {recorded[:12]}, current {now[:12]}"], "diff": diff}
+
+
+def render_report(results: list[dict[str, Any]]) -> str:
+    rows = ["# TUI slot report", "", "| slot | status | detail |", "|---|---|---|"]
+    rows += [f"| {r['slot']} | {r['status']} | {'; '.join(r['problems'])} |" for r in results] or ["| (none) | | |"]
+    diffs = [f"\n## {r['slot']}: upstream changed\n\n```diff\n{r['diff']}\n```" for r in results if r["status"] == "drift" and r["diff"]]
+    return "\n".join(rows + diffs) + "\n"
+
+
+def verify_locks(plugins_root: Path, root: Path) -> tuple[int, str]:
+    results = [check_entry(root, d, slot, e) for d, slot, e in entries(plugins_root)]
+    return (0 if all(r["status"] == "ok" for r in results) else 1), render_report(results)
+
+
+def verify_pins(pins_file: Path, root: Path) -> tuple[int, str]:
+    pins = load_json(pins_file).get("slots", {})
+    results = []
+    for slot, pin in sorted(pins.items()):
+        target, symbols, recorded = pin.get("target_file", ""), pin.get("symbols", []), pin.get("sha", "")
+        current = read_current(root, target)
+        problems = [] if current is not None else [f"{target} not found"]
+        try:
+            now = region_hash(current, symbols) if current is not None else ""
+        except KeyError as error:
+            now, problems = "", [str(error)]
+        status = "ok" if not problems and now == recorded else "drift"
+        detail = problems or ([] if status == "ok" else [f"pinned {recorded[:12]}, current {now[:12]}"])
+        results.append({"slot": slot, "status": status, "problems": detail, "diff": ""})
+    return (0 if all(r["status"] == "ok" for r in results) else 1), render_report(results)
+
+
+def write_pins(plugins_root: Path, out: Path) -> str:
+    slots = {
+        slot: {
+            "plugin": e.get("plugin", d.name),
+            "target_file": e.get("target_file"),
+            "symbols": e.get("symbols"),
+            "sha": (e.get("upstream_snapshot") or {}).get("sha"),
+            "upstream_commit": (e.get("upstream_ref") or {}).get("commit"),
+            "reason": e.get("reason"),
+        }
+        for d, slot, e in entries(plugins_root)
+    }
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({"version": 1, "slots": slots}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return f"wrote {len(slots)} slot pin(s) to {out}"
+
+
+def agent_brief(slot: str, plugins_root: Path, root: Path) -> str:
+    found = [(d, e) for d, s, e in entries(plugins_root) if s == slot]
+    if not found:
+        return f"no recorded slot {slot} under {plugins_root}\n"
+    plugin_dir, entry = found[0]
+    result = check_entry(root, plugin_dir, slot, entry)
+    rel = entry.get("target_file", "")
+    current = read_current(root, rel) or ""
+    symbols = list(entry.get("symbols") or [])
+    snap = plugin_dir / str(entry.get("snapshot", ""))
+    try:
+        now_text = region_text(current, symbols)
+    except KeyError as error:
+        now_text = f"(unavailable: {error})"
+    copy = plugin_dir / str(entry.get("patch_fn", "")).split(":")[0]
+    ref = entry.get("upstream_ref") or {}
+    return "\n".join(
+        [
+            f"# Agent brief: TUI slot {slot}",
+            "",
+            f"status: {result['status']}  {'; '.join(result['problems'])}",
+            f"purpose: {entry.get('reason', '')}",
+            f"plugin: {entry.get('plugin', plugin_dir.name)}  extension: {entry.get('extension', '?')}",
+            f"copy: {copy}  (patch_fn {entry.get('patch_fn', '?')}, copy_of {entry.get('copy_of', '?')})",
+            f"upstream file: {rel}  symbols: {', '.join(symbols)}",
+            f"recorded against upstream {ref.get('commit', '?')} (release {ref.get('release', '?')})",
+            "",
+            "## Steps",
+            "1. Read the two texts below. OLD is what the copy was written against, NEW is what the checkout has now.",
+            f"2. 3-way merge the copy: git merge-file -p {copy} {snap} <(NEW region as a file)  (or by hand); keep the deliberate fork changes.",
+            "3. Build and test: node scripts/fork/tui-slot-build.mjs --src <copy> --out <built> --dir <upstream dir>; then the plugin's vitest",
+            f"   (cd {plugin_dir}/tui && npx vitest run --config vitest.config.mjs --maxWorkers=2 <the slot's test file>).",
+            f"4. Record: tui-slot-check --record {slot} --plugin-dir {plugin_dir} --fork-root {root} --reason \"<one line>\"",
+            "5. Pins: tui-slot-check --write-pins <nix-darwin>/hermes/plugins <fork>/.github/tui-slot-pins.json; commit with --no-verify.",
+            "If upstream fixed the bug the copy exists for, delete the slot instead (plugin.yaml, copy, built file, lock entry, snapshot, pin, test).",
+            "",
+            "## OLD upstream region (snapshot)",
+            "```tsx",
+            snap.read_text(encoding="utf-8").rstrip("\n") if snap.is_file() else "(snapshot missing)",
+            "```",
+            "",
+            "## NEW upstream region (the checkout now)",
+            "```tsx",
+            now_text,
+            "```",
+            "",
+            "## Diff OLD -> NEW",
+            "```diff",
+            result["diff"] or "(no difference)",
+            "```",
+            "",
+        ]
+    )
+
+
+def record(args: argparse.Namespace) -> str:
+    root, plugin_dir = Path(args.fork_root), Path(args.plugin_dir)
+    spec = slot_table(root).get(args.record)
+    if not spec:
+        raise SystemExit(f"slot {args.record} is not in {root}/ui-tui/src/sdk/ext/slots.json")
+    if not (args.reason or "").strip():
+        raise SystemExit("--reason is required: one line, the bug or purpose the copy exists for")
+    rel, symbols = spec["file"], list(spec["symbols"])
+    commit = args.upstream_commit or (read_current(root, "hermes-upstream-commit") or "").strip() or "unknown"
+    if commit == "unknown":
+        raise SystemExit("no upstream commit: pass --upstream-commit or stamp hermes-upstream-commit")
+    upstream = read_at(root, commit, rel)
+    if upstream is None:
+        raise SystemExit(f"{rel} does not exist at {commit}")
+    text = region_text(upstream, symbols)
+    sha = region_hash(upstream, symbols)
+    current = read_current(root, rel) or ""
+    drift = "" if region_hash(current, symbols) == sha else " (WARNING: the checkout's region differs from upstream's: this slot's core file is not back to upstream yet)"
+    snapshot_rel = f"upstream-source/{args.record}.tsx.txt"
+    snap_path = plugin_dir / snapshot_rel
+    snap_path.parent.mkdir(parents=True, exist_ok=True)
+    snap_path.write_text(text + "\n", encoding="utf-8")
+    lock_path = plugin_dir / LOCK_NAME
+    lock = load_json(lock_path) or {}
+    old = (lock.get("slots") or {}).get(args.record) or {}
+    now = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    _, head = git(root, "rev-parse", "HEAD")
+    _, dirty = git(root, "status", "--porcelain", "--untracked-files=no", "--", rel)
+    release = (read_current(root, "hermes-upstream-release") or "").strip() or "unknown"
+    entry = {
+        "plugin": plugin_dir.name,
+        "kind": "tui-slot",
+        "target": f"{args.record}@{rel}",
+        "target_file": rel,
+        "symbols": symbols,
+        "props": spec["props"],
+        "extension": args.extension or old.get("extension", ""),
+        "upstream_snapshot": {"algo": ALGO_REGION if symbols else ALGO_FILE, "sha": sha},
+        "reason": args.reason.strip(),
+        "authored_at": old.get("authored_at", now),
+        "recorded_at": now,
+        "fork_head": head.strip(),
+        "fork_dirty": bool(dirty.strip()),
+        "upstream_ref": {"commit": commit, "release": release, "date": ""},
+        "target_file_blob_sha": blob_sha(root, f"{commit}:{rel}"),
+        "fork_file_blob_sha": blob_sha(root, f"HEAD:{rel}"),
+        "snapshot": snapshot_rel,
+        "snapshot_sha256": hashlib.sha256(snap_path.read_bytes()).hexdigest(),
+        "patch_fn": args.patch_fn or old.get("patch_fn", ""),
+        "copy_of": args.copy_of or old.get("copy_of", ""),
+    }
+    slots = {**(lock.get("slots") or {}), args.record: entry}
+    lock_path.write_text(json.dumps({"version": 2, "slots": slots}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return f"{args.record}: recorded {sha[:12]} ({rel}) against upstream {commit[:10]}; lock and snapshot written under {plugin_dir}{drift}"
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="tui-slot-check", add_help=True)
+    mode = ap.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--verify-locks", metavar="PLUGINS_ROOT")
+    mode.add_argument("--verify-pins", metavar="FILE")
+    mode.add_argument("--write-pins", nargs=2, metavar=("PLUGINS_ROOT", "FILE"))
+    mode.add_argument("--report", metavar="PLUGINS_ROOT")
+    mode.add_argument("--agent-brief", metavar="SLOT")
+    mode.add_argument("--record", metavar="SLOT")
+    mode.add_argument("--hash", nargs="+", metavar=("FILE", "SYMBOL"))
+    ap.add_argument("--fork-root", default=".")
+    ap.add_argument("--plugins-root", default=".")
+    ap.add_argument("--plugin-dir", default=".")
+    ap.add_argument("--reason", default="")
+    ap.add_argument("--upstream-commit", default="")
+    ap.add_argument("--extension", default="")
+    ap.add_argument("--patch-fn", default="")
+    ap.add_argument("--copy-of", default="")
+    args = ap.parse_args(argv)
+    root = Path(args.fork_root)
+    if args.hash:
+        print(region_hash(Path(args.hash[0]).read_text(encoding="utf-8"), args.hash[1:]))
+        return 0
+    if args.verify_locks:
+        code, text = verify_locks(Path(args.verify_locks), root)
+    elif args.verify_pins:
+        code, text = verify_pins(Path(args.verify_pins), root)
+    elif args.write_pins:
+        code, text = 0, write_pins(Path(args.write_pins[0]), Path(args.write_pins[1])) + "\n"
+    elif args.report:
+        _, text = verify_locks(Path(args.report), root)
+        code = 0
+    elif args.agent_brief:
+        code, text = 0, agent_brief(args.agent_brief, Path(args.plugins_root), root)
+    else:
+        code, text = 0, record(args) + "\n"
+    sys.stdout.write(text)
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

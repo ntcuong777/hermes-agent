@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "slots": {
+    "canary.echo": {
+      "file": "ui-tui/src/sdk/ext/canary.ts",
+      "host": [],
+      "kind": "fn",
+      "props": 1,
+      "summary": "Stage 0 test slot: the text canaryEcho returns for its input",
+      "symbols": ["canaryEcho"]
+    }
+  }
+}

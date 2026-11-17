@@ -1,0 +1,74 @@
+[
+  {
+    "name": "function with doc comment",
+    "source": "import { x } from './x.js'\n\nconst LIMIT = 12\n\n/** Doc of one.\n *  Second line. */\nexport function one(a: number) {\n  if (a) {\n    return 1\n  }\n\n  return 2\n}\n\n// two\nexport const two = (b: string) =>\n  b.toUpperCase()\n\nexport function Three({ a }: Props) {\n  return (\n    <Box>\n      <Text>{a}</Text>\n    </Box>\n  )\n}\n\ninterface Props {\n  a: string\n}\n",
+    "symbols": ["one"],
+    "sha256": "771e4b78d49c85cbf2aee8caf695d5731abb439edd38f9209024445ac1864a93"
+  },
+  {
+    "name": "arrow const with line comment",
+    "source": "import { x } from './x.js'\n\nconst LIMIT = 12\n\n/** Doc of one.\n *  Second line. */\nexport function one(a: number) {\n  if (a) {\n    return 1\n  }\n\n  return 2\n}\n\n// two\nexport const two = (b: string) =>\n  b.toUpperCase()\n\nexport function Three({ a }: Props) {\n  return (\n    <Box>\n      <Text>{a}</Text>\n    </Box>\n  )\n}\n\ninterface Props {\n  a: string\n}\n",
+    "symbols": ["two"],
+    "sha256": "1348167bc11e67177c9f505b8a7d1bb8013b1c42381f2bf9a83d619cf0aae781"
+  },
+  {
+    "name": "jsx component",
+    "source": "import { x } from './x.js'\n\nconst LIMIT = 12\n\n/** Doc of one.\n *  Second line. */\nexport function one(a: number) {\n  if (a) {\n    return 1\n  }\n\n  return 2\n}\n\n// two\nexport const two = (b: string) =>\n  b.toUpperCase()\n\nexport function Three({ a }: Props) {\n  return (\n    <Box>\n      <Text>{a}</Text>\n    </Box>\n  )\n}\n\ninterface Props {\n  a: string\n}\n",
+    "symbols": ["Three"],
+    "sha256": "2ca98bd3adb74206c0c21da3a4a17f35996f88292439fde2152bc564793cb620"
+  },
+  {
+    "name": "order of symbols is kept",
+    "source": "import { x } from './x.js'\n\nconst LIMIT = 12\n\n/** Doc of one.\n *  Second line. */\nexport function one(a: number) {\n  if (a) {\n    return 1\n  }\n\n  return 2\n}\n\n// two\nexport const two = (b: string) =>\n  b.toUpperCase()\n\nexport function Three({ a }: Props) {\n  return (\n    <Box>\n      <Text>{a}</Text>\n    </Box>\n  )\n}\n\ninterface Props {\n  a: string\n}\n",
+    "symbols": ["Three", "one"],
+    "sha256": "526bc923b27cb985b83c2fa0d2beea12cc79dd42e5c5922bd38bd86b194ad385"
+  },
+  {
+    "name": "interface",
+    "source": "import { x } from './x.js'\n\nconst LIMIT = 12\n\n/** Doc of one.\n *  Second line. */\nexport function one(a: number) {\n  if (a) {\n    return 1\n  }\n\n  return 2\n}\n\n// two\nexport const two = (b: string) =>\n  b.toUpperCase()\n\nexport function Three({ a }: Props) {\n  return (\n    <Box>\n      <Text>{a}</Text>\n    </Box>\n  )\n}\n\ninterface Props {\n  a: string\n}\n",
+    "symbols": ["Props"],
+    "sha256": "28f7928ff07b048ca929f5395757d1e3e9e486acd267ab261cc8348fe51f9f63"
+  },
+  {
+    "name": "whole file",
+    "source": "import { x } from './x.js'\n\nconst LIMIT = 12\n\n/** Doc of one.\n *  Second line. */\nexport function one(a: number) {\n  if (a) {\n    return 1\n  }\n\n  return 2\n}\n\n// two\nexport const two = (b: string) =>\n  b.toUpperCase()\n\nexport function Three({ a }: Props) {\n  return (\n    <Box>\n      <Text>{a}</Text>\n    </Box>\n  )\n}\n\ninterface Props {\n  a: string\n}\n",
+    "symbols": [],
+    "sha256": "b3c328597498b32f2f62d72bd91b84a67bdbb41c65f790d8e9c2fd02b65a0f64"
+  },
+  {
+    "name": "crlf and trailing blanks do not matter",
+    "source": "import { x } from './x.js' \t\r\n \t\r\nconst LIMIT = 12 \t\r\n \t\r\n/** Doc of one. \t\r\n *  Second line. */ \t\r\nexport function one(a: number) { \t\r\n  if (a) { \t\r\n    return 1 \t\r\n  } \t\r\n \t\r\n  return 2 \t\r\n} \t\r\n \t\r\n// two \t\r\nexport const two = (b: string) => \t\r\n  b.toUpperCase() \t\r\n \t\r\nexport function Three({ a }: Props) { \t\r\n  return ( \t\r\n    <Box> \t\r\n      <Text>{a}</Text> \t\r\n    </Box> \t\r\n  ) \t\r\n} \t\r\n \t\r\ninterface Props { \t\r\n  a: string \t\r\n} \t\r\n",
+    "symbols": ["one", "two"],
+    "sha256": "54ccad17c5fac7ef1e5c974ddb00293f6274d2e60c5b5e69f442c0ffdee2e779"
+  },
+  {
+    "name": "an unrelated edit elsewhere does not move the region",
+    "source": "import { x } from './x.js'\n\nconst LIMIT = 99\n\n/** Doc of one.\n *  Second line. */\nexport function one(a: number) {\n  if (a) {\n    return 1\n  }\n\n  return 2\n}\n\n// two\nexport const two = (b: string) =>\n  b.toUpperCase()\n\nexport function Three({ a }: Props) {\n  return (\n    <Box>\n      <Text>{a}</Text>\n    </Box>\n  )\n}\n\ninterface Props {\n  a: string\n}\n",
+    "symbols": ["one"],
+    "sha256": "771e4b78d49c85cbf2aee8caf695d5731abb439edd38f9209024445ac1864a93"
+  },
+  {
+    "name": "overloads are all part of the region",
+    "source": "export function f(a: string): string\nexport function f(a: number): number\nexport function f(a: any) {\n  return a\n}\n\nconst g = 1\n",
+    "symbols": ["f"],
+    "sha256": "d4f9706a4e12476f31d8fa86ec4c11d298d531124753afe9ef26c256821ac6c0"
+  },
+  {
+    "name": "async function",
+    "source": "export async function load() {\n  return 1\n}\n",
+    "symbols": ["load"],
+    "sha256": "af031c437359c52d3d622e1a4030e12068f4497f0a57a7ebf9e747966aa70b55"
+  },
+  {
+    "name": "missing symbol",
+    "source": "import { x } from './x.js'\n\nconst LIMIT = 12\n\n/** Doc of one.\n *  Second line. */\nexport function one(a: number) {\n  if (a) {\n    return 1\n  }\n\n  return 2\n}\n\n// two\nexport const two = (b: string) =>\n  b.toUpperCase()\n\nexport function Three({ a }: Props) {\n  return (\n    <Box>\n      <Text>{a}</Text>\n    </Box>\n  )\n}\n\ninterface Props {\n  a: string\n}\n",
+    "symbols": ["nope"],
+    "error": true
+  },
+  {
+    "name": "a name that only starts like the symbol is not it",
+    "source": "export const oneMore = 1\nexport const one = 2\n",
+    "symbols": ["one"],
+    "sha256": "15eca2fb141b255da42c6cd4c7d5b72c85374a803d748731950ed80ef3498be6"
+  }
+]

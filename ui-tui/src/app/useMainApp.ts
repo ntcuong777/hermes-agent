@@ -45,6 +45,7 @@ import { terminalParityHints } from '../lib/terminalParity.js'
 import { formatAbandonedClarify, sameToolTrailGroup, toolTrailLabel } from '../lib/text.js'
 import { estimatedMsgHeight, messageHeightKey } from '../lib/virtualHeights.js'
 import { onUserWidgets } from '../sdk/userWidgets.js'
+import { useExtensionHost } from '../sdk/ext/useExtensionHost.js' // fork: tui extension host
 import type { Msg, PanelSection } from '../types.js'
 
 import { applyAgentSnapshot } from './agentRoster.js'
@@ -673,6 +674,7 @@ export function useMainApp(gw: GatewayClient) {
   )
 
   const gateway = useMemo(() => ({ gw, rpc }), [gw, rpc])
+  useExtensionHost(gw, sys) // fork: tui extension host
   const catalog = useSlashCatalog(rpc)
 
   const { die, dieWithCode, exitClose } = useDie(gw, exit)

@@ -175,6 +175,9 @@ const onFrame =
       }
     : undefined
 
+// fork: tui extension host. Mount the cached slot extensions before the first frame (1.5 s budget, never throws).
+await (await import('./sdk/ext/earlyLoad.js')).primeExtensionSlots(gw)
+
 ink.render(<App gw={gw} />, {
   exitOnCtrlC: false,
   onFrame,
