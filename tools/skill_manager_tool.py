@@ -12,6 +12,7 @@ import hashlib
 import json
 from contextlib import ExitStack, suppress
 import logging
+import posixpath
 import re
 import shutil
 from collections import Counter
@@ -749,13 +750,36 @@ def _skill_manage_from(payload: dict[str, Any], **extra) -> str:
         **{k: payload.get(k) for k in _FLAT_OP_KEYS}, **extra)
 
 
-def _staging_op_error(act: str, nm: str, op: dict[str, Any], touched: set) -> Optional[str]:
+_STR_OP_FIELDS = ("content", "file_path", "file_content", "old_string", "new_string")
+
+
+def _pending_skill_names() -> Optional[set]:
+    """Skill names with a staged write awaiting approval; ``None`` (every skill) when a pending op
+    does not say which skill it targets or the queue cannot be read."""
+    try:
+        from tools import write_approval as wa
+        names: set = set()
+        for record in wa.list_pending(wa.SKILLS):
+            payload = record.get("payload") or {}
+            for op in (payload.get("operations") or [payload]) if isinstance(payload, dict) else []:
+                if not isinstance(op, dict) or not op.get("name"):
+                    return None
+                names.add(op["name"])
+        return names
+    except Exception:
+        return None
+
+
+def _staging_op_error(act: str, nm: str, op: dict[str, Any], touched: set,
+                      pending: Optional[set] = frozenset()) -> Optional[str]:
     """The content-only reason one op could never be applied, from the same validators the handlers
     run, or None. A targeted patch/write is dry-run against the file as it is now only when no earlier
-    op of the batch touched that file (else the file's future text is unknown here)."""
+    op of the batch touched that file and no earlier STAGED write targets the skill (else the file's
+    future text is unknown here); ``pending`` is the staged skill names, ``None`` meaning all."""
     content, fp = op.get("content"), (op.get("file_path") or "").strip()
     root = (act in {"create", "edit"} or (act == "patch" and bool(content)))
-    key = (nm, "SKILL.md" if root or (act == "patch" and not fp) else fp)
+    # Same spelling normalisation as ``_validate_batch_ops``: './references/a.md' is 'references/a.md'.
+    key = (nm, "SKILL.md" if root or (act == "patch" and not fp) else posixpath.normpath(fp.lstrip("/")))
     fresh = key not in touched
     touched.add(key)
     if root:
@@ -770,7 +794,7 @@ def _staging_op_error(act: str, nm: str, op: dict[str, Any], touched: set) -> Op
         return err
     if act == "write_file":
         return _validate_file_path(fp) or _validate_content_size(op.get("file_content") or "", label=fp)
-    if act != "patch" or not fresh or not (existing := _find_skill(nm)):
+    if act != "patch" or not fresh or (pending is None or nm in pending) or not (existing := _find_skill(nm)):
         return None
     if fp:
         target, bad = _resolve_supporting_file(Path(existing["path"]), fp)
@@ -794,10 +818,15 @@ def _staging_precheck(operations: list, names: list) -> None:
     frontmatter, an over-budget description, a name collision or an old_string that no longer matches
     would otherwise sit in the queue and fail only when the person reviews it, who cannot fix it."""
     touched: set = set()
+    pending = _pending_skill_names()
     for i, (op, nm) in enumerate(zip(operations, names)):
         if not isinstance(op, dict):
             continue
-        if err := _staging_op_error(op.get("action", ""), nm, op, touched):
+        if bad := next((f for f in _STR_OP_FIELDS if op.get(f) is not None and not isinstance(op[f], str)), None):
+            raise _StagingRefused(
+                f"Not staged: operations[{i}] ({op.get('action')} on '{nm}'): '{bad}' must be a string. "
+                "Fix that and call skill_manage again.")
+        if err := _staging_op_error(op.get("action", ""), nm, op, touched, pending):
             raise _StagingRefused(
                 f"Not staged: operations[{i}] ({op.get('action')} on '{nm}') cannot be applied: {err} "
                 "Fix that and call skill_manage again.")
