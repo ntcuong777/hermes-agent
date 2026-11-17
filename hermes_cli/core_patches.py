@@ -721,8 +721,7 @@ def records() -> tuple[PatchRecord, ...]:
 
 def failure_stats() -> dict[str, tuple[int, int, str]]:
     """``{key: (failures in total, failures in a row, last error)}`` of every patch the safety shell guards."""
-    with _LOCK:
-        links = list(_LINKS.values())
+    links = list(_LINKS.values())  # atomic in CPython; never wait on _LOCK here
     return {link.key: (link.guard.total, link.guard.consecutive, link.guard.last_error)
             for link in links if link.guard is not None}
 
