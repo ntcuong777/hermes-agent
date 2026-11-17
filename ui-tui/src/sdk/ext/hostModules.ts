@@ -40,6 +40,12 @@ import * as sharedFormat from '@hermes/shared/format' // fork: tui slot host mod
 import * as sharedGatewayEvents from '@hermes/shared/gateway-events' // fork: tui slot host modules (stage 6)
 import * as nanostoresReact from '@nanostores/react' // fork: tui slot host modules (stage 6)
 import * as unicodeAnimations from 'unicode-animations' // fork: tui slot host modules (stage 6)
+import * as composerHighlights from '../../domain/composerHighlights.js' // fork: tui slot host modules (stage 5)
+import * as inputMetrics from '../../lib/inputMetrics.js' // fork: tui slot host modules (stage 5)
+import * as platform from '../../lib/platform.js' // fork: tui slot host modules (stage 5)
+import * as termux from '../../lib/termux.js' // fork: tui slot host modules (stage 5)
+import * as inputSelectionStore from '../../app/inputSelectionStore.js' // fork: tui slot host modules (stage 5)
+import * as clipboard from '../../lib/clipboard.js' // fork: tui slot host modules (stage 5)
 
 export const HOST_MODULES: Readonly<Record<string, unknown>> = Object.freeze({
   ink,
@@ -74,5 +80,11 @@ export const HOST_MODULES: Readonly<Record<string, unknown>> = Object.freeze({
   'shared/format': sharedFormat,
   'shared/gateway-events': sharedGatewayEvents,
   'pkg/@nanostores/react': nanostoresReact,
-  'pkg/unicode-animations': unicodeAnimations
+  'pkg/unicode-animations': unicodeAnimations,
+  'domain/composerHighlights': composerHighlights,
+  'lib/inputMetrics': inputMetrics,
+  'lib/platform': platform,
+  'lib/termux': termux,
+  'app/inputSelectionStore': inputSelectionStore,
+  'lib/clipboard': clipboard
 })

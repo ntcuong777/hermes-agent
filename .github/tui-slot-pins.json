@@ -34,6 +34,14 @@
       "symbols": [],
       "target_file": "ui-tui/src/components/appChrome.tsx",
       "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
+    },
+    "textInput": {
+      "plugin": "tui-input",
+      "reason": "Alt-letters typing fix, kitty Ctrl+V paste hotkey, caretRef plumbing and the typed-text/backspace guards on the composer input",
+      "sha": "9597f019001cd14b41ab5b171839992d9086b2f2f995b66d1fe94599634fcb46",
+      "symbols": [],
+      "target_file": "ui-tui/src/components/textInput.tsx",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
     }
   },
   "version": 1

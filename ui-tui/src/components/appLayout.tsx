@@ -49,7 +49,9 @@ import { PasteHint } from './pasteSections.js'
 import { QueuedMessages } from './queuedMessages.js'
 import { RewindFocusScroller, useBacktrackHint, useRewindFocusIndex } from './rewindFocus.js'
 import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
-import { type InputCursorSnapshot, TextInput, type TextInputMouseApi } from './textInput.js'
+import { type InputCursorSnapshot, TextInputMouseApi } from './textInput.js'
+import { TextInput as StockTextInput } from './textInput.js' // fork: tui slot
+const TextInput = slotComponent<Parameters<typeof StockTextInput>[0] & { caretRef?: MutableRefObject<InputCursorSnapshot | null> }>('textInput', StockTextInput) // fork: tui slot. The kept glue passes caretRef, which upstream's TextInputProps lacks; the slot contract admits it as an optional field (adding an optional field is not a props bump, master spec 6.6).
 
 // Box geometry, kept here so the transcript's reservation math matches the
 // rendered overlay exactly.

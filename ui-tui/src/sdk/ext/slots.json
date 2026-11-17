@@ -64,6 +64,14 @@
       "props": 1,
       "summary": "The status bar rule (fork: medium effort shown, plugin segments, stash count)",
       "symbols": []
+    },
+    "textInput": {
+      "file": "ui-tui/src/components/textInput.tsx",
+      "host": ["ink", "react", "app/inputSelectionStore", "domain/composerHighlights", "lib/clipboard", "lib/inputMetrics", "lib/platform", "lib/termux"],
+      "kind": "component",
+      "props": 1,
+      "summary": "The composer TextInput (fork: Alt-letters typing, kitty paste hotkey, caretRef, guards)",
+      "symbols": []
     }
   }
 }

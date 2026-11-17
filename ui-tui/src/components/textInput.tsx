@@ -181,28 +181,6 @@ export interface TextInsertResult {
   value: string
 }
 
-/**
- * Whether a key event inserts text into the composer. Ctrl chords and Alt/Option
- * letters (meta) are shortcuts, not typed text: Alt+S would otherwise insert "s"
- * on top of a `display.tui_keybinds` command. A pasted payload is text even when it carries a
- * control byte, so `isPasted` wins.
- *
- * One rule for both readers of it: the burst-flush gate and the insert branch of the
- * key handler. The insert branch kept its own copy of this test without the `meta`
- * check, so the earlier fix changed only the gate and Alt+S still typed "s" (B26).
- */
-export function insertsComposerText(event: InputEvent): boolean {
-  return event.keypress.isPasted || (event.input.length > 0 && !event.isControlChord && !event.key.meta)
-}
-
-export function isTypedTextEvent(event: InputEvent): boolean {
-  if (event.keypress.isPasted) {
-    return PRINTABLE.test(event.input.replace(BRACKET_PASTE, ''))
-  }
-
-  return insertsComposerText(event) && PRINTABLE.test(event.input)
-}
-
 export function applyPrintableInsert(
   value: string,
   cursor: number,
@@ -817,7 +795,6 @@ export function TextInput({
   mask,
   mouseApiRef,
   cursorSnapshotRef,
-  caretRef,
   ignoreVerticalArrows = false,
   voiceRecordKey = DEFAULT_VOICE_RECORD_KEY,
   placeholder = '',
@@ -997,11 +974,7 @@ export function TextInput({
     }
 
     pendingParentValue.current = null
-    // Where the caret goes for this value: a cursor the owner placed (a paste opened or folded), else one the
-    // parent asked for (a completion spliced in mid-prompt), else the end. The placed one is consumed either way.
-    const placed = takeInputCursor(value)
-    const asked = caretRef?.current?.value === value ? caretRef.current.cursor : undefined
-    const at = Math.max(0, Math.min(value.length, placed ?? asked ?? value.length))
+    const at = takeInputCursor(value) ?? value.length
     setCur(at)
     setSel(null)
     curRef.current = at
@@ -1114,13 +1087,6 @@ export function TextInput({
     []
   )
 
-  // Hand the caret over with the value it belongs to (a deferred flush can carry an older value: then say the end).
-  const noteCaret = (value: string) => {
-    if (caretRef) {
-      caretRef.current = { cursor: value === vRef.current ? curRef.current : value.length, value }
-    }
-  }
-
   const flushParentChange = () => {
     if (parentChangeTimer.current) {
       clearTimeout(parentChangeTimer.current)
@@ -1133,7 +1099,6 @@ export function TextInput({
     if (next !== null) {
       self.current = true
       emittedValueRef.current = next
-      noteCaret(next)
       cbChange.current(next)
     }
   }
@@ -1228,7 +1193,6 @@ export function TextInput({
         flushParentChange()
         self.current = true
         emittedValueRef.current = next
-        noteCaret(next)
         cbChange.current(next)
         // A full Ink repaint just happened. Mark it so any fast-echo backspace
         // later in this IME recompose burst is suppressed (it would write
@@ -1487,7 +1451,12 @@ export function TextInput({
         return
       }
 
-      if (isPasteHotkey(eventRaw, inp, k, isMac)) {
+      if (
+        eventRaw === '\x1bv' ||
+        eventRaw === '\x1bV' ||
+        eventRaw === '\x16' ||
+        (isMac && isActionMod(k) && inp.toLowerCase() === 'v')
+      ) {
         flushKeyBurst()
 
         if (cbPaste.current) {
@@ -1562,7 +1531,10 @@ export function TextInput({
       const range = selRange()
       const delFwd = k.delete || fwdDel.current
 
-      const isPrintableInput = isTypedTextEvent(event)
+      const isPrintableInput =
+        !event.isControlChord &&
+        (event.keypress.isPasted || inp.length > 0) &&
+        PRINTABLE.test(inp.replace(BRACKET_PASTE, ''))
 
       if (!isPrintableInput) {
         flushKeyBurst()
@@ -1702,11 +1674,7 @@ export function TextInput({
         } else {
           ;({ cursor: c, value: v } = killToLineEnd(v, c))
         }
-      } else if (k.backspace || k.delete) {
-        // Extended-key terminals (kitty CSI u / modifyOtherKeys) also hand the key's name
-        // to `input`. With nothing left to delete it must not fall through and type it.
-        return
-      } else if (insertsComposerText(event)) {
+      } else if (event.keypress.isPasted || (inp.length > 0 && !event.isControlChord)) {
         const bracketed = event.keypress.isPasted || inp.includes('[200~')
         const text = inp.replace(BRACKET_PASTE, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
 
@@ -1918,9 +1886,6 @@ interface TextInputProps {
   color?: string
   columns?: number
   cursorSnapshotRef?: MutableRefObject<InputCursorSnapshot | null>
-  /** Live caret, two ways: written with every value handed to `onChange` (completion reads where `@` was typed),
-   *  and read when the parent sets a new value: a caret recorded for exactly that value is kept, else the end. */
-  caretRef?: MutableRefObject<InputCursorSnapshot | null>
   focus?: boolean
   /** Leave ↑/↓ to the owner: a form that moves field focus with them owns the key, not the field. */
   ignoreVerticalArrows?: boolean
@@ -1979,25 +1944,6 @@ export const shouldPassThroughToGlobalHandler = (
   key.pageDown ||
   key.escape ||
   isVoiceToggleKey(key, input, voiceRecordKey)
-
-/**
- * The key gestures the composer treats as "paste from the clipboard": Alt+V
- * (ESC v), Ctrl+V, and Cmd/Ctrl+V via the platform action modifier. Ctrl+V is
- * matched on the parsed key, not the raw sequence: extended-key protocols
- * (kitty CSI u — tmux extended-keys, Ghostty, kitty, WezTerm) deliver it as
- * ESC [ 118 ; 5 u, and only the C0 byte \x16 arrives as `eventRaw`.
- */
-export const isPasteHotkey = (
-  eventRaw: string | undefined,
-  input: string,
-  key: Key,
-  macHost: boolean
-): boolean =>
-  eventRaw === '\x1bv' ||
-  eventRaw === '\x1bV' ||
-  eventRaw === '\x16' ||
-  (key.ctrl && input.toLowerCase() === 'v') ||
-  (macHost && isActionMod(key) && input.toLowerCase() === 'v')
 
 export interface TextInputMouseApi {
   dragAt: (row: number, col: number) => void
