@@ -594,6 +594,20 @@ def _request_turn_author(body: dict[str, Any]) -> Optional[dict[str, Any]]:
     return parse_turn_author(raw)
 
 
+_USAGE_TOKEN_KEYS = ("input_tokens", "output_tokens", "total_tokens")
+
+
+def _chat_usage_payload(usage: dict[str, Any]) -> dict[str, int]:
+    """OpenAI Chat Completions ``usage`` block (prompt/completion/total) from the agent's usage."""
+    values = (usage.get(key, 0) for key in _USAGE_TOKEN_KEYS)
+    return dict(zip(("prompt_tokens", "completion_tokens", "total_tokens"), values))
+
+
+def _responses_usage_payload(usage: dict[str, Any]) -> dict[str, int]:
+    """OpenAI Responses ``usage`` block from the agent's usage dict."""
+    return {key: usage.get(key, 0) for key in _USAGE_TOKEN_KEYS}
+
+
 async def _abandon_agent_task(
     agent_ref, agent_task, reason: str, *,
     reap_source: str = "api_server_sse_disconnect", await_cancel: bool = True) -> None:
