@@ -1300,8 +1300,8 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
     @staticmethod
     def _resolve_model_name(explicit: str) -> str:
         """Advertised /v1/models name: explicit override > active profile name > "hermes-agent"
-        (precedence owned by ``hermes_cli.model_switch_model_ids.resolve_effective_model``)."""
-        from hermes_cli.model_switch_model_ids import resolve_effective_model
+        (precedence owned by ``hermes_cli.model_switch.resolve_effective_model``)."""
+        from hermes_cli.model_switch import resolve_effective_model
         profile_name = ""
         with suppress(Exception):
             from hermes_cli.profiles import get_active_profile_name
@@ -2112,8 +2112,8 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         current_provider = _clean_request_string(runtime_kwargs.get("provider"))
         session_override = None if confirmed_runtime_lock else self._session_model_override_for(session_key)
         # Model-string precedence (override > session-persisted > global) is owned by
-        # hermes_cli.model_switch_model_ids.resolve_effective_model.
-        from hermes_cli.model_switch_model_ids import resolve_effective_model
+        # hermes_cli.model_switch.resolve_effective_model.
+        from hermes_cli.model_switch import resolve_effective_model
         if session_override:
             model = resolve_effective_model(session_override, None, model)
             self._apply_provider_runtime(

@@ -2,7 +2,8 @@ import json
 import re
 from types import SimpleNamespace
 
-from agent.trajectory import convert_to_trajectory_format, save_trajectory
+from agent.agent_runtime_helpers import convert_to_trajectory_format
+from agent.trajectory import save_trajectory
 
 
 def test_save_trajectory_redacts_secrets_in_temp_file(tmp_path):

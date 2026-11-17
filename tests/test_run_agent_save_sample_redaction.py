@@ -3,7 +3,7 @@
 import json
 from types import SimpleNamespace
 
-from agent.trajectory import convert_to_trajectory_format
+from agent.agent_runtime_helpers import convert_to_trajectory_format
 from run_agent import _save_sample_trajectory
 
 SECRET = "sk-" + "proj-savesample-secret-1234567890"

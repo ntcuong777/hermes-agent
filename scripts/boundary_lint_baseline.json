@@ -600,7 +600,6 @@
     "plugins/platforms/telegram/telegram_ids.py gateway.platforms.send_targets.parse_nonempty": 1,
     "plugins/platforms/telegram/telegram_ids.py gateway.platforms.send_targets.regex_groups_parser": 1,
     "plugins/platforms/telegram/telegram_network.py agent.ssl_verify.platform_ssl_context": 1,
-    "plugins/platforms/telegram/telegram_topic_transfer.py gateway.platforms.base_plaintext_command.coerce_plaintext_gateway_command": 1,
     "plugins/platforms/telegram/telegram_topic_transfer.py gateway.session_identity.replace_source": 1,
     "plugins/platforms/wecom/adapter.py agent.ssl_verify.certifi_bundle_path": 1,
     "plugins/platforms/wecom/adapter.py gateway.platforms.send_targets.StandaloneSendPolicy": 1,
