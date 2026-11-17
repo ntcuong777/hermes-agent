@@ -33,6 +33,7 @@ STATE_DIR_NAME = "core-patches"
 class Settings:
     refuse_on_critical: bool = False
     max_failures: int = 3
+    replace_fallback: str = "bug-class"
     apply_timeout_s: float = 5.0
     notify: bool = True
     events_max_bytes: int = 262144
@@ -41,6 +42,10 @@ class Settings:
 def _int_in(value: Any, low: int, high: int, default: int) -> int:
     ok = isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
     return value if ok else default
+
+
+def _choice_in(value: Any, choices: tuple, default: str) -> str:
+    return value if isinstance(value, str) and value in choices else default
 
 
 def _number_in(value: Any, low: float, high: float, default: float) -> float:
@@ -55,6 +60,8 @@ def parse_settings(section: Any) -> Settings:
     return Settings(
         refuse_on_critical=data.get("refuse_on_critical") is True,
         max_failures=_int_in(data.get("max_failures"), 1, 1000, default.max_failures),
+        replace_fallback=_choice_in(data.get("replace_fallback"), ("always", "never", "bug-class"),
+                                    default.replace_fallback),
         apply_timeout_s=_number_in(data.get("apply_timeout_s"), 0.05, 120.0, default.apply_timeout_s),
         notify=data.get("notify") is not False,
         events_max_bytes=_int_in(data.get("events_max_bytes"), 4096, 16 * 1024 * 1024, default.events_max_bytes),

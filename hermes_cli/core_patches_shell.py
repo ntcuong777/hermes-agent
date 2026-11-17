@@ -16,8 +16,17 @@ What counts as a patch-layer error (counted, logged, rate limited, answered by t
   - ``original`` raised (the wrapper let it through, or raised something else after it): legitimate,
     propagated, not counted. The original is never run twice.
 
-* ``kind="replace"``: an ``Exception`` raised by the replacement body. The recorded original answers
-  the call instead. If the original raises the same exception type, the exception was legitimate (the
+* ``kind="replace"``: an ``Exception`` raised by the replacement body. What happens next depends on
+  ``Guard.replace_fallback`` (``core_patches.replace_fallback``):
+
+  - ``"bug-class"`` (default): a ``BUG_CLASS`` exception (TypeError, AttributeError, NameError,
+    ImportError, AssertionError, NotImplementedError) is a patch fault: the recorded original answers
+    the call. Any other exception looks legitimate: it propagates, not counted, and the original is
+    NOT run (the replacement may already have had side effects).
+  - ``"always"``: every exception is answered by the recorded original, as the rule below describes.
+  - ``"never"``: every exception propagates, counted, and the original is NOT run.
+
+  When the original answers: if it raises the same exception type, the exception was legitimate (the
   original agrees): it propagates and is not counted. If the original answers, or raises a different
   type, the replacement is at fault and the failure is counted.
 
@@ -54,6 +63,7 @@ from typing import Any, Callable, Optional
 logger = logging.getLogger("hermes_cli.core_patches")
 
 LOG_INTERVAL_S = 60.0
+BUG_CLASS = (TypeError, AttributeError, NameError, ImportError, AssertionError, NotImplementedError)
 SYNC, ASYNC, GEN, AGEN = "sync", "async", "gen", "agen"
 IDLE, RUNNING, RETURNED, RAISED = "idle", "running", "returned", "raised"
 RAISE, FALLBACK, CHECKED, RETURN = "raise", "fallback", "checked", "return"
@@ -94,9 +104,11 @@ class Guard:
     """Failure accounting of one patch; shared by its shell and the registry (which owns ``on_failure``)."""
 
     def __init__(self, key: str, kind: str, max_failures: int, propagates: tuple = (),
-                 on_failure: Optional[Callable[["Guard", BaseException, str, bool], None]] = None) -> None:
+                 on_failure: Optional[Callable[["Guard", BaseException, str, bool], None]] = None,
+                 replace_fallback: str = "bug-class") -> None:
         self.key, self.kind, self.max_failures, self.propagates = key, kind, max(1, int(max_failures)), tuple(propagates)
         self.on_failure = on_failure
+        self.replace_fallback = replace_fallback if replace_fallback in ("always", "never") else "bug-class"
         self.consecutive = 0
         self.total = 0
         self.untracked_entries = 0
@@ -242,6 +254,12 @@ def _decide(guard: Guard, frame: Frame, exc: BaseException, *, delivered: bool, 
     if guard.kind == "replace":
         if delivered:
             guard.fail(exc, "the replacement body (mid-stream)")
+            return RAISE
+        if guard.replace_fallback == "never":
+            guard.fail(exc, "the replacement body")
+            return RAISE
+        if guard.replace_fallback == "bug-class" and not isinstance(exc, BUG_CLASS):
+            guard.ok()  # looks like a legitimate error: the upstream function is not run a second time
             return RAISE
         return CHECKED
     if frame.state == RAISED:

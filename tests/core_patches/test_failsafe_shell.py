@@ -174,7 +174,7 @@ def test_a_replacement_exception_the_original_does_not_share_is_counted_and_the_
         raise KeyError("different")
 
     def replacement(x):
-        raise ValueError("copy bug")
+        raise TypeError("copy bug")  # a bug-class error: the default replace_fallback answers it
     f, guard = build("replace", shell.SYNC, replacement, original)
     with pytest.raises(KeyError):
         f(1)

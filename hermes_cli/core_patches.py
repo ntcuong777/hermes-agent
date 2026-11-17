@@ -450,7 +450,8 @@ def _link(spec: CorePatchSpec, state: _TargetState) -> _Link:
     def inner() -> Callable[..., Any]:
         return link.inner if link.inner is not None else original
 
-    guard = shell.Guard(spec.key, spec.kind, _SETTINGS.max_failures, spec.propagates, _on_guard_failure)
+    guard = shell.Guard(spec.key, spec.kind, _SETTINGS.max_failures, spec.propagates, _on_guard_failure,
+                        replace_fallback=_SETTINGS.replace_fallback)
     try:
         candidate = spec.fn if spec.kind == "replace" else spec.fn(shell.trampoline(guard, inner, original, flavor))
     except Exception as exc:  # health: allow BLE001 -- a broken factory skips its own patch only
