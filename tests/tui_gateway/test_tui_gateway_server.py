@@ -14439,9 +14439,12 @@ def test_interrupt_before_agent_ready_prevents_late_turn_start(monkeypatch):
     calls = {"run_prompt": 0}
 
     class _FakeThread:
-        def __init__(self, target=None, daemon=None, **_thread_options):
+        def __init__(self, target=None, daemon=None, name="", **_thread_options):
             self.target = target
-            threads.append(self)
+            # macOS: a first SessionDB open spawns a libproc scan thread (hermes_state_dbfile).
+            # Only the turn worker is the thread under test.
+            if str(name).startswith("prompt-submit-"):
+                threads.append(self)
 
         def start(self):
             return None
@@ -14509,9 +14512,12 @@ def test_cancelled_turn_before_agent_ready_emits_error_event(monkeypatch):
     calls = {"run_prompt": 0}
 
     class _FakeThread:
-        def __init__(self, target=None, daemon=None, **_thread_options):
+        def __init__(self, target=None, daemon=None, name="", **_thread_options):
             self.target = target
-            threads.append(self)
+            # macOS: a first SessionDB open spawns a libproc scan thread (hermes_state_dbfile).
+            # Only the turn worker is the thread under test.
+            if str(name).startswith("prompt-submit-"):
+                threads.append(self)
 
         def start(self):
             return None
@@ -14581,9 +14587,12 @@ def test_session_not_running_before_agent_ready_emits_error_event(monkeypatch):
     calls = {"run_prompt": 0}
 
     class _FakeThread:
-        def __init__(self, target=None, daemon=None, **_thread_options):
+        def __init__(self, target=None, daemon=None, name="", **_thread_options):
             self.target = target
-            threads.append(self)
+            # macOS: a first SessionDB open spawns a libproc scan thread (hermes_state_dbfile).
+            # Only the turn worker is the thread under test.
+            if str(name).startswith("prompt-submit-"):
+                threads.append(self)
 
         def start(self):
             return None
@@ -14647,9 +14656,12 @@ def test_slow_agent_build_delivers_prompt_instead_of_timing_out(monkeypatch):
     calls = {"run_prompt": 0}
 
     class _FakeThread:
-        def __init__(self, target=None, daemon=None, **_thread_options):
+        def __init__(self, target=None, daemon=None, name="", **_thread_options):
             self.target = target
-            threads.append(self)
+            # macOS: a first SessionDB open spawns a libproc scan thread (hermes_state_dbfile).
+            # Only the turn worker is the thread under test.
+            if str(name).startswith("prompt-submit-"):
+                threads.append(self)
 
         def start(self):
             return None
@@ -14723,9 +14735,12 @@ def test_slow_agent_build_emits_keyed_progress_notice(monkeypatch):
     calls = {"run_prompt": 0}
 
     class _FakeThread:
-        def __init__(self, target=None, daemon=None, **_thread_options):
+        def __init__(self, target=None, daemon=None, name="", **_thread_options):
             self.target = target
-            threads.append(self)
+            # macOS: a first SessionDB open spawns a libproc scan thread (hermes_state_dbfile).
+            # Only the turn worker is the thread under test.
+            if str(name).startswith("prompt-submit-"):
+                threads.append(self)
 
         def start(self):
             return None
@@ -14807,9 +14822,12 @@ def test_agent_build_failure_surfaces_error_and_drops_turn(monkeypatch):
     calls = {"run_prompt": 0}
 
     class _FakeThread:
-        def __init__(self, target=None, daemon=None, **_thread_options):
+        def __init__(self, target=None, daemon=None, name="", **_thread_options):
             self.target = target
-            threads.append(self)
+            # macOS: a first SessionDB open spawns a libproc scan thread (hermes_state_dbfile).
+            # Only the turn worker is the thread under test.
+            if str(name).startswith("prompt-submit-"):
+                threads.append(self)
 
         def start(self):
             return None
