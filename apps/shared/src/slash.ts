@@ -82,6 +82,8 @@ export interface ComposerClearCommandDispatchResponse {
 /** A picker. Enter (or 1-9) runs the row's `select` command, `x` its `drop`; each answers with a directive. */
 export interface ChoicesCommandDispatchResponse {
   items: { drop?: string; label: string; select: string }[]
+  /** Shown as a system line when the picker opens (what a `drop` just did). */
+  notice?: string
   selected?: number
   title: string
   type: 'choices'
@@ -125,6 +127,7 @@ export function parseCommandDispatch(raw: unknown): CommandDispatchResponse | nu
       return items && typeof row.title === 'string'
         ? {
             items,
+            notice: str(row.notice),
             selected: typeof row.selected === 'number' ? row.selected : undefined,
             title: row.title,
             type: 'choices'

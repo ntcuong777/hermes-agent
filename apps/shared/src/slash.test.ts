@@ -73,6 +73,7 @@ describe('parseCommandDispatch', () => {
         type: 'choices',
         title: 'Stash',
         selected: 1,
+        notice: 'stash (2 left)',
         items: [
           { label: 'a', select: '/s 1', drop: '/d 1' },
           { label: 'b', select: '/s 2' }
@@ -81,6 +82,7 @@ describe('parseCommandDispatch', () => {
     ).toEqual({
       type: 'choices',
       title: 'Stash',
+      notice: 'stash (2 left)',
       selected: 1,
       items: [
         { label: 'a', select: '/s 1', drop: '/d 1' },

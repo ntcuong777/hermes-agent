@@ -378,15 +378,16 @@ describe('choices', () => {
   })
 
   it('x runs the row drop command, and its answer may open the list again', async () => {
-    const { host, sent } = setup({
+    const { host, said, sent } = setup({
       open: { type: 'choices', title: 'Stash', items: rows },
-      'drop 1': { type: 'choices', title: 'Stash (1 left)', items: [rows[1]] }
+      'drop 1': { type: 'choices', title: 'Stash', notice: 'stash (2 left)', items: [rows[1]] }
     })
 
     runKeybind('open', host)
     await settle()
     dispatchWidgetInput(key('x'))
     await vi.waitFor(() => expect(sent.map(s => s.command)).toEqual(['open', 'drop 1']))
+    await vi.waitFor(() => expect(said).toEqual(['stash (2 left)']))
     await vi.waitFor(() => expect(getOverlayState().widget?.appId).toBe('choice-picker'))
   })
 

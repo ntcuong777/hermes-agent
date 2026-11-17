@@ -308,8 +308,8 @@ class CommandDispatchResult(Result):
     status: str | None = None
     # ``prefill``: a slash command the client runs once it has actually put ``message`` in the composer.
     ack: str | None = None
-    # ``choices``: a picker (title, rows, preselected row index); a row's ``select``/``drop`` command answers
-    # with any directive again. ``composer-clear`` carries only ``notice``.
+    # ``choices``: a picker (title, rows, preselected row index, optional ``notice`` line); a row's
+    # ``select``/``drop`` command answers with any directive again. ``composer-clear`` carries only ``notice``.
     title: str | None = None
     items: list[ChoiceItem] | None = None
     selected: int | None = None
