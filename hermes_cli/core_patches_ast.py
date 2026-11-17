@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import copy
 import difflib
 import hashlib
@@ -29,12 +30,16 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Iterator, Mapping, Optional, Sequence
 
 TARGET_RE = re.compile(r"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*:[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?$")
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
+NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")  # a patch name (also the snapshot file stem)
+COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+GIT_TIMEOUT_S = 10.0
 LOCK_FILE = "core_patches.lock.json"
-LOCK_VERSION = 2          # v2 = provenance record + snapshot file; v1 (inline `source`) is still read
+LOCK_VERSION = 2          # v2 = provenance record + snapshot file; v1 (inline `source`) is still read;
+                         # optional field snapshot_source ("git:<commit[:12]>" or "working-tree")
 SNAPSHOT_DIR = "upstream-source"
 PIN_KEYS = ("target", "ast_sha", "plugin", "kind", "target_file", "upstream_commit", "upstream_release", "reason")
 DEFAULT_SOURCE_ROOT = Path(__file__).resolve().parents[1]
@@ -141,10 +146,9 @@ def node_sha(node: ast.AST) -> str:
     return hashlib.sha256(canonical_dump(_strip_docstring(node)).encode("utf-8")).hexdigest()
 
 
-def target_source(target: str, source_root: Optional[Path] = None) -> TargetSource:
-    module, qual = split_target(target)
-    path = module_file(module, source_root)
-    text = path.read_text(encoding="utf-8")
+def _source_of(text: str, path: Path, target: str, qual: tuple[str, ...]) -> TargetSource:
+    """The def of ``qual`` in the module text ``text`` (the one locating helper of target_source and of the
+    snapshot taken at an upstream commit)."""
     try:
         tree = ast.parse(text, filename=str(path))
     except SyntaxError as exc:
@@ -156,6 +160,12 @@ def target_source(target: str, source_root: Optional[Path] = None) -> TargetSour
     lines = text.splitlines(keepends=True)[start - 1:node.end_lineno]
     return TargetSource(target=target, path=path, source="".join(lines), sha=node_sha(node),
                         name=qual[-1], first_line=start)
+
+
+def target_source(target: str, source_root: Optional[Path] = None) -> TargetSource:
+    module, qual = split_target(target)
+    path = module_file(module, source_root)
+    return _source_of(path.read_text(encoding="utf-8"), path, target, qual)
 
 
 def runtime_mismatch(source: TargetSource, func: Any) -> Optional[str]:
@@ -255,9 +265,13 @@ def _write_text(path: Path, text: str) -> None:
 
 def _migrated(plugin_dir: Path, patches: Mapping[str, Any]) -> dict:
     """Every entry as a v2 entry: a v1 entry's inline ``source`` moves to its snapshot file (entry gets
-    ``migrated_from: 1``; provenance fields it never had stay absent, so the lint reports them)."""
+    ``migrated_from: 1``; provenance fields it never had stay absent, so the lint reports them). Only keys
+    that are patch names (NAME_RE) are migrated; any other key is kept as it is."""
     out: dict = {}
     for name, entry in patches.items():
+        if not NAME_RE.match(str(name)):
+            out[name] = dict(entry) if isinstance(entry, dict) else entry
+            continue
         entry = dict(entry) if isinstance(entry, dict) else {}
         if "source" in entry and "snapshot" not in entry:
             text = str(entry.pop("source"))
@@ -291,24 +305,77 @@ def target_file_rel(current: TargetSource, source_root: Optional[Path] = None) -
         return Path(current.path).name
 
 
+@contextlib.contextmanager
+def _lock_file_held(plugin_dir: Path) -> Iterator[None]:
+    """An exclusive flock on the sibling ``<lock file>.lock`` (a no-op where fcntl is missing)."""
+    try:
+        import fcntl
+    except ImportError:
+        yield
+        return
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+    with open(plugin_dir / (LOCK_FILE + ".lock"), "a", encoding="utf-8") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def _committed_text(source_root: Optional[Path], commit: str, rel: str) -> Optional[str]:
+    """The file ``rel`` at the upstream ``commit`` (git, never fetching; None when it cannot be read)."""
+    root = Path(source_root) if source_root is not None else DEFAULT_SOURCE_ROOT
+    if not COMMIT_RE.match(commit or "") or not rel:
+        return None
+    try:
+        run_ = subprocess.run(["git", "-C", str(root), "show", f"{commit}:{rel}"], capture_output=True, text=True,
+                              timeout=GIT_TIMEOUT_S, check=False,
+                              env={**os.environ, "GIT_NO_LAZY_FETCH": "1"})
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+    return run_.stdout if run_.returncode == 0 else None
+
+
+def _upstream_snapshot(current: TargetSource, target: str, source_root: Optional[Path], commit: str,
+                       rel: str) -> tuple[str, str]:
+    """``(snapshot text, snapshot_source)``: the target's def at the upstream commit when git has it, else the
+    working-tree def (``working-tree``). Never raises."""
+    text = _committed_text(source_root, commit, rel)
+    if text is not None:
+        try:
+            return _source_of(text, current.path, target, split_target(target)[1]).source, f"git:{commit[:12]}"
+        except CorePatchTargetError:
+            pass
+    return current.source, "working-tree"
+
+
 def write_lock_entry(plugin_dir: Path, name: str, target: str, source_root: Optional[Path] = None,
                      *, provenance: Optional[Mapping[str, Any]] = None) -> str:
-    """Record `target`'s current source (a snapshot file) and fingerprint under `name`; returns the sha.
-    `provenance` (reason, fork_head, upstream_ref, ...) is merged into the entry. `authored_at` is kept
-    from an earlier record; `recorded_at` is refreshed. Other v1 entries of the lock are migrated."""
+    """Record `target`'s source (a snapshot file) and fingerprint under `name`; returns the sha. The snapshot is
+    the def at the recorded upstream commit (``snapshot_source`` = ``git:<commit[:12]>``) when git can read it,
+    else the working-tree def (``snapshot_source`` = ``working-tree``). `provenance` (reason, fork_head,
+    upstream_ref, ...) is merged into the entry. `authored_at` is kept from an earlier record; `recorded_at` is
+    refreshed. Other v1 entries of the lock are migrated. A lock with a newer schema is refused, unchanged."""
     current = target_source(target, source_root)
     plugin_dir = Path(plugin_dir)
-    patches = _migrated(plugin_dir, read_lock(plugin_dir))
-    now = _utc_now()
-    entry = dict(patches.get(name, {}))
-    entry.update(target=target, ast_sha=current.sha, python="%d.%d.%d" % sys.version_info[:3],
-                 target_file=target_file_rel(current, source_root), snapshot=snapshot_rel(name),
-                 snapshot_sha256=_sha256(current.source), recorded_at=now)
-    entry.setdefault("authored_at", now)
-    entry.update(dict(provenance or {}))
-    _write_text(plugin_dir / snapshot_rel(name), current.source)
-    patches[name] = entry
-    _write_lock(plugin_dir, patches)
+    upstream = (provenance or {}).get("upstream_ref")
+    commit = str(upstream.get("commit") or "") if isinstance(upstream, dict) else ""
+    snapshot, snapshot_source = _upstream_snapshot(current, target, source_root, commit,
+                                                   target_file_rel(current, source_root))
+    with _lock_file_held(plugin_dir):
+        if lock_version(plugin_dir) > LOCK_VERSION:
+            raise CorePatchFileError("lock file is a newer schema; update the fork first")
+        patches = _migrated(plugin_dir, read_lock(plugin_dir))
+        now = _utc_now()
+        entry = dict(patches.get(name, {}))
+        entry.update(target=target, ast_sha=current.sha, python="%d.%d.%d" % sys.version_info[:3],
+                     target_file=target_file_rel(current, source_root), snapshot=snapshot_rel(name),
+                     snapshot_sha256=_sha256(snapshot), snapshot_source=snapshot_source, recorded_at=now)
+        entry.setdefault("authored_at", now)
+        entry.update(dict(provenance or {}))
+        _write_text(plugin_dir / snapshot_rel(name), snapshot)
+        patches[name] = entry
+        _write_lock(plugin_dir, patches)
     return current.sha
 
 

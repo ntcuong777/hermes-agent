@@ -79,12 +79,11 @@ from typing import Any, Callable, Iterable, Optional
 from hermes_cli import core_patches_policy as policy
 from hermes_cli import core_patches_shell as shell
 from hermes_cli.core_patches_ast import (
-    SHA_RE, TARGET_RE, CorePatchTargetError, TargetSource, runtime_mismatch, split_target, target_source,
+    NAME_RE, SHA_RE, TARGET_RE, CorePatchTargetError, TargetSource, runtime_mismatch, split_target, target_source,
 )
 
 logger = logging.getLogger(__name__)
 
-NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 KINDS = ("wrap", "replace")
 PENDING, ACTIVE = "pending", "active"
 SKIPPED_DRIFT, SKIPPED_NO_GRANT, SKIPPED_ERROR = "skipped-drift", "skipped-no-grant", "skipped-error"
