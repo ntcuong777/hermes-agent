@@ -147,7 +147,7 @@ def command_verdict(name, arg=''):
 
 
 def _parse(params, dispatch):
-    allowed = {'session_id', 'profile', 'name', 'arg'} if dispatch else {'session_id', 'profile', 'command'}
+    allowed = {'session_id', 'profile', 'name', 'arg'} if dispatch else {'session_id', 'profile', 'command', 'composer_text'}
     if (set(params) - allowed or any(not isinstance(v, str) for v in params.values())):
         raise RuntimeStoreError('invalid_params')
     text = params.get('name', '') if dispatch else params.get('command', '')
@@ -572,11 +572,12 @@ async def execute_command(connection, ref, params, *, dispatch=False):
         await before()  # mid-run the busy dispatcher fires it once it accepts the command (``BUSY_ACCEPTED``)
     if runner_command is not None:
         from gateway.plugin_command_choice import viewer_choices
+        from hermes_cli.plugin_composer import bind_composer_text
         with (_profile_runtime_scope(home), _session_workspace(authority.runner, live.source),
-              viewer_choices(live, ref.session_id)):
+              viewer_choices(live, ref.session_id), bind_composer_text(params.get('composer_text'))):
             output = await _run_runner_command(authority.runner, live, name, arg, *runner_command)
         # Composer directives must reach local clients, not become a printed Python dict.
-        if isinstance(output, dict) and output.get('type') in {'prefill', 'stash-saved'}:
+        if isinstance(output, dict) and isinstance(output.get('type'), str):
             return output
         return {'type': 'exec', 'output': _text(output)}
     if definition is None:

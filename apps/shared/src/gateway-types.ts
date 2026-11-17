@@ -101,6 +101,8 @@ export interface GatewayCompletionItem {
 export interface CommandsCatalogResponse {
   canon?: Record<string, string>
   categories?: SlashCategory[]
+  /** Default key chords plugins declared: `alt+s` -> `/stash toggle`. */
+  keybinds?: Record<string, string>
   pairs?: [string, string][]
   skill_count?: number
   sub?: Record<string, string[]>
@@ -174,6 +176,8 @@ export interface ConfigDisplayConfig {
   tui_agents_nudge?: boolean
   tui_auto_resume_recent?: boolean
   tui_compact?: boolean
+  /** Chord -> slash command for the Ink TUI; an empty command turns a plugin's default chord off. */
+  tui_keybinds?: Record<string, string>
   /** Legacy alias for display.mouse_tracking. */
   tui_mouse?: boolean | null | number | string
   // Forward-compat: backend may send styles this client doesn't know yet —

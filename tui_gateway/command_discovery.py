@@ -131,6 +131,7 @@ class _Catalog:
         self.commands: dict[str, dict[str, str | None]] = {}
         self.cat_map: dict[str, list[list[str]]] = {}  # insertion order = category order
         self.plugin_commands: dict[str, str] = {}  # every plugin command, also those a display row hides
+        self.keybinds: dict[str, str] = {}  # chord -> slash command, as plugins declared them (TUI defaults)
 
     def add(self, key: str, desc: str, cat: str) -> None:
         self.canon[key.lower()] = key
@@ -177,6 +178,7 @@ def _catalog_plugin_commands(cat: _Catalog, module_loader) -> None:
         if not isinstance(info, dict):
             continue
         cat.plugin_commands[pname] = str(info.get("description") or "Plugin command")
+        cat.keybinds.update({chord: f"{key} {args}".strip() for chord, args in (info.get("keybinds") or {}).items()})
         if key.lower() in cat.canon:
             continue
         cat.add(key, cat.plugin_commands[pname], "Plugin commands")
@@ -247,7 +249,7 @@ def command_catalog(load_cfg=None, module_loader=import_module, scope=None) -> d
         "commands": cat.commands,
         "categories": [{"name": c, "pairs": rows} for c, rows in cat.cat_map.items()],
         "skills": skills, "skill_count": len(skills), "warning": warning, "plugin_discovery_error": plugin_error,
-        "plugin_commands": cat.plugin_commands}
+        "plugin_commands": cat.plugin_commands, "keybinds": cat.keybinds}
 
 
 def slash_completions(text: str = "", scope=None) -> dict:

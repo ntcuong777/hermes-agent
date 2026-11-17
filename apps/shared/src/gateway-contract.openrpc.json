@@ -12127,6 +12127,38 @@
         "title": "ChangeSignalPayload",
         "type": "object"
       },
+      "ChoiceItem": {
+        "additionalProperties": false,
+        "description": "One row of a ``choices`` directive: ``select`` (and ``drop``, on ``x``) is a slash command the client runs.",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "select": {
+            "title": "Select",
+            "type": "string"
+          },
+          "drop": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Drop"
+          }
+        },
+        "required": [
+          "label",
+          "select"
+        ],
+        "title": "ChoiceItem",
+        "type": "object"
+      },
       "ClarifyLockParams": {
         "additionalProperties": false,
         "properties": {
@@ -12716,19 +12748,46 @@
             "default": null,
             "title": "Status"
           },
-          "count": {
+          "ack": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
             "default": null,
-            "title": "Count"
+            "title": "Ack"
           },
-          "max": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          },
+          "items": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ChoiceItem"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Items"
+          },
+          "selected": {
             "anyOf": [
               {
                 "type": "integer"
@@ -12738,7 +12797,7 @@
               }
             ],
             "default": null,
-            "title": "Max"
+            "title": "Selected"
           }
         },
         "required": [
@@ -12961,6 +13020,13 @@
               "type": "string"
             },
             "title": "Plugin Commands",
+            "type": "object"
+          },
+          "keybinds": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Keybinds",
             "type": "object"
           }
         },
@@ -17412,7 +17478,8 @@
           "send",
           "skill",
           "prefill",
-          "stash-saved"
+          "composer-clear",
+          "choices"
         ],
         "title": "DispatchType",
         "type": "string"
@@ -43782,6 +43849,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "composer_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Composer Text"
           }
         },
         "required": [
@@ -43902,19 +43981,46 @@
             "default": null,
             "title": "Status"
           },
-          "count": {
+          "ack": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
             "default": null,
-            "title": "Count"
+            "title": "Ack"
           },
-          "max": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          },
+          "items": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ChoiceItem"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Items"
+          },
+          "selected": {
             "anyOf": [
               {
                 "type": "integer"
@@ -43924,7 +44030,7 @@
               }
             ],
             "default": null,
-            "title": "Max"
+            "title": "Selected"
           }
         },
         "title": "SlashExecResult",

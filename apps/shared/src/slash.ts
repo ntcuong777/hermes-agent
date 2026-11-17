@@ -66,33 +66,45 @@ export interface SendCommandDispatchResponse {
 }
 
 export interface PrefillCommandDispatchResponse {
+  /** A slash command to run once the client has actually put `message` in the composer. */
+  ack?: string
   message: string
   notice?: string
   type: 'prefill'
 }
 
-/** A save that definitely happened. The Alt+S stash keybind clears the composer on
- *  this directive and on nothing else: `push-draft` answering with a plain string is
- *  an ordinary resolved RPC response, so "stash full" (or any plugin error) used to
- *  look exactly like success and the draft was cleared without being stored (#T1). */
-export interface StashSavedCommandDispatchResponse {
-  /** Entries held after the push, and the store's cap. */
-  count?: number
-  max?: number
+/** Empty the composer (a keybind's save went through). */
+export interface ComposerClearCommandDispatchResponse {
   notice?: string
-  type: 'stash-saved'
+  type: 'composer-clear'
+}
+
+/** A picker. Enter (or 1-9) runs the row's `select` command, `x` its `drop`; each answers with a directive. */
+export interface ChoicesCommandDispatchResponse {
+  items: { drop?: string; label: string; select: string }[]
+  selected?: number
+  title: string
+  type: 'choices'
 }
 
 export type CommandDispatchResponse =
   | AliasCommandDispatchResponse
+  | ChoicesCommandDispatchResponse
+  | ComposerClearCommandDispatchResponse
   | ExecCommandDispatchResponse
   | PrefillCommandDispatchResponse
   | SendCommandDispatchResponse
   | SkillCommandDispatchResponse
-  | StashSavedCommandDispatchResponse
 
 const str = (value: unknown) => (typeof value === 'string' ? value : undefined)
-const num = (value: unknown) => (typeof value === 'number' ? value : undefined)
+
+const choiceItems = (value: unknown): ChoicesCommandDispatchResponse['items'] | null => {
+  const rows = Array.isArray(value) ? (value as Record<string, unknown>[]) : []
+
+  return rows.length && rows.every(r => r && typeof r.label === 'string' && typeof r.select === 'string')
+    ? rows.map(r => ({ drop: str(r.drop), label: r.label as string, select: r.select as string }))
+    : null
+}
 
 /** Narrow a raw `command.dispatch` result to the union, or null when the
  *  payload is malformed (missing required field, unknown `type`). */
@@ -107,13 +119,31 @@ export function parseCommandDispatch(raw: unknown): CommandDispatchResponse | nu
     case 'alias':
       return typeof row.target === 'string' ? { target: row.target, type: 'alias' } : null
 
+    case 'choices': {
+      const items = choiceItems(row.items)
+
+      return items && typeof row.title === 'string'
+        ? {
+            items,
+            selected: typeof row.selected === 'number' ? row.selected : undefined,
+            title: row.title,
+            type: 'choices'
+          }
+        : null
+    }
+
+    case 'composer-clear':
+      return { notice: str(row.notice), type: 'composer-clear' }
+
     case 'exec':
 
     case 'plugin':
       return { output: str(row.output), type: row.type }
 
     case 'prefill':
-      return typeof row.message === 'string' ? { message: row.message, notice: str(row.notice), type: 'prefill' } : null
+      return typeof row.message === 'string'
+        ? { ack: str(row.ack), message: row.message, notice: str(row.notice), type: 'prefill' }
+        : null
 
     case 'send':
       return typeof row.message === 'string'
@@ -124,9 +154,6 @@ export function parseCommandDispatch(raw: unknown): CommandDispatchResponse | nu
       return typeof row.name === 'string'
         ? { display: str(row.display), message: str(row.message), name: row.name, type: 'skill' }
         : null
-
-    case 'stash-saved':
-      return { count: num(row.count), max: num(row.max), notice: str(row.notice), type: 'stash-saved' }
 
     default:
       return null

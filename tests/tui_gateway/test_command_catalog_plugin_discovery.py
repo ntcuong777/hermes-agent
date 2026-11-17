@@ -39,3 +39,13 @@ def test_plugin_commands_lists_names_a_display_entry_hides():
     assert result["plugin_commands"] == {"logs": "Plugin logs", "probe": "Probe"}
     plugin_rows = next(c["pairs"] for c in result["categories"] if c["name"] == "Plugin commands")
     assert ["/logs", "Plugin logs"] not in plugin_rows
+
+
+def test_catalog_lists_the_chords_plugins_declared_as_slash_commands():
+    """``keybinds``: the TUI's default chords, each running ``/name <args>`` (``display.tui_keybinds`` layers over it)."""
+    result = _catalog(lambda: {
+        "stash": {"description": "Stash", "keybinds": {"alt+s": "toggle", "alt+shift+s": "--global toggle"}},
+        "quiet": {"description": "No chords"},
+    })
+    assert result["keybinds"] == {"alt+s": "/stash toggle", "alt+shift+s": "/stash --global toggle"}
+    assert _catalog(dict)["keybinds"] == {}

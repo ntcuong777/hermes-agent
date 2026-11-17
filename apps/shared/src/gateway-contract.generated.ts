@@ -3947,6 +3947,7 @@ export interface CommandsCatalogResult {
   warning?: string
   plugin_discovery_error?: string
   plugin_commands?: Record<string, string>
+  keybinds?: Record<string, string>
 }
 export interface CommandCatalogMeta {
   argument_mode?: ArgumentMode | null
@@ -3987,15 +3988,24 @@ export interface CommandDispatchResult {
   display?: string | null
   name?: string | null
   status?: string | null
-  count?: number | null
-  max?: number | null
+  ack?: string | null
+  title?: string | null
+  items?: ChoiceItem[] | null
+  selected?: number | null
 }
 /** ``apps/shared/src/slash.ts::parseCommandDispatch`` branches on this. */
-export type DispatchType = 'exec' | 'alias' | 'plugin' | 'send' | 'skill' | 'prefill' | 'stash-saved'
+export type DispatchType = 'exec' | 'alias' | 'plugin' | 'send' | 'skill' | 'prefill' | 'composer-clear' | 'choices'
+/** One row of a ``choices`` directive: ``select`` (and ``drop``, on ``x``) is a slash command the client runs. */
+export interface ChoiceItem {
+  label: string
+  select: string
+  drop?: string | null
+}
 export interface SlashExecParams {
   session_id: string
   command: string
   profile?: string | null
+  composer_text?: string | null
 }
 /** Plain worker/plugin text in ``output`` (+ ``warning``), or — when the command was rerouted to ``command.dispatch`` — that method's directive fields with ``type`` set. */
 export interface SlashExecResult {
@@ -4008,8 +4018,10 @@ export interface SlashExecResult {
   display?: string | null
   name?: string | null
   status?: string | null
-  count?: number | null
-  max?: number | null
+  ack?: string | null
+  title?: string | null
+  items?: ChoiceItem[] | null
+  selected?: number | null
 }
 export interface InsightsGetParams {
   days?: number | null
