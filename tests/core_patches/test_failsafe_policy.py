@@ -210,6 +210,36 @@ def test_a_slow_target_import_leaves_the_patch_pending_and_it_installs_when_the_
     assert module.greet("x") == "HELLO X"
 
 
+
+def test_a_hung_wrap_factory_holding_the_registry_lock_does_not_defeat_the_apply_budget(
+        target, no_discovery, monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="hermes_cli.core_patches")
+    release = threading.Event()
+
+    def hang(original):
+        release.wait(30)  # the factory runs under the registry lock (activate -> _link)
+        return lambda name: original(name)
+    spec = cp.make_spec(plugin_id="demo", name="hang", target=f"{target.name}:greet", kind="wrap", fn=hang,
+                        expect_ast_sha=GREET_SHA)
+    key = cp.stage(spec, OWNER, granted=True, declared=True)
+    holder = threading.Thread(target=cp.activate, args=(key, OWNER), daemon=True)
+    monkeypatch.setattr(policy, "load_settings", lambda: policy.Settings(apply_timeout_s=0.5))
+    try:
+        holder.start()
+        time.sleep(0.2)  # the activation is now inside the hung factory
+        result = []
+        started = time.monotonic()
+        caller = threading.Thread(target=lambda: result.append(cp.apply_core_patches("test")), daemon=True)
+        caller.start()
+        caller.join(5.0)
+        elapsed = time.monotonic() - started
+        assert not caller.is_alive() and elapsed < 3.0
+        assert isinstance(result[0], tuple)
+        assert any("registry busy" in r.getMessage() for r in caplog.records)
+    finally:
+        release.set()
+        holder.join(5.0)
+
 # ── a bad registration never fails its plugin ──────────────────────────────────────────────
 
 

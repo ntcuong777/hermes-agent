@@ -704,9 +704,20 @@ def release(key: str, owner: str, seq: Optional[int] = None, *, failed: Optional
     _remove_owner(key, owner, seq, tombstone=failed or "")
 
 
+_LOCK_WAIT_S = 1.0  # a hung wrap factory holds _LOCK for as long as it hangs: readers never wait longer
+
+
+def _sorted_records(recs: Iterable[PatchRecord]) -> tuple[PatchRecord, ...]:
+    return tuple(sorted(recs, key=lambda r: (r.spec.target, r.spec.order, r.spec.seq)))
+
+
 def records() -> tuple[PatchRecord, ...]:
-    with _LOCK:
-        return tuple(sorted(_RECORDS.values(), key=lambda r: (r.spec.target, r.spec.order, r.spec.seq)))
+    if not _LOCK.acquire(timeout=_LOCK_WAIT_S):
+        return ()
+    try:
+        return _sorted_records(_RECORDS.values())
+    finally:
+        _LOCK.release()
 
 
 def failure_stats() -> dict[str, tuple[int, int, str]]:
@@ -883,6 +894,21 @@ def _apply_body(surface: str) -> None:
         logger.warning("core patches: installing the deferred patches failed (%s)", surface or "?", exc_info=True)
 
 
+def _snapshot_or_busy(wait_s: float) -> tuple[PatchRecord, ...]:
+    """The records for the report: under the lock when it is free within ``wait_s``; else a shallow copy
+    without it (the registry is busy, e.g. a hung factory), or () when even the copy fails."""
+    if _LOCK.acquire(timeout=wait_s):
+        try:
+            return _sorted_records(_RECORDS.values())
+        finally:
+            _LOCK.release()
+    logger.warning("core patches: registry busy, report skipped")
+    try:
+        return _sorted_records(list(_RECORDS.values()))
+    except Exception:  # health: allow BLE001 -- the report of a busy registry is best effort
+        return ()
+
+
 def apply_core_patches(surface: str = "") -> tuple[PatchRecord, ...]:
     """Discover plugins now (installing their patches), within ``core_patches.apply_timeout_s``, and
     report what happened. Idempotent: safe to call from every entry point and more than once.
@@ -901,12 +927,16 @@ def apply_core_patches(surface: str = "") -> tuple[PatchRecord, ...]:
         logger.warning("core patches (%s): the %.1fs startup budget ran out; continuing without waiting (patches not "
                        "installed yet stay pending and install when discovery finishes)", surface or "?",
                        settings.apply_timeout_s)
-        with _LOCK:
-            for record in list(_RECORDS.values()):
-                if record.status == PENDING:
-                    _set_status(record.spec.key, PENDING, f"apply budget of {settings.apply_timeout_s:g}s exceeded; "
-                                                          "installing in the background")
-    current = records()
+        if _LOCK.acquire(timeout=min(_LOCK_WAIT_S, settings.apply_timeout_s)):
+            try:
+                for record in list(_RECORDS.values()):
+                    if record.status == PENDING:
+                        _set_status(record.spec.key, PENDING,
+                                    f"apply budget of {settings.apply_timeout_s:g}s exceeded; "
+                                    "installing in the background")
+            finally:
+                _LOCK.release()
+    current = _snapshot_or_busy(min(_LOCK_WAIT_S, settings.apply_timeout_s))
     problems = critical_problems(current)
     try:
         from hermes_cli import core_patches_report as report
