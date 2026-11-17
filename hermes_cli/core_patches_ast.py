@@ -332,8 +332,10 @@ def _committed_text(source_root: Optional[Path], commit: str, rel: str) -> Optio
         return None
     try:
         run_ = subprocess.run(["git", "-C", str(root), "show", f"{commit}:{rel}"], capture_output=True, text=True,
-                              timeout=GIT_TIMEOUT_S, check=False,
-                              env={**os.environ, "GIT_NO_LAZY_FETCH": "1"})
+                              timeout=GIT_TIMEOUT_S, check=False, stdin=subprocess.DEVNULL,
+                              start_new_session=True,
+                              env={**os.environ, "GIT_NO_LAZY_FETCH": "1", "GIT_TERMINAL_PROMPT": "0",
+                                   "GIT_ASKPASS": "true"})
     except (OSError, subprocess.SubprocessError, ValueError):
         return None
     return run_.stdout if run_.returncode == 0 else None
