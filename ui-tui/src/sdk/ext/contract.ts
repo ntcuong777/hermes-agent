@@ -37,10 +37,15 @@ export interface HookSpec {
 
 /**
  * The hooks this SDK version defines. Adding an entry is a minor change, removing or re-typing one is
- * a breaking change (bump SDK_VERSION). Stage 0 defines none; stage 1 of spec-06 adds `composer.paste` and
+ * a breaking change (bump SDK_VERSION). Stage 1 of spec-06b defines `composer.paste` and
  * `composer.clipboardImage`; later stages add completion, session switcher and approval hooks.
  */
-export const HOOKS: Readonly<Record<string, HookSpec>> = Object.freeze({})
+export const HOOKS: Readonly<Record<string, HookSpec>> = Object.freeze({
+  /** Payload `{}`. The first handler to return a non-empty string wins: the absolute path of a PNG it staged from the system clipboard. */
+  'composer.clipboardImage': { mode: 'first' },
+  /** Payload `{ text, bracketed }`. Return `{ text }` to replace the pasted text, `null` to swallow the paste, nothing to keep it. */
+  'composer.paste': { mode: 'transform' }
+})
 
 /**
  * What a slot is. `component`: a React component the core renders (`slotComponent`); `fn`: a plain function the core
