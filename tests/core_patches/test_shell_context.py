@@ -107,3 +107,22 @@ def test_a_patch_failing_before_its_own_original_falls_back_to_its_own_original_
     assert g_calls == [5]
     assert base_calls == [5]
     assert (g_guard.total, f_guard.total) == (1, 0)
+
+
+def test_the_shell_has_the_signature_and_name_of_the_original_not_of_a_star_args_wrapper():
+    import inspect
+
+    def original(a, b=2):
+        return a + b
+
+    guard = shell.Guard("t:sig", "wrap", 3, (), None)
+
+    def inner():
+        return original
+
+    def wrapper(*args, **kwargs):
+        return original(*args, **kwargs)
+    candidate = wrapper
+    installed = shell.make_shell(guard, candidate, inner, shell.SYNC, original=original)
+    assert inspect.signature(installed) == inspect.signature(original)
+    assert installed.__name__ == "original"

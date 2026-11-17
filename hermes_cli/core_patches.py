@@ -463,7 +463,7 @@ def _link(spec: CorePatchSpec, state: _TargetState) -> _Link:
             link.error = "async-ness differs from the target (async target needs an async function)"
         else:
             link.guard = guard
-            link.wrapped = shell.make_shell(guard, candidate, inner, flavor)
+            link.wrapped = shell.make_shell(guard, candidate, inner, flavor, original=original)
     _LINKS[spec.seq] = link
     return link
 

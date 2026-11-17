@@ -475,7 +475,8 @@ _SHELLS = {SYNC: _sync_shell, ASYNC: _async_shell, GEN: _gen_shell, AGEN: _agen_
 
 
 def make_shell(guard: Guard, wrapped: Callable[..., Any], inner: Callable[[], Callable[..., Any]],
-               flavor: str) -> Callable[..., Any]:
+               flavor: str, original: Optional[Callable[..., Any]] = None) -> Callable[..., Any]:
     """The callable the registry installs for one patch: ``wrapped`` (the wrapper or the replacement)
-    behind the safety shell. ``inner()`` is the next callable in the chain (ultimately the original)."""
-    return functools.wraps(wrapped)(_SHELLS[flavor](guard, wrapped, inner))
+    behind the safety shell. ``inner()`` is the next callable in the chain (ultimately the original).
+    ``original`` (the target function) gives the shell its name, doc and signature."""
+    return functools.wraps(original if original is not None else wrapped)(_SHELLS[flavor](guard, wrapped, inner))
