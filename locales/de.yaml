@@ -70,6 +70,8 @@ gateway:
     reset_done: "Modell-Override der Sitzung entfernt — jetzt wird `{model}` verwendet (Kanal-/globaler Standard). Gesprächsverlauf bleibt erhalten."
     reset_none: "Kein Modell-Override für diese Sitzung aktiv — es wird bereits `{model}` verwendet (Kanal-/globaler Standard)."
     err_skew: "Dieses Gateway führt Code aus {boot_rev} aus, der Checkout auf der Festplatte ist inzwischen aber {disk_rev}. Ein Modellwechsel könnte durch veraltete Module abstürzen — starten Sie das Gateway neu, um den neuen Code zu laden: hermes gateway restart"
+    err_skew_short: "Dieses Gateway läuft mit älterem Code als der Checkout. Zum Wechseln des Modells neu starten: hermes gateway restart"
+    warn_skew: "Hinweis: Dieses Gateway führt noch Code aus {boot_rev} aus (der Checkout ist jetzt {disk_rev}); starte es bei Gelegenheit neu: hermes gateway restart"
     err_switch_failed: "Modellwechsel zu {model} fehlgeschlagen ({error}); {current} bleibt aktiv."
     err_config_not_updated: "config.yaml nicht aktualisiert ({error})"
     err_stale_override: "in config.yaml gespeichert, aber der veraltete Sitzungs-Override wurde nicht gelöscht ({error})"

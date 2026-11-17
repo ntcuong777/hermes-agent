@@ -484,10 +484,11 @@ def _dashboard_code_skew_guard() -> Optional[str]:
     ``/api/model/options`` 500 after the update added ``agent.model_metadata.is_grok_46_family`` while the
     running process kept serving the pre-update module (#86207).
     """
-    from gateway.code_skew import detect_code_skew
+    from gateway.code_skew import model_switch_skew
 
-    skew = detect_code_skew()
-    if not skew:
+    # ``gateway.model_switch_skew_guard`` (refuse | warn | off): only ``refuse`` blocks the call.
+    mode, skew = model_switch_skew()
+    if not skew or mode != "refuse":
         return None
     boot_rev, disk_rev = skew
     return (

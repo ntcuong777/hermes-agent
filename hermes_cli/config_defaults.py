@@ -2131,6 +2131,11 @@ DEFAULT_CONFIG = {
         # (primary copy: state.db gateway_routing table). True for external tooling and downgrade
         # safety; False stops producing the file.
         "write_sessions_json": True,
+        # What a model switch does when the checkout moved since this gateway booted (a commit or pull
+        # under a running gateway): "refuse" fails it with a "restart the gateway" message (stale cached
+        # modules can crash a first-time lazy import); "warn" performs the switch and adds a one-line
+        # "restart when convenient" note; "off" performs it silently. Read on every switch (no restart).
+        "model_switch_skew_guard": "refuse",
         # One gateway for every profile on this host: the DEFAULT profile's gateway also connects
         # each named profile's bots (their own .env / config.yaml, per-profile secret scope) and
         # stamps the profile into session keys. This is the ONLY supported topology — there is no
