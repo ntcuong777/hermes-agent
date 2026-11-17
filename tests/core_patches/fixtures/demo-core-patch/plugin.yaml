@@ -1,0 +1,5 @@
+name: demo-core-patch
+version: 0.1.0
+description: "Worked example for the core-patch registry: upper-cases cpdemo_target.greet."
+author: custom
+core_patches: [shout]

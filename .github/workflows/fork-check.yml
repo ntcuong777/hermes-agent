@@ -28,6 +28,7 @@ concurrency:
 
 env:
   FORK_PYTEST_FILES: >-
+    tests/core_patches
     tests/gateway/test_complete_path_host_plugin_backend.py
     tests/gateway/test_complete_path_at_filter.py
     tests/tui_gateway
@@ -58,6 +59,11 @@ jobs:
           OPENROUTER_API_KEY: ''
           OPENAI_API_KEY: ''
           NOUS_API_KEY: ''
+
+      - name: Core patch pins (an upstream change to a function a plugin patches)
+        run: |
+          # .github/core-patch-pins.json mirrors every nix-darwin plugin's core_patches.lock.json
+          "$HERMES_PYTHON" -I hermes_cli/core_patches_ast.py --verify-pins .github/core-patch-pins.json --source-root .
 
       - name: Install JS workspace
         run: npm ci --ignore-scripts
