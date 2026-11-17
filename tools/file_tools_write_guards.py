@@ -11,7 +11,6 @@ whole-file overwrite of content this task never saw or that changed since.
 """
 
 import fnmatch
-import logging
 import os
 from pathlib import Path
 
@@ -27,8 +26,6 @@ from tools.file_tools_paths import (
     _expand_tilde, _resolve_path_for_task, _ssh_path_escapes_home, _terminal_env_type_for_task)
 from tools.file_tools_read_tracking import _has_full_write_baseline, _is_own_blind_patch, _read_mtime_drifted
 import itertools
-
-logger = logging.getLogger(__name__)
 
 # Prefixes matched after realpath. macOS: /private/var mirrors /var — block the
 # sensitive subtrees only; a blanket "/private/var/" refuses every temp-file
@@ -149,44 +146,6 @@ def _resolved_or_raw(filepath: str, task_id: str) -> str:
         return filepath
 
 
-def _system_path_allow_roots() -> tuple[str, ...]:
-    """Realpaths of ``security.write_allow_roots``: directories exempt from the system-path PREFIX rule
-    only (P20). A repo that lives under /etc (a nix-darwin checkout at /etc/nix-darwin, realpath
-    /private/etc/nix-darwin) could otherwise never be written by write_file/patch, whatever the sandbox
-    allowed. Absolute entries only; a root that is, or contains, a whole deny prefix (``/``, ``/etc``) is
-    ignored; any config read failure means no roots (fail closed)."""
-    try:
-        from hermes_cli.config import load_config, cfg_get
-        raw = cfg_get(load_config(), "security", "write_allow_roots", default=[])
-    except Exception:
-        logger.debug("write_allow_roots config read failed; no roots (fail closed)", exc_info=True)
-        return ()
-    if not isinstance(raw, list):
-        return ()
-    roots = []
-    for item in raw:
-        text = os.path.expanduser(str(item or "").strip())
-        if not text or not os.path.isabs(text):
-            continue
-        root = os.path.realpath(text)
-        lifts_a_prefix = any(
-            p.rstrip("/") == root or p.startswith(root.rstrip("/") + "/")
-            for p in _SENSITIVE_PATH_PREFIXES)
-        if not lifts_a_prefix:
-            roots.append(root)
-    return tuple(roots)
-
-
-def _inside_allow_roots(paths: list[str]) -> bool:
-    """True only when EVERY path (after realpath, so ``..`` and symlinks cannot leave) is inside a root."""
-    roots = _system_path_allow_roots()
-    if not roots:
-        return False
-    for path in paths:
-        real = os.path.realpath(path)
-        if not any(real == r or real.startswith(r.rstrip("/") + "/") for r in roots):
-            return False
-    return True
 def _writes_host_filesystem(task_id: str) -> bool:
     """Whether this task's writes land on THIS host's disk: only then may a guard stat the target.
     A hosted path names the tenant's sandbox and an SSH/container path the backend's filesystem;
@@ -224,9 +183,7 @@ def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None
             f"Refusing to write to {filepath}: it climbs above the SSH home and the remote "
             "home could not be detected, so its target cannot be checked. Pass an absolute path.")
     keys = [deny_key(c) for c in candidates]
-    exact = any(k in _SENSITIVE_EXACT_PATHS for k in keys)
-    under_prefix = [c for c, k in zip(candidates, keys) if k.startswith(_SENSITIVE_PATH_PREFIXES)]
-    if exact or (under_prefix and not _inside_allow_roots(under_prefix)):
+    if any(k in _SENSITIVE_EXACT_PATHS for k in keys) or __import__("tools.write_path_policy").write_path_policy.system_path_denied(filepath, candidates, keys, _SENSITIVE_PATH_PREFIXES, task_id):  # fork: resolve_write_policy hook
         return (
             f"Refusing to write to sensitive system path: {filepath}\n"
             "Use the terminal tool with sudo if you need to modify system files.")

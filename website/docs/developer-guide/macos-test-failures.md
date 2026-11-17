@@ -183,12 +183,13 @@ probes `launchctl` through `subprocess.run`; the test replaces
 patches a *relative* path (`foo.py`), which resolves against the repo — and
 this checkout lives at `/etc/nix-darwin/fork/hermes-agent`, under the
 `write_file`/`patch` system-deny prefix. The refusal fires before the
-not-found hint path the test wants. `security.write_allow_roots` exempts
+not-found hint path the test wants. The `config-seams` plugin's `security.write_allow_roots` exempts
 this exactly, but `tests/conftest.py` always rewrites `HERMES_HOME` to a
 throwaway home, so a config-based exemption cannot reach the test. On any
-normal checkout path the test passes. (The fork added
-`security.write_allow_roots` for precisely this checkout; the feature's own
-suite, `tests/tools/test_file_write_allow_roots.py`, is green.)
+normal checkout path the test passes. (`security.write_allow_roots` is
+provided by the `config-seams` plugin, `hermes/plugins/config-seams` in the
+user's nix-darwin repo, through the fork's `resolve_write_policy` hook; it is
+not a core feature.)
 
 ## Fork-caused failures that were fixed (for the record)
 

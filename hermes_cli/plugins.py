@@ -128,6 +128,7 @@ VALID_HOOKS: set[str] = {
     # names). Return a replacement list of {"id", "text", "tone"?, "min_cols"?} rows; core keeps
     # only listed ids. Must not block: read caches, never the network.
     "transform_status_bar_fields",
+    "resolve_write_policy", "resolve_tool_result_limits", "resolve_reply_max_tokens",  # fork hooks: tools/write_path_policy.py, tools/tool_result_limits.py, agent/reply_cap.py
     # Streaming observers (agent.plugin_stream_hooks), off the token path; payloads are immutable
     # normalized text/lifecycle and cannot transform the stream.
     "on_stream_start", "on_stream_delta", "on_stream_end", "on_interim_message",

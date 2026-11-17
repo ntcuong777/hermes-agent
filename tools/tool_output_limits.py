@@ -6,12 +6,9 @@ raises, so behaviour is unchanged when the section is absent or malformed."""
 
 from __future__ import annotations
 
-import logging
 from typing import Any, Dict
 
 from hermes_constants import hermes_home_key
-
-logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_BYTES = 50_000       # terminal_tool.MAX_OUTPUT_CHARS
 DEFAULT_MAX_LINES = 2000         # file_operations.MAX_LINES
@@ -65,17 +62,3 @@ def _reset_tool_output_limits_cache() -> None:
 def get_max_bytes() -> int: return get_tool_output_limits()["max_bytes"]
 def get_max_lines() -> int: return get_tool_output_limits()["max_lines"]
 def get_max_line_length() -> int: return get_tool_output_limits()["max_line_length"]
-
-
-def redact_spill_enabled() -> bool:
-    """``tool_output.redact_spill`` (default True): redact the whole terminal spill file after a big
-    command so no secret stays unmasked on disk. False leaves it as the collector wrote it, for a
-    setup that redacts each page when it is read back; anything but a bool keeps the default."""
-    try:
-        from hermes_cli.config import load_config_readonly
-        section = (load_config_readonly() or {}).get("tool_output")
-        value = section.get("redact_spill") if isinstance(section, dict) else None
-    except Exception:
-        logger.debug("tool_output.redact_spill config read failed; keeping the default", exc_info=True)
-        return True
-    return value if isinstance(value, bool) else True

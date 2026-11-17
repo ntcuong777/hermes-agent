@@ -131,7 +131,7 @@ def _budget_for_agent(agent) -> BudgetConfig:
     """
     try:
         ctx = getattr(getattr(agent, "context_compressor", None), "context_length", None)
-        return budget_for_context_window(int(ctx) if ctx else None)
+        return __import__("tools.tool_result_limits").tool_result_limits.apply_budget_limits(budget_for_context_window(int(ctx) if ctx else None), int(ctx) if ctx else None)  # fork: resolve_tool_result_limits hook
     except Exception:
         return DEFAULT_BUDGET
 
