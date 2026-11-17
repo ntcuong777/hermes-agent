@@ -20,6 +20,7 @@ import ast
 import contextlib
 import copy
 import difflib
+import errno
 import hashlib
 import importlib.util
 import json
@@ -27,6 +28,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,7 +40,8 @@ NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")  # a patch name (also the sn
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 GIT_TIMEOUT_S = 10.0
 LOCK_FILE = "core_patches.lock.json"
-LOCK_VERSION = 2          # v2 = provenance record + snapshot file; v1 (inline `source`) is still read;
+LOCK_WAIT_S = 10.0       # how long a writer waits for a plugin's lock file (flock) before it gives up
+LOCK_VERSION = 2         # v2 = provenance record + snapshot file; v1 (inline `source`) is still read;
                          # optional field snapshot_source ("git:<commit[:12]>" or "working-tree")
 SNAPSHOT_DIR = "upstream-source"
 PIN_KEYS = ("target", "ast_sha", "plugin", "kind", "target_file", "upstream_commit", "upstream_release", "reason")
@@ -318,7 +321,17 @@ def _lock_file_held(plugin_dir: Path) -> Iterator[None]:
         return
     plugin_dir.mkdir(parents=True, exist_ok=True)
     with open(plugin_dir / (LOCK_FILE + ".lock"), "a", encoding="utf-8") as handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
+        deadline = time.monotonic() + LOCK_WAIT_S
+        while True:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError as exc:
+                if exc.errno not in (errno.EWOULDBLOCK, errno.EAGAIN):
+                    raise
+                if time.monotonic() >= deadline:
+                    raise CorePatchFileError("lock file busy") from None
+                time.sleep(0.05)
         try:
             yield
         finally:
