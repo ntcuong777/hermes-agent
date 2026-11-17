@@ -180,7 +180,6 @@ _NESTED_CHILDREN_NOTE = (
 
 def _build_child_system_prompt(
     *, workspace_path: Optional[str] = None, role: str = "leaf", max_spawn_depth: int = 2, child_depth: int = 1,
-    profile: Optional[object] = None,
 ) -> str:
     """Focused system prompt for a child agent. role='orchestrator' appends a delegation-capability block (modeled on
     OpenClaw's buildSubagentSystemPrompt); its depth note is literal truth grounded in the passed config so the LLM
@@ -189,9 +188,6 @@ def _build_child_system_prompt(
     # per-task belongs here: sibling children then send one identical system prompt, which is what
     # lets them read each other's prompt cache (tools included, on providers that order them after it).
     parts = ["You are a focused subagent working on a specific delegated task."]
-    if profile is not None and str(getattr(profile, "instructions", "") or "").strip():
-        # A plugin-declared role (tools.delegate_roles): what this child is for and how far it may go.
-        parts.append(f"\nROLE: {getattr(profile, 'name', '')}\n{str(profile.instructions).strip()}")
     if workspace_path and str(workspace_path).strip():
         parts.append(
             "\nWORKSPACE PATH:\n"
