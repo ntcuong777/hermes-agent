@@ -3,6 +3,7 @@ import type { SlashExecResponse } from '@hermes/shared/gateway-types'
 import { parseCommandDispatch } from '@hermes/shared/slash'
 import { atom } from 'nanostores'
 
+import type { GatewayClient } from '../gatewayClient.js'
 import { rpcErrorMessage } from '../lib/rpc.js'
 
 import { showChoices } from './choicePicker.js'
@@ -166,6 +167,25 @@ export function directives(host: DirectiveHost, sid: string, intact: () => boole
 
   return { apply, run }
 }
+
+/** The handler for a command typed in the composer: no chord press to compare the composer with, so only `stale` guards it. */
+export const typedDirectives = (
+  gw: GatewayClient,
+  setInput: (text: string) => void,
+  say: (text: string) => void,
+  sid: string,
+  stale: () => boolean
+) =>
+  directives(
+    {
+      clear: () => setInput(''),
+      replace: setInput,
+      request: (command, session_id) => gw.request<SlashExecResponse>('slash.exec', { command, session_id }),
+      say
+    },
+    sid,
+    () => !stale()
+  )
 
 export interface KeybindHost extends DirectiveHost {
   composer: {

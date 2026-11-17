@@ -8,7 +8,7 @@ import { launchWidget } from '../sdk/host.js'
 import { getWidgetApp } from '../sdk/registry.js'
 
 import type { SlashHandler, SlashHandlerContext, SlashSubmission } from './interfaces.js'
-import { directives } from './keybinds.js'
+import { typedDirectives } from './keybinds.js'
 import { findSlashCommand } from './slash/registry.js'
 import type { SlashRunCtx } from './slash/types.js'
 import { captureDestination, isCurrentDestination } from './submissionDestination.js'
@@ -235,20 +235,7 @@ export function createSlashHandler(ctx: SlashHandlerContext): SlashHandler {
       }
 
       if (d.type === 'choices' || d.type === 'composer-clear') {
-        // Typed, not a key chord: there is no press to compare the composer with, so only the flight guards it.
-        return void (
-          sid &&
-          directives(
-            {
-              clear: () => ctx.composer.setInput(''),
-              replace: ctx.composer.setInput,
-              request: (command, session_id) => gw.request<SlashExecResponse>('slash.exec', { command, session_id }),
-              say: sys
-            },
-            sid,
-            () => !stale()
-          ).apply(raw)
-        )
+        return void (sid && typedDirectives(gw, ctx.composer.setInput, sys, sid, stale).apply(raw))
       }
 
       if (d.type === 'prefill') {

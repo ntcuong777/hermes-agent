@@ -7,11 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   chordMatches,
   composerDraftText,
-  directives,
   type KeybindHost,
   parseChord,
   resolveKeybinds,
-  runKeybind
+  runKeybind,
+  typedDirectives
 } from '../app/keybinds.js'
 import { getOverlayState, resetOverlayState } from '../app/overlayStore.js'
 import { ActiveWidgetSlot, dispatchWidgetInput } from '../sdk/host.js'
@@ -403,11 +403,21 @@ describe('choices', () => {
 })
 
 describe('directives outside a chord', () => {
-  it('a typed command answering composer-clear is guarded only by the caller', async () => {
-    const clear = vi.fn()
-    const handler = directives({ clear, replace: vi.fn(), request: vi.fn(), say: vi.fn() }, 'sid-1', () => false)
-    handler.apply({ type: 'composer-clear' })
+  const gw = { request: vi.fn() } as never
 
-    expect(clear).not.toHaveBeenCalled()
+  it('a typed command answering composer-clear clears the composer while its flight is current', () => {
+    const setInput = vi.fn()
+    typedDirectives(gw, setInput, vi.fn(), 'sid-1', () => false).apply({ type: 'composer-clear' })
+
+    expect(setInput).toHaveBeenCalledExactlyOnceWith('')
+  })
+
+  it('and leaves it alone once the flight went stale (another command, another session)', () => {
+    const setInput = vi.fn()
+    const say = vi.fn()
+    typedDirectives(gw, setInput, say, 'sid-1', () => true).apply({ type: 'composer-clear' })
+
+    expect(setInput).not.toHaveBeenCalled()
+    expect(say).toHaveBeenCalledWith(expect.stringContaining('composer changed'))
   })
 })
