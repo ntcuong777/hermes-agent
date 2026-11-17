@@ -104,7 +104,7 @@ def _approve(subsystem: str, rest: list[str], memory_store) -> str:
             patched.extend(f"  {rec['id']}: {text}" for text in _changed_entries(result, "patched"))
             removed.extend(f"  {rec['id']}: {text}" for text in _changed_entries(result, "removed"))
         else:
-            failed.append(f"{rec['id']}: {msg}")
+            failed.append(f"{rec['id']}: {_clip_failure(msg)}")
 
     out = [f"Approved {applied} {subsystem} write(s)."]
     out.extend(f"  {rec['id']}  {rec.get('summary', '')}" for rec in done)
@@ -123,7 +123,15 @@ def _approve(subsystem: str, rest: list[str], memory_store) -> str:
     if failed:
         out.append("Failed:")
         out.extend(f"  {f}" for f in failed)
+        out.append(f"Nothing was applied for the failed ones and they stay pending. A write the target has moved "
+                   f"on from cannot be applied as staged: drop it with /{subsystem} reject <id> and ask the agent "
+                   "to redo the change.")
     return "\n".join(out)
+
+
+def _clip_failure(msg: str, limit: int = 600) -> str:
+    """A replay error with its "did you mean" file excerpts cut to what a chat message can carry."""
+    return msg if len(msg) <= limit else msg[:limit].rstrip() + " ..."
 
 
 def _changed_entries(result: dict, kind: str) -> list[str]:
