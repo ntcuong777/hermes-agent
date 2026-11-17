@@ -10,7 +10,13 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
-from typing import Iterator
+import logging
+import re
+from typing import Any, Iterator
+
+logger = logging.getLogger(__name__)
+
+_CHORD = re.compile(r"[a-z0-9]+(\+[a-z0-9]+)*")  # ``alt+s``: modifiers and a key; the TUI decides which it honours
 
 # (text, registered command name it belongs to or None for any handler)
 _composer_text: contextvars.ContextVar[tuple[str, str | None] | None] = contextvars.ContextVar(
@@ -39,3 +45,24 @@ def composer_context(handler: object = None) -> dict[str, str]:
         if handler is None or get_plugin_command_handler(command) is not handler:
             return {}
     return {"composer_text": text}
+
+
+def clean_keybinds(raw: Any, owner: str = "") -> dict[str, str]:
+    """``register_command(keybinds=)`` as ``{chord: args}``: lowercase chord strings and text arguments. Anything
+    else (a non-dict, a chord that is not ``mod+key`` text, a non-text argument) is ignored with a warning, never
+    raised: a plugin's bad default chord must not fail its registration."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        logger.warning("Plugin command %s: keybinds must be a {chord: args} dict (got %s); ignored.",
+                       owner or "?", type(raw).__name__)
+        return {}
+    out: dict[str, str] = {}
+    for chord, args in raw.items():
+        spec = chord.strip().lower() if isinstance(chord, str) else ""
+        if not (_CHORD.fullmatch(spec) and isinstance(args, str)):
+            logger.warning("Plugin command %s: keybind %r -> %r ignored (a chord like 'alt+s' and text arguments).",
+                           owner or "?", chord, args)
+            continue
+        out[spec] = args.strip()
+    return out

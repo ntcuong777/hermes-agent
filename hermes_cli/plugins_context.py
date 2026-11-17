@@ -485,6 +485,7 @@ class PluginContext(PluginCapabilityCtxMixin, PluginIdleTaskCtxMixin):
                 subs[str(word).lower()] = tuple(str(c) for c in (choices or ()))
         elif subcommands:
             subs = {str(word).lower(): () for word in subcommands}
+        from hermes_cli.plugin_composer import clean_keybinds
         entry = {
             "handler": handler, "description": description or "Plugin command",
             "plugin": self.manifest.name, "plugin_key": self.plugin_id, "args_hint": hint,
@@ -496,7 +497,7 @@ class PluginContext(PluginCapabilityCtxMixin, PluginIdleTaskCtxMixin):
             # — including one a messaging lane (the Discord mirror's bound thread) now owns.
             "client_local": bool(client_local),
             # `{"alt+s": "toggle"}`: default TUI chords that run `/name <args>`; `display.tui_keybinds` overrides.
-            "keybinds": {str(c).strip().lower(): str(a).strip() for c, a in (keybinds or {}).items()},
+            "keybinds": clean_keybinds(keybinds, clean),
             "subcommands": subs,
             "argument_mode": argument_mode if argument_mode in {"options", "text", "mixed"}
             else ("text" if hint else None),

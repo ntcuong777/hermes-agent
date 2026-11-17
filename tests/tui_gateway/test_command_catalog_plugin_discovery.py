@@ -49,3 +49,21 @@ def test_catalog_lists_the_chords_plugins_declared_as_slash_commands():
     })
     assert result["keybinds"] == {"alt+s": "/stash toggle", "alt+shift+s": "/stash --global toggle"}
     assert _catalog(dict)["keybinds"] == {}
+
+
+def test_a_plugin_command_shadowed_by_a_quick_command_or_display_entry_publishes_no_chord():
+    stubs = {"hermes_cli.plugins": SimpleNamespace(get_plugin_commands=lambda: {
+        "mine": {"description": "Mine", "keybinds": {"alt+m": "go"}},
+        "logs": {"description": "Plugin logs", "keybinds": {"alt+l": "x"}},  # an Ink display entry owns /logs
+        "free": {"description": "Free", "keybinds": {"alt+f": "go"}},
+    }), "agent.skill_commands": SimpleNamespace(get_interactive_skill_commands=dict)}
+    cfg = {"quick_commands": {"mine": {"type": "exec", "command": "echo hi"}}}
+    result = command_catalog(load_cfg=lambda: cfg, module_loader=lambda name: stubs.get(name) or import_module(name))
+    assert result["keybinds"] == {"alt+f": "/free go"}
+    assert set(result["plugin_commands"]) == {"mine", "logs", "free"}  # routing facts are unchanged
+
+
+def test_a_malformed_keybinds_entry_never_breaks_the_catalog():
+    result = _catalog(lambda: {"a": {"description": "A", "keybinds": ["alt+a"]},
+                               "b": {"description": "B", "keybinds": {"alt+b": 3, 7: "x", "alt+c": "ok"}}})
+    assert result["keybinds"] == {"alt+c": "/b ok"}

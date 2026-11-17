@@ -178,9 +178,11 @@ def _catalog_plugin_commands(cat: _Catalog, module_loader) -> None:
         if not isinstance(info, dict):
             continue
         cat.plugin_commands[pname] = str(info.get("description") or "Plugin command")
-        cat.keybinds.update({chord: f"{key} {args}".strip() for chord, args in (info.get("keybinds") or {}).items()})
-        if key.lower() in cat.canon:
+        if key.lower() in cat.canon:  # shadowed by a built-in, display entry or quick command: its chords go with it
             continue
+        binds = info.get("keybinds") if isinstance(info.get("keybinds"), dict) else {}
+        cat.keybinds.update({chord: f"{key} {args}".strip() for chord, args in binds.items()
+                             if isinstance(chord, str) and isinstance(args, str)})
         cat.add(key, cat.plugin_commands[pname], "Plugin commands")
         mode = info.get("argument_mode")
         if mode not in {"options", "text", "mixed"}:
