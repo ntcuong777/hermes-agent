@@ -33,7 +33,7 @@ def demo_home(tmp_path, monkeypatch):
     sys.modules.pop("cpdemo_target", None)
 
 
-def test_a_real_plugin_wraps_through_the_real_loader_and_unload_undoes_it(demo_home):
+def test_a_real_plugin_wraps_through_the_real_loader_and_a_targeted_unload_undoes_it(demo_home):
     from hermes_cli.plugins import PluginManager
 
     module = demo_home(CONFIG_GRANTED)
@@ -42,9 +42,20 @@ def test_a_real_plugin_wraps_through_the_real_loader_and_unload_undoes_it(demo_h
     manager.discover_and_load()
     assert [(r.spec.key, r.status) for r in cp.records()] == [("demo-core-patch:shout", cp.ACTIVE)]
     assert module.greet("x") == "HELLO X"
-    manager.unload()
+    manager.unload("demo-core-patch")  # disable / uninstall
     assert module.greet is original
     assert cp.records() == ()
+
+
+def test_an_unload_all_parks_the_patch_like_other_persistent_registrations(demo_home):
+    from hermes_cli.plugins import PluginManager
+
+    module = demo_home(CONFIG_GRANTED)
+    manager = PluginManager()
+    manager.discover_and_load()
+    manager.unload()  # what a forced re-discovery does first
+    assert module.greet("x") == "HELLO X"
+    assert [r.status for r in cp.records()] == [cp.ACTIVE]
 
 
 def test_without_the_grant_the_core_is_untouched(demo_home):

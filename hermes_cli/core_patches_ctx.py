@@ -22,8 +22,11 @@ class CorePatchCtxMixin:
         Installed when this plugin's load succeeds, only if ``name`` is listed under
         ``core_patches:`` in plugin.yaml, ``plugins.entries.<id>.allow_core_patch`` is ``true``, and
         the target's AST fingerprint equals ``expect_ast_sha`` (``hermes plugins patches --sha``).
-        Otherwise it is recorded as skipped-* and the core stays untouched. Unload undoes it.
-        ``critical=True``: a drifted or broken patch refuses process startup. Invalid arguments raise.
+        Otherwise it is recorded as skipped-* and the core stays untouched. A targeted unload undoes
+        it; a forced reload keeps it installed until the reloaded plugin's registration replaces it.
+        ``critical=True`` (or ``{name, critical: true}`` in plugin.yaml): a patch that is not active
+        refuses process startup. Invalid arguments raise. Nothing is imported here: the target is
+        resolved when the load is published (or by ``apply_core_patches``).
         """
         from hermes_cli import core_patches as cp
 
@@ -32,13 +35,30 @@ class CorePatchCtxMixin:
             expect_ast_sha=expect_ast_sha, order=order, critical=critical,
             plugin_dir=getattr(self.manifest, "path", None),
         )
-        owner = str(self._manager.scope_key)
+        manager, plugin_key, owner, seq = self._manager, self.plugin_id, str(self._manager.scope_key), spec.seq
         key = cp.stage(
             spec, owner,
-            granted=cp.core_patch_granted(self.plugin_id, self._manager.home_path),
+            granted=cp.core_patch_granted(self.plugin_id, manager.home_path),
             declared=name in cp.declared_patch_names(spec.plugin_dir),
+            declared_critical=name in cp.declared_critical_names(spec.plugin_dir),
+            manager=manager,
         )
-        registration = self._track("core_patch", key, lambda: cp.release(key, owner))
-        registration.publish = lambda: cp.activate(key, owner)
+        # Persistent: an unload-all (force re-discovery) parks it, so the installed chain stays live
+        # while the plugin reloads; undone by a targeted unload or when the plugin does not come back.
+        registration = self._track(
+            "core_patch", key, lambda: cp.release(key, owner, seq, failed=_load_error(manager, plugin_key)),
+            persistent=True)
+        registration.publish = lambda: cp.activate(key, owner, seq)
+        # Ordinary: disposed by a failed or timed-out load before publish (the tombstone signal).
+        self._track("core_patch_load", key, lambda: cp.abort(key, owner, seq, _load_error(manager, plugin_key)))
         self._staged.append(registration)
         return registration
+
+
+def _load_error(manager: Any, plugin_key: str) -> Optional[str]:
+    """The plugin's load error when it was really loaded and failed (not disabled in config)."""
+    from hermes_cli import core_patches as cp
+
+    loaded = getattr(manager, "_plugins", {}).get(plugin_key)
+    error = getattr(loaded, "error", None)
+    return error if error and cp.load_attempted(manager, loaded) else None

@@ -46,7 +46,7 @@ def test_wrap_sync_installs_and_calls_through(target):
     key = _install(_spec(target, "up", up))
     assert target.mod.greet("x") == "HELLO X"
     assert _status(key) == cp.ACTIVE
-    assert getattr(target.mod.greet, cp.MARKER) == "demo:up"
+    assert cp.installed_patch(target.mod.greet) == "demo:up"
 
 
 def test_wrap_async_returns_an_awaitable_result(target):
@@ -82,15 +82,30 @@ def test_a_second_replace_on_one_target_is_refused(target):
     assert "already replaced by demo:one" in {r.spec.key: r.detail for r in cp.records()}["other:two"]
 
 
+def prefix(letter):
+    """A wrap that prepends ``letter``: wraps of this kind do NOT commute, so the order is visible."""
+    def factory(original):
+        def greet(name):
+            return letter + original(name)
+        return greet
+    return factory
+
+
 def test_wraps_stack_by_order_then_registration(target):
-    _install(_spec(target, "outer", bang, order=10))
-    _install(_spec(target, "inner", up, order=-5))
-    _install(_spec(target, "middle", bang, order=0))
-    # inner (lowest order) wraps the original first; outer runs first: bang(bang(up(original)))
-    assert target.mod.greet("x") == "HELLO X!!"
-    _install(_spec(target, "late", up, order=0))  # same order as "middle", registered later -> outside it
-    assert target.mod.greet("x") == "HELLO X!!"
+    _install(_spec(target, "outer", prefix("o"), order=10))
+    _install(_spec(target, "inner", prefix("i"), order=-5))
+    _install(_spec(target, "middle", prefix("m"), order=0))
+    # inner (lowest order) wraps the original first; outer runs first: o(m(i(original)))
+    assert target.mod.greet("x") == "omihello x"
+    _install(_spec(target, "late", prefix("l"), order=0))  # same order as "middle", registered later -> outside it
+    assert target.mod.greet("x") == "olmihello x"
     assert [r.spec.name for r in cp.records()] == ["inner", "middle", "late", "outer"]
+
+
+def test_a_replace_is_innermost_and_wraps_run_over_it(target):
+    _install(_spec(target, "outer", prefix("o"), order=10))
+    _install(_spec(target, "fr", lambda name: f"bonjour {name}", kind="replace"))
+    assert target.mod.greet("x") == "obonjour x"
 
 
 def test_drift_is_skipped_and_logged_once(target, caplog):
@@ -119,7 +134,7 @@ def test_an_undeclared_patch_is_an_error(target):
 
 
 def test_critical_drift_refuses_startup(target, no_discovery):
-    cp.stage(_spec(target, "must", up, sha="1" * 64, critical=True), OWNER, granted=True, declared=True)
+    _install(_spec(target, "must", up, sha="1" * 64, critical=True))
     with pytest.raises(cp.CorePatchRefusal) as refused:
         cp.apply_core_patches("test")
     assert refused.value.code == 78
@@ -127,7 +142,7 @@ def test_critical_drift_refuses_startup(target, no_discovery):
 
 
 def test_critical_without_grant_does_not_refuse(target, no_discovery):
-    cp.stage(_spec(target, "must", up, critical=True), OWNER, granted=False, declared=True)
+    _install(_spec(target, "must", up, critical=True), granted=False)
     assert [r.status for r in cp.apply_core_patches("test")] == [cp.SKIPPED_NO_GRANT]
 
 
@@ -246,7 +261,7 @@ def test_two_owners_share_one_install_and_the_last_release_undoes_it(target):
     assert cp.stage(_spec(target, "up", up), "home-b", granted=True, declared=True) == key
     cp.activate(key, "home-b")
     assert target.mod.greet is installed
-    cp.release(key, "home-a")
-    assert target.mod.greet is installed
+    cp.release(key, "home-a")  # home-b's registration takes over (home-a's plugin module is going away)
+    assert target.mod.greet("x") == "HELLO X" and _status(key) == cp.ACTIVE
     cp.release(key, "home-b")
     assert target.mod.greet is original
