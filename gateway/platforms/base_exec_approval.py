@@ -46,7 +46,7 @@ _MCP_ARGUMENTS_MARK = "\n\nArguments:\n"
 def ea_mcp_block(mcp: dict, command: str) -> str:
     """Fenced body for an MCP tool-call approval: what the tool does, then the call as the prompt text
     states it (notices + arguments). The prompt text carries the arguments cut to the trust gate's 1,200
-    characters; the structured context carries them in full (4,000, redacted), which is what the
+    characters; the structured context carries them in full (20,000, redacted), which is what the
     TUI/Desktop card shows, so a card shows those: nobody approves a call whose arguments were cut."""
     text = str(command or "").strip()
     arguments = str(mcp.get("arguments") or "").strip()
@@ -58,7 +58,7 @@ def ea_mcp_block(mcp: dict, command: str) -> str:
 
 
 def mcp_arguments_cut(mcp: Optional[dict]) -> bool:
-    """True when an MCP call's arguments were cut even in the structured context (over 4,000 characters):
+    """True when an MCP call's arguments were cut even in the structured context (over 20,000 characters):
     no card can show the whole call, so none offers Approve (the TUI and Desktop show the same cut)."""
     return bool(mcp and mcp.get("arguments_cut"))
 

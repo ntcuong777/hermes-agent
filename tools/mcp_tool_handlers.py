@@ -80,7 +80,7 @@ _TRUST_GATE_ARGUMENTS_MAX_CHARS = 1_200
 _TRUST_GATE_ARGUMENTS_TRUNCATION_MARKER = "\n... [arguments truncated]"
 # The structured ``mcp`` card context is rendered as its own block (not inside the message), so it gets a
 # roomier bound; tool descriptions are server-supplied text, kept short and sanitized at discovery.
-_MCP_CONTEXT_ARGUMENTS_MAX_CHARS = 4_000
+_MCP_CONTEXT_ARGUMENTS_MAX_CHARS = 20_000
 _MCP_TOOL_DESCRIPTION_MAX_CHARS = 500
 
 

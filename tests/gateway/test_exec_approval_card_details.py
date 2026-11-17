@@ -150,7 +150,8 @@ async def test_an_mcp_call_with_whole_arguments_still_offers_approve():
 def test_the_mcp_context_flags_arguments_cut_at_the_bound():
     from tools.mcp_tool_handlers import _approval_mcp_context
     assert "arguments_cut" not in _approval_mcp_context("s", "t", {"q": "small"})
-    assert _approval_mcp_context("s", "t", {"q": "x" * 6000})["arguments_cut"] is True
+    assert "arguments_cut" not in _approval_mcp_context("s", "t", {"q": "x" * 6000}), "a long call is shown whole"
+    assert _approval_mcp_context("s", "t", {"q": "x" * 30_000})["arguments_cut"] is True
 
 
 def test_blank_lines_in_a_multi_line_command_survive():
