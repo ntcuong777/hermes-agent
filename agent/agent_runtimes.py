@@ -22,6 +22,7 @@ validates an api_mode (``registered_api_modes``) and unregistering it degrades t
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Optional
 
@@ -71,20 +72,28 @@ def register_agent_runtime(
         raise ValueError("agent runtime name must be a non-empty string")
     if not callable(run_turn):
         raise TypeError("agent runtime run_turn must be callable")
+    name = name.strip()  # the guard and the registry key are the same string
     if name in _BUILTIN_API_MODES:
         raise ValueError(f"agent runtime name {name!r} collides with a built-in api_mode")
-    runtime = AgentRuntime(name.strip(), run_turn, claims, bool(full_tool_schemas))
+    runtime = AgentRuntime(name, run_turn, claims, bool(full_tool_schemas))
     _RUNTIMES[runtime.name] = runtime
     return runtime
 
 
+# Reentrant: a provider plugin's import may ask for a runtime while discovery runs on this thread.
+_DISCOVERY_LOCK = threading.RLock()
+
+
 def _discover() -> None:
-    """Model-provider plugins register their runtime at import; discovery is lazy, so run it first."""
-    try:
-        from providers import list_providers
-        list_providers()
-    except Exception:  # discovery trouble must never break turn dispatch
-        pass
+    """Model-provider plugins register their runtime at import; discovery is lazy, so run it first. One caller
+    discovers at a time, so a second thread waits for the first to finish rather than reading a registry that
+    is still filling (the providers module marks itself discovered before its imports are done)."""
+    with _DISCOVERY_LOCK:
+        try:
+            from providers import list_providers
+            list_providers()
+        except Exception:  # discovery trouble must never break turn dispatch
+            logger.debug("agent runtime discovery failed", exc_info=True)
 
 
 def get_agent_runtime(name: str) -> Optional[AgentRuntime]:

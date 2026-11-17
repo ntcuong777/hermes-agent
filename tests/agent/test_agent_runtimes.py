@@ -117,3 +117,58 @@ def test_full_tool_schemas_is_opt_in_per_runtime():
     ar.register_agent_runtime("full_rt", lambda agent, **kw: None, full_tool_schemas=True)
     assert [ar.wants_full_tool_schemas(m) for m in ("plain_rt", "full_rt", "chat_completions", "", None)] == [
         False, True, False, False, False]
+
+
+def test_a_name_with_padding_is_guarded_and_keyed_as_stripped():
+    with pytest.raises(ValueError):
+        ar.register_agent_runtime(" codex_responses ", lambda agent, **kw: None)
+    assert ar.register_agent_runtime("  padded_rt ", lambda agent, **kw: None).name == "padded_rt"
+    assert ar.get_agent_runtime("padded_rt") is not None
+
+
+_REAL_DISCOVER = ar._discover
+
+
+def test_a_second_thread_waits_for_the_first_discovery_instead_of_missing_the_runtime(monkeypatch):
+    import sys
+    import threading
+    import types
+
+    monkeypatch.setattr(ar, "_discover", _REAL_DISCOVER)
+    first_in, release, calls = threading.Event(), threading.Event(), []
+
+    def list_providers():
+        calls.append(1)
+        if len(calls) == 1:  # the first caller is mid-discovery: the module already says "discovered"
+            first_in.set()
+            release.wait(timeout=10)
+            ar.register_agent_runtime("late_rt", lambda agent, **kw: None)
+        return []
+
+    monkeypatch.setitem(sys.modules, "providers", types.SimpleNamespace(list_providers=list_providers))
+    out = {}
+    first = threading.Thread(target=lambda: ar.get_agent_runtime("late_rt"))
+    first.start()
+    assert first_in.wait(timeout=5)
+    second = threading.Thread(target=lambda: out.update(rt=ar.get_agent_runtime("late_rt")))
+    second.start()
+    second.join(timeout=0.3)
+    assert second.is_alive()  # waiting, not reading a half-filled registry
+    release.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+    assert out["rt"] is not None and out["rt"].name == "late_rt"
+
+
+def test_a_failing_discovery_is_logged_at_debug_and_never_raised(monkeypatch, caplog):
+    import sys
+    import types
+
+    def boom():
+        raise RuntimeError("plugin import blew up")
+
+    monkeypatch.setattr(ar, "_discover", _REAL_DISCOVER)
+    monkeypatch.setitem(sys.modules, "providers", types.SimpleNamespace(list_providers=boom))
+    with caplog.at_level("DEBUG", logger="agent.agent_runtimes"):
+        assert ar.get_agent_runtime("nothing_rt") is None
+    assert "discovery failed" in caplog.text
