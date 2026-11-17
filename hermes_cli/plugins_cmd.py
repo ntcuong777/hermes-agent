@@ -1174,6 +1174,7 @@ _PLUGIN_ACTIONS = {
     "doctor": lambda args: cmd_plugin_doctor(args.target, ci=getattr(args, "ci", False)),
     "pack": _action_pack,
     "show": lambda args: cmd_show(args.name),
+    "patches": lambda args: __import__("hermes_cli.core_patches_cmd").core_patches_cmd.cmd_patches(args),  # fork: core-patch registry
     "info": lambda args: _catalog().cmd_info(args.name),
     None: lambda args: cmd_toggle(),
 }

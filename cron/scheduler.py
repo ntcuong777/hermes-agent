@@ -3890,6 +3890,7 @@ def _run_external_worker_payload(payload_path: Path, ack_path: Path) -> bool:
         from hermes_cli.plugins import discover_plugins
 
         discover_plugins()
+        __import__("hermes_cli.core_patches").core_patches.apply_core_patches("cron")  # fork: core-patch registry
         hydrate_profile_secret_sources(profile_home)
         secret_token = set_secret_scope(build_profile_secret_scope(profile_home), profile_home=str(profile_home))
         # This process never ran gateway startup, so the OWNING profile's ``hooks:`` block (shell

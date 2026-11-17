@@ -365,6 +365,7 @@ def _serve():
             logger.warning("%s failed", what, exc_info=True)
 
     # Backgrounded so a dead MCP server can't freeze startup; _make_agent briefly joins it.
+    __import__("hermes_cli.core_patches").core_patches.apply_core_patches("tui_gateway")  # fork: core-patch registry
     ensure_mcp_discovery_started()
 
     # change_events: clients demote legacy polls; replay_epoch: WS restart detection.
