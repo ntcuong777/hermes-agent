@@ -1492,6 +1492,10 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
                 await adapter_self._dispatch_discord_message(message)
 
             @self._client.event
+            async def on_interaction(interaction):
+                await adapter_self._answer_orphaned_component(interaction)
+
+            @self._client.event
             async def on_message_edit(before: DiscordMessage, after: DiscordMessage):
                 await adapter_self._on_platform_message_edit(before, after)
 
@@ -5639,6 +5643,29 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
         if not user_ids:
             return None
         return " ".join(f"<@{uid}>" for uid in user_ids)
+
+    # Discord fails a component click the bot has not answered within 3 s. A click on a card whose view
+    # is gone (view timed out, answered, or the gateway restarted) reaches no callback at all, so
+    # without this the clicker only sees "This interaction failed".
+    _ORPHAN_COMPONENT_GRACE_S = 2.0
+
+    async def _answer_orphaned_component(self, interaction) -> None:
+        """Answer a button click nothing acked within the grace window with an ephemeral "expired or
+        already answered" note (best effort; a live view's own ack wins and this stays silent)."""
+        component_type = getattr(getattr(discord, "InteractionType", None), "component", None)
+        if component_type is None or getattr(interaction, "type", None) != component_type:
+            return
+        await asyncio.sleep(self._ORPHAN_COMPONENT_GRACE_S)
+        try:
+            if interaction.response.is_done():
+                return
+            embeds = getattr(getattr(interaction, "message", None), "embeds", None) or []
+            title = str(getattr(embeds[0], "title", "") or "") if embeds else ""
+            key = ("platform.discord.approval.no_longer_pending" if title.startswith("\u26a0")
+                   else "platform.discord.prompt.expired_footer")
+            await interaction.response.send_message(t(key), ephemeral=True)
+        except Exception:
+            logger.debug("[%s] Could not answer an orphaned component click", self.name, exc_info=True)
 
     async def _send_prompt(
         self, chat_id: str, metadata: Optional[dict], build, *, fail_log: Optional[str] = None,
