@@ -11,6 +11,7 @@ a plugin, ``hermes gateway restart --when-idle`` and shell tooling share.
       {"requested_at": <epoch s>, "reason": str, "mode": "wait" | "drain", "max_wait": <s> | null,
        "requested_by": str}
 
+  ``max_wait`` is the deadline in seconds from ``requested_at``: ``null`` = the consumer's default, ``0`` = none.
   ``wait`` serves normally until an idle moment; ``drain`` also holds new inbound turns. A consumer adds
   ``fired_at`` and ``fired_by_pid`` right before it asks for the restart, so the next process knows the
   request was carried out (a different pid) and removes it.
@@ -71,14 +72,17 @@ def busy_text_path(home: Optional[Path] = None) -> Path:
 
 
 def parse_duration(text: Any) -> Optional[float]:
-    """``"6h"``, ``"90m"``, ``"45s"``, ``"2d"`` or bare seconds -> seconds; ``None``/``""``/``0``/``none`` -> ``None`` (no limit)."""
-    if text is None or str(text).strip().lower() in ("", "0", "none", "off", "never"):
+    """``"6h"``, ``"90m"``, ``"45s"``, ``"2d"`` or bare seconds -> seconds. Nothing named (``None``, ``""``) -> ``None``
+    (the consumer's default); ``0``/``none``/``off``/``never`` -> ``0.0`` (no limit)."""
+    raw = "" if text is None else str(text).strip().lower()
+    if raw == "":
         return None
-    match = _DURATION.match(str(text))
+    if raw in ("0", "none", "off", "never"):
+        return 0.0
+    match = _DURATION.match(raw)
     if not match:
         raise ValueError(f"not a duration: {text!r} (use 45s, 90m, 6h, 2d)")
-    seconds = float(match.group(1)) * _UNITS[match.group(2).lower()]
-    return seconds if seconds > 0 else None
+    return float(match.group(1)) * _UNITS[match.group(2).lower()]
 
 
 def write_marker(*, reason: str = "", mode: str = "wait", max_wait: Optional[float] = None, requested_by: str = "",
@@ -110,7 +114,7 @@ def read_marker(home: Optional[Path] = None) -> Optional[dict]:
     max_wait = data.get("max_wait")
     return {**data, "reason": str(data.get("reason") or ""),
             "mode": data.get("mode") if data.get("mode") in MODES else "wait",
-            "max_wait": float(max_wait) if isinstance(max_wait, (int, float)) and max_wait > 0 else None}
+            "max_wait": float(max_wait) if isinstance(max_wait, (int, float)) and max_wait >= 0 else None}
 
 
 def clear_marker(home: Optional[Path] = None) -> bool:
@@ -255,11 +259,11 @@ def cmd_restart_when_idle(args: Any) -> None:
     marker = write_marker(reason=getattr(args, "reason", None) or "hermes gateway restart --when-idle", mode=mode,
                           max_wait=max_wait, requested_by="cli")
     print(f"Restart requested for the next idle moment (mode={mode}, max wait "
-          f"{'none' if max_wait is None else f'{max_wait:.0f}s'}): {marker_path()}")
+          f"{'default' if max_wait is None else ('none' if max_wait == 0 else f'{max_wait:.0f}s')}): {marker_path()}")
     if not consumer_alive():
-        print("Warning: no graceful-restart plugin heartbeat. The request waits in the marker file until a gateway "
-              "that runs the plugin picks it up; `hermes gateway restart` (without --when-idle) still restarts "
-              "when idle on the core path, but kills background processes it does not count.")
+        print("Warning: no graceful-restart plugin heartbeat. Nothing consumes the request: a gateway that runs the "
+              "plugin acts on it, but it is dropped if the gateway restarts first. `hermes gateway restart` (without "
+              "--when-idle) restarts when idle on the core path, which kills background processes it does not count.")
         return
     try:
         print(busy_text_path().read_text(encoding="utf-8").rstrip() or "idle: nothing is running")

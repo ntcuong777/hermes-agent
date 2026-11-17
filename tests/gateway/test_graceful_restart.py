@@ -23,7 +23,7 @@ def _home(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("text,seconds", [("45s", 45), ("90m", 5400), ("6h", 21600), ("2d", 172800), ("30", 30),
-                                           (" 1.5h ", 5400), ("0", None), ("none", None), ("", None), (None, None)])
+                                           (" 1.5h ", 5400), ("0", 0.0), ("none", 0.0), ("", None), (None, None)])
 def test_parse_duration(text, seconds):
     assert gr.parse_duration(text) == seconds
 
@@ -41,10 +41,10 @@ def test_the_marker_round_trips_with_the_documented_fields(_home):
     assert gr.clear_marker() is True and gr.clear_marker() is False and gr.read_marker() is None
 
 
-def test_a_marker_without_an_unknown_mode_or_with_a_zero_wait_reads_back_as_wait_and_no_limit(_home):
+def test_a_marker_with_an_unknown_mode_reads_back_as_wait_and_a_zero_wait_stays_no_limit(_home):
     (_home / "restart-requested.json").write_text(json.dumps({"requested_at": 5, "mode": "weird", "max_wait": 0}))
     marker = gr.read_marker()
-    assert marker["mode"] == "wait" and marker["max_wait"] is None and marker["reason"] == ""
+    assert marker["mode"] == "wait" and marker["max_wait"] == 0.0 and marker["reason"] == ""
 
 
 @pytest.mark.parametrize("body", ["not json", "[]", '{"reason": "x"}', '{"requested_at": "yesterday"}'])
@@ -147,7 +147,7 @@ def test_cmd_restart_when_idle_writes_the_marker_and_names_what_blocks(_home, ca
 def test_cmd_restart_when_idle_warns_when_no_consumer_is_alive(_home, capsys):
     gr.cmd_restart_when_idle(Namespace(drain=False, max_wait=None, reason=None))
     out = capsys.readouterr().out
-    assert "no graceful-restart plugin heartbeat" in out and "max wait none" in out
+    assert "no graceful-restart plugin heartbeat" in out and "dropped if the gateway restarts" in out and "max wait default" in out
     assert gr.read_marker()["mode"] == "wait"
 
 
