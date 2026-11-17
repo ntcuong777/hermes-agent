@@ -161,3 +161,59 @@ def test_the_gateway_skills_handler_approves_and_rejects_through_the_same_path(s
     assert "Rejected pending skills write" in run(f"reject {drop['id']}")
     assert (tmp_path / "skills" / "keep" / "SKILL.md").exists()
     assert not (tmp_path / "skills" / "drop").exists() and _pending() == []
+
+
+def _land(smt, name="probe"):
+    ok = json.loads(smt.apply_skill_pending(
+        {"action": "create", "name": name, "content": SK.format(n=name, d="Use when probing.")}))
+    assert ok["success"], ok
+
+
+def test_a_patch_over_text_only_a_pending_edit_adds_is_staged_not_refused(smt):
+    """The patch dry-run reads disk only: with an earlier staged edit for the skill, its text is unknown."""
+    _land(smt)
+    edit = {"action": "edit", "name": "probe",
+            "content": SK.format(n="probe", d="Use when probing.") + "UNIQUE-PENDING-LINE\n"}
+    first = json.loads(smt.skill_manage(**edit))
+    assert first.get("staged") is True, first
+    second = json.loads(smt.skill_manage(
+        action="patch", name="probe", old_string="UNIQUE-PENDING-LINE", new_string="renamed"))
+    assert second.get("staged") is True, second
+    assert len(_pending()) == 2
+
+
+def test_a_patch_over_a_file_only_a_pending_write_file_adds_is_staged(smt):
+    _land(smt)
+    first = json.loads(smt.skill_manage(
+        action="write_file", name="probe", file_path="references/a.md", file_content="alpha"))
+    assert first.get("staged") is True, first
+    second = json.loads(smt.skill_manage(
+        action="patch", name="probe", file_path="references/a.md", old_string="alpha", new_string="beta"))
+    assert second.get("staged") is True, second
+
+
+def test_a_stale_patch_for_a_skill_with_no_pending_writes_is_still_refused(smt):
+    _land(smt)
+    _land(smt, "other")
+    assert json.loads(smt.skill_manage(action="edit", name="other", content=SK.format(n="other", d="Use when x."))).get("staged")
+    r = json.loads(smt.skill_manage(action="patch", name="probe", old_string="not in the file", new_string="x"))
+    assert r["success"] is False and "Could not find a match" in r["error"]
+
+
+def test_non_string_content_or_file_path_is_refused_cleanly(smt):
+    _land(smt)
+    for kwargs in ({"action": "edit", "name": "probe", "content": ["not", "text"]},
+                   {"action": "write_file", "name": "probe", "file_path": 7, "file_content": "x"},
+                   {"action": "patch", "name": "probe", "file_path": ["a"], "old_string": "x", "new_string": "y"}):
+        r = json.loads(smt.skill_manage(**kwargs))
+        assert r["success"] is False and "must be a string" in r["error"], (kwargs, r)
+    assert _pending() == []
+
+
+def test_batch_precheck_normalises_dot_slash_paths_like_batch_validation(smt):
+    """A write_file then a patch spelled './references/a.md' is the same file: no false 'File not found'."""
+    _land(smt)
+    r = _manage(smt, [
+        {"action": "write_file", "name": "probe", "file_path": "references/a.md", "file_content": "alpha"},
+        {"action": "patch", "name": "probe", "file_path": "./references/a.md", "old_string": "alpha", "new_string": "b"}])
+    assert r.get("staged") is True, r
