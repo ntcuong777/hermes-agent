@@ -1638,8 +1638,11 @@ DEFAULT_CONFIG = {
         # #87509): deny    — block the command instantly and let the agent find another way (default, safe;
         # mirrors cron_mode deny) approve — auto-approve all dangerous commands on unattended platforms
         "mode": "smart",
-        "timeout": 300,
-        "discord_prompt_timeout": 300,  # Discord buttons stay clickable (min 30 s, cap MAX_SAFE_TIMEOUT_S)
+        "timeout": 1800,
+        # Floor for how long Discord prompt buttons stay clickable (min 30 s, cap MAX_SAFE_TIMEOUT_S).
+        # An exec-approval card lives at least as long as ``timeout`` (the wait it answers), so this
+        # only extends it.
+        "discord_prompt_timeout": 1800,
         "cron_mode": "deny",
         "single_query_mode": "deny",
         "unattended_mode": "deny",

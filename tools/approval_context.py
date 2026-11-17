@@ -324,17 +324,21 @@ def _get_approval_mode() -> str:
     return own if mode is None else min(mode, own, key=_VALID_MODES.index)
 
 
+_DEFAULT_APPROVAL_TIMEOUT_S = 1800
+
+
 def _get_approval_timeout() -> int:
-    """Read ``approvals.timeout`` (default 300s: gateway push notifications may
-    not be seen for minutes; 60s failed closed before Telegram taps landed).
+    """Read ``approvals.timeout`` (default 1800s: gateway push notifications may
+    not be seen for minutes; 60s failed closed before Telegram taps landed, and a 300s default
+    failed closed on Discord cards that were still on screen).
     Clamped to ``agent.deadline.MAX_SAFE_TIMEOUT_S`` (~1 year): a larger value
     overflows ``time_t`` inside ``Thread.join`` / ``Lock.acquire`` on macOS and
     crashed every parallel tool batch; clamping at the single config-read site
     keeps every consumer platform-safe at once."""
     try:
-        raw = int(_get_approval_config().get("timeout", 300))
+        raw = int(_get_approval_config().get("timeout", _DEFAULT_APPROVAL_TIMEOUT_S))
     except (ValueError, TypeError):
-        return 300
+        return _DEFAULT_APPROVAL_TIMEOUT_S
     try:
         from agent.deadline import MAX_SAFE_TIMEOUT_S
         safe_cap = int(MAX_SAFE_TIMEOUT_S)

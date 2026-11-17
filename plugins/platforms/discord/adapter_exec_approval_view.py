@@ -8,7 +8,7 @@ import logging
 from typing import Optional
 
 from agent.i18n import t
-from plugins.platforms.discord.adapter_config_readers import _read_discord_prompt_timeout
+from plugins.platforms.discord.adapter_config_readers import _read_exec_approval_view_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ def build_exec_approval_view(discord, base, *, unauthorized):
             allow_permanent: bool = True, allow_session: bool = True, smart_denied: bool = False,
             request_id: Optional[str] = None, allow_once: bool = True, approval_extra: Optional[dict] = None,
         ):
-            super().__init__(allowed_user_ids, allowed_role_ids, timeout=_read_discord_prompt_timeout())
+            super().__init__(allowed_user_ids, allowed_role_ids, timeout=_read_exec_approval_view_timeout())
             self.session_key = session_key
             self.request_id = request_id
             self.pending_retire: Optional[str] = None  # settle reason that arrived before the card was sent
