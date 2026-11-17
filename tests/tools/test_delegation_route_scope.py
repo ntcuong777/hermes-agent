@@ -336,6 +336,25 @@ def test_a_task_refused_by_its_route_is_never_asked_about():
     assert parent.clarify_callback.call_count == 1 and len(built) == 1 and result["refused"][0]["task_index"] == 0
 
 
+def test_a_declined_confirmation_returns_no_routes_and_the_refusal():
+    parent = _asking(_answer(DENY))
+    with patch("tools.delegate_tool_routes._active_provider", return_value=Roles()):
+        routes, err = resolve_task_routes([_task("worker", model="chosen")], {}, parent)
+    assert routes == [] and "not approved" in err
+
+
+def test_the_provider_check_sees_the_parents_route():
+    seen = []
+
+    class Spy(Roles):
+        def check_tasks(self, tasks, config):
+            seen.extend(tasks)
+
+    with patch("tools.delegate_tool_routes._active_provider", return_value=Spy()):
+        resolve_task_routes([_task("worker")], {}, _parent())
+    assert seen[0]["parent"] == {"model": "claude-sonnet-5-5", "provider": "anthropic"} and seen[0]["role"] == "worker"
+
+
 def test_a_restarts_rebuild_does_not_ask_again():
     parent = _asking(side_effect=AssertionError("the person approved this launch already"))
     with patch("tools.delegate_tool_routes._active_provider", return_value=Roles()):

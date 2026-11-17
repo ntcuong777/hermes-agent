@@ -339,9 +339,9 @@ def resolve_task_routes(task_list: list[dict[str, Any]], config: Mapping[str, An
     except DelegationRouteError as exc:
         return [], str(exc)
     declared = _declared_parameters(provider, config)
-    if refusal := call_refusal(provider, declared, task_list, config):  # the whole call, before any task is routed
-        return [], refusal
     parent = parent_route(parent_agent)
+    if refusal := call_refusal(provider, declared, task_list, config, parent):  # whole call, before any task is routed
+        return [], refusal
     cache: dict[str, TaskRoute] = {}
     routes: list[TaskRoute] = []
     for i, task in enumerate(task_list):
@@ -353,7 +353,9 @@ def resolve_task_routes(task_list: list[dict[str, Any]], config: Mapping[str, An
                                   request=request))
         except ValueError as exc:  # DelegationRouteError, the credential resolver's and the tier check's refusals
             routes.append(TaskRoute({}, {}, backend=provider.name, error=str(exc)))
-    return routes, (confirm_launches(routes, parent_agent) if confirm else None)  # approval before any child
+    if confirm and (refusal := confirm_launches(routes, parent_agent)):  # a launch the human must approve, before any child
+        return [], refusal
+    return routes, None
 
 
 def route_for_config(routing_cfg: dict[str, Any], parent_agent: Any) -> TaskRoute:

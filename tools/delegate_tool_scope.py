@@ -83,12 +83,12 @@ def parent_route(parent_agent: Any) -> dict[str, Optional[str]]:
 
 
 def call_refusal(provider: DelegationProvider, declared: Mapping[str, Any], task_list: Sequence[Mapping[str, Any]],
-                 config: Mapping[str, Any]) -> Optional[str]:
+                 config: Mapping[str, Any], parent: Mapping[str, Any]) -> Optional[str]:
     """The provider's whole-call refusal (``check_tasks``), or None. Runs before any task is routed."""
     check = getattr(provider, "check_tasks", None)  # a duck-typed or older proxied provider has none
     if check is None:
         return None
-    payloads = [{"goal": t.get("goal"), "context": t.get("context"), "index": i,
+    payloads = [{"goal": t.get("goal"), "context": t.get("context"), "index": i, "parent": dict(parent),
                  **{name: t[name] for name in declared if t.get(name) is not None}}
                 for i, t in enumerate(task_list)]
     try:
