@@ -1388,9 +1388,11 @@ class SessionStore(
                     ),
                     # Keep this chat's terminal cwd over non-boundary repoints (e.g. compression-tip
                     # binding heals). An explicit /resume opts out, and /new takes the reset path.
+                    # The lane's own effort pick (``lane_reasoning``) follows the conversation the same way.
                     metadata=(
-                        {"terminal_cwd": old_entry.metadata["terminal_cwd"]}
-                        if preserve_prompt_pin and "terminal_cwd" in old_entry.metadata else {}
+                        {k: old_entry.metadata[k] for k in ("terminal_cwd", "lane_reasoning")
+                         if k in old_entry.metadata}
+                        if preserve_prompt_pin else {}
                     ),
                 )
         if refused:
