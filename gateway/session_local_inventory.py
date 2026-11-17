@@ -206,6 +206,25 @@ async def snapshot_info(authority, ref):
     return {**inventory, **info}
 
 
+async def lane_route_info(authority, ref) -> dict:
+    """The model and effort pills for a viewer that attaches to a session with no frozen local policy (a
+    messaging lane's thread, a history mount). ``snapshot_info`` is for a LOCAL route; without this the
+    attach answered only ``desktop_protocol``, and a bottom bar that merges later frames over what it holds
+    (the settle frame carries no route) never learned the model or the effort. Read in a worker thread under
+    the profile's scope, like ``publish_info_async``. Never fails the attach: an unreadable route is ``{}``."""
+    from gateway.session_authorities import owner_scope
+    from gateway.session_local import local_session_info
+
+    def read():
+        with owner_scope(authority):
+            return local_session_info(authority, ref)
+    try:
+        return await asyncio.to_thread(read)
+    except Exception:  # health: allow BLE001 -- pills are decoration: a failed read must not fail the attach
+        logger.debug('route info for a lane attach unavailable: %s', ref.session_id, exc_info=True)
+        return {}
+
+
 def agent_inventory(agent) -> dict:
     """The banner fields only a built agent knows (main's ``_session_info`` read them off it): the
     tools it loaded, its cached system prompt (the ``▸ System Prompt`` row), provider and context
