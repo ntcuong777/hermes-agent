@@ -103,9 +103,9 @@ def test_hermes_plugins_patches_is_wired_into_the_cli():
 
 
 def test_hermes_doctor_runs_the_core_patch_row():
-    from hermes_cli import doctor
+    from hermes_cli import core_patches_safe, doctor
 
-    assert (None, cmd._check_core_patches) in doctor.DOCTOR_CHECKS
+    assert (None, core_patches_safe.doctor_check) in doctor.DOCTOR_CHECKS
 
 
 def test_catalog_admission_rejects_core_patches(tmp_path):
@@ -139,3 +139,62 @@ def test_catalog_admission_calls_the_rule():
     from hermes_cli import plugin_validate
 
     assert "check_core_patches(report, manifest, plugin_dir)" in inspect.getsource(plugin_validate.validate_plugin_dir)
+
+
+class _Report:
+    def __init__(self):
+        self.checks = []
+
+    def add(self, name, ok, detail=""):
+        self.checks.append((name, ok, detail))
+
+
+def test_validate_passes_a_personal_plugin_granted_in_this_home(tmp_path, monkeypatch):
+    from hermes_cli.plugin_validate_core_patches import check_core_patches
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.yaml").write_text(
+        "plugins:\n  entries:\n    demo-core-patch:\n      allow_core_patch: true\n", encoding="utf-8")
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    demo = tmp_path / "demo-core-patch"
+    shutil.copytree(FIXTURES / "demo-core-patch", demo)
+    report = _Report()
+    check_core_patches(report, {"name": "demo-core-patch", "core_patches": ["shout"]}, demo)
+    assert report.checks[0][:2] == ("core patches", True) and "personal plugin" in report.checks[0][2]
+
+
+def test_validate_still_fails_an_ungranted_plugin(tmp_path, monkeypatch):
+    from hermes_cli.plugin_validate_core_patches import check_core_patches
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    demo = tmp_path / "demo-core-patch"
+    shutil.copytree(FIXTURES / "demo-core-patch", demo)
+    report = _Report()
+    check_core_patches(report, {"name": "demo-core-patch", "core_patches": ["shout"]}, demo)
+    assert report.checks[0][:2] == ("core patches", False)
+
+
+def test_strict_exits_1_on_drift_and_the_listing_names_its_scope(target, no_discovery, capsys):
+    _stage(target, sha="2" * 64)
+    cmd.cmd_patches(_args())  # not strict: exit 0
+    assert "not the running gateway" in capsys.readouterr().out
+    with pytest.raises(SystemExit) as exited:
+        cmd.cmd_patches(_args("--strict"))
+    assert exited.value.code == 1
+
+
+def test_strict_is_quiet_when_everything_is_active(target, no_discovery):
+    _stage(target)
+    cmd.cmd_patches(_args("--strict", "--json"))
+
+
+def test_verify_pins_is_on_the_cli(tmp_path, capsys):
+    pins = tmp_path / "pins.json"
+    pins.write_text('{"pins": {}, "version": 1}\n', encoding="utf-8")
+    cmd.cmd_patches(_args("--verify-pins", str(pins)))
+    assert "no pins recorded (nothing verified)" in capsys.readouterr().out
+    pins.write_text("{not json", encoding="utf-8")
+    with pytest.raises(SystemExit) as exited:
+        cmd.cmd_patches(_args("--verify-pins", str(pins)))
+    assert exited.value.code == 2 and "cannot read it" in capsys.readouterr().err
