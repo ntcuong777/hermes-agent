@@ -35,9 +35,11 @@ not an ``Exception`` (KeyboardInterrupt, SystemExit, GeneratorExit, asyncio.Canc
 the exception types a patch declares in ``propagates=`` (an exception it raises on purpose).
 
 Generators: a wrapper or replacement of a generator (or async generator) target is guarded step by
-step. A failure before the first item was handed out is answered by the original stream. After the
-first item the stream cannot be restarted: the exception propagates (counted), so a patch that breaks
-mid-stream is switched off for the next calls.
+step. A wrapper that fails before it started the original stream is answered by the original stream;
+once the wrapper has started the original stream (even before the first item) a failure propagates
+and is NOT counted (it cannot be told apart from the stream's own error), because the stream cannot be
+restarted. A failure of the wrapper after the first item was handed out propagates (counted), so a
+patch that breaks mid-stream is switched off for the next calls.
 
 Untracked entries: a trampoline entry is attributed to a call only through the frame of THAT patch
 (frames are matched per patch, ``_frame_for``). An original entered from a context the shell does not
