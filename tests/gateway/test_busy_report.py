@@ -31,6 +31,7 @@ def _clean(monkeypatch):
     monkeypatch.setattr(code_kernel._REGISTRY, "kernels", code_kernel._KERNELS)
     monkeypatch.setattr(busy_report, "_probes", {})
     monkeypatch.setattr(busy_report, "_first_seen", {})
+    monkeypatch.setattr(busy_report, "_error_streak", {})
     monkeypatch.setattr(busy_report, "_runner_ref", None)
     monkeypatch.setattr(busy_report, "_loop", None)
 
@@ -134,6 +135,75 @@ def test_a_failing_probe_makes_the_report_uncertain_and_busy_without_hiding_the_
     assert report["uncertain"] and report["busy"]
     assert "demo:boom" in report["errors"] and report["kinds"]["delegations"]["count"] == 1
     assert busy_report.format_report(report).endswith("RuntimeError: no")
+
+
+def _boom():
+    raise RuntimeError("renamed upstream")
+
+
+def test_a_probe_that_keeps_failing_becomes_unavailable_and_stops_blocking(caplog):
+    busy_report.register_probe("demo:boom", _boom)
+    with caplog.at_level("WARNING", logger="gateway.run"):
+        reports = [busy_report.collect(FakeRunner()) for _ in range(busy_report.PROBE_ERROR_LIMIT)]
+    assert all(r["busy"] and "demo:boom" in r["errors"] for r in reports[:-1])
+    last = reports[-1]
+    assert last["busy"] is False and last["uncertain"] is False and last["errors"] == {}
+    assert "renamed upstream" in last["unavailable"]["demo:boom"]
+    text = busy_report.format_report(last)
+    assert text.startswith("idle") and "unavailable (not blocking) demo:boom" in text
+    assert "demo:boom" in caplog.text and "cannot be read" in caplog.text
+
+
+def test_a_probe_that_recovers_forgets_its_failures():
+    flaky = {"fail": True}
+    busy_report.register_probe("demo:flaky", lambda: _boom() if flaky["fail"] else [])
+    for _ in range(busy_report.PROBE_ERROR_LIMIT - 1):
+        assert busy_report.collect(FakeRunner())["uncertain"]
+    flaky["fail"] = False
+    assert busy_report.collect(FakeRunner())["uncertain"] is False
+    flaky["fail"] = True
+    assert busy_report.collect(FakeRunner())["uncertain"]  # counting from one again, not unavailable
+
+
+def test_strict_never_degrades_a_failing_probe():
+    busy_report.register_probe("demo:boom", _boom)
+    for _ in range(busy_report.PROBE_ERROR_LIMIT + 2):
+        report = busy_report.collect(FakeRunner(), strict=True)
+    assert report["busy"] and report["uncertain"] and report["unavailable"] == {}
+
+
+def test_a_renamed_private_structure_degrades_after_the_limit_instead_of_blocking_forever(monkeypatch):
+    from tools import approval
+
+    monkeypatch.delattr(approval, "_gateway_queues")
+    first = busy_report.collect(FakeRunner())
+    assert first["busy"] and "approvals" in first["errors"]
+    for _ in range(busy_report.PROBE_ERROR_LIMIT):
+        report = busy_report.collect(FakeRunner())
+    assert report["busy"] is False and "approvals" in report["unavailable"]
+
+
+def test_a_core_source_that_cannot_be_read_is_uncertain_not_idle_and_never_degrades(monkeypatch):
+    """_describe_active_work swallows a failing cron source; the report reads it again without the suppression."""
+    import cron.scheduler as scheduler
+
+    monkeypatch.setattr(scheduler, "get_running_job_details", _boom)
+    for _ in range(busy_report.PROBE_ERROR_LIMIT + 2):
+        report = busy_report.collect(FakeRunner())
+    assert report["busy"] and "core_units" in report["errors"] and "core_units" not in report["unavailable"]
+
+
+def test_a_process_command_line_is_redacted_and_left_out_of_the_label_free_form(monkeypatch):
+    from tools.process_registry import process_registry
+
+    secret = "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCD"
+    monkeypatch.setattr(process_registry, "list_sessions", lambda *a, **k: [
+        {"session_id": "proc_1", "command": f"curl -H 'Authorization: Bearer {secret}' https://x", "pid": 7,
+         "uptime_seconds": 5, "status": "running"}])
+    report = busy_report.collect(FakeRunner())
+    assert secret not in busy_report.format_report(report) and secret not in str(report)
+    public = busy_report.format_report(report, labels=False)
+    assert "proc_1" in public and "curl" not in public and "Authorization" not in public
 
 
 def test_register_probe_rejects_a_blank_name_or_non_callable():

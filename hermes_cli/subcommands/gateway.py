@@ -194,8 +194,7 @@ def build_gateway_parser(
         "does) instead of in this terminal; used by apps that run the restart as a short-lived client"))
     _flag(gateway_restart, "--when-idle", help=(
         "Do not restart now: record the request (<hermes home>/restart-requested.json) and let the running "
-        "gateway restart at its next idle moment (needs the graceful-restart plugin)"))
-    _flag(gateway_restart, "--drain", help="With --when-idle: also hold new inbound turns until the restart")
+        "gateway restart at its next idle moment (needs the graceful-restart plugin; exits 2 and writes nothing without one)"))
     gateway_restart.add_argument("--max-wait", dest="max_wait", default=None, help=(
         "With --when-idle: give up waiting after this long (45s, 90m, 6h, 2d; 0 = no limit)"))
     gateway_restart.add_argument("--reason", default=None, help="With --when-idle: why (logged, shown in /restart-status)")

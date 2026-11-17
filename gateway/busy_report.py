@@ -25,6 +25,11 @@ returns an int, a list of item dicts, or ``{"items": [...]}``.
 
 ``bind_runner`` (called where the plugin message injector is published) lets code outside the loop thread
 call :func:`collect_threadsafe`.
+
+A section that raises makes the report ``uncertain`` (busy). A section that keeps raising (an upstream rename
+of a private structure it reads, a broken probe) would then block forever, so after ``PROBE_ERROR_LIMIT``
+consecutive failures it is reported under ``"unavailable"`` instead: listed by name, no longer blocking.
+``collect(strict=True)`` never degrades a section. The core units (``core_units``) never degrade.
 """
 from __future__ import annotations
 
@@ -46,6 +51,9 @@ _lock = threading.RLock()
 _probes: dict[str, Callable[[], Any]] = {}
 _runner_ref: Optional[weakref.ref] = None
 _loop: Optional[asyncio.AbstractEventLoop] = None
+PROBE_ERROR_LIMIT = 3
+# Consecutive failures per section name; a success forgets the name.
+_error_streak: dict[str, int] = {}
 # First time an id was seen, for kinds whose source records no start time (approvals, clarifies).
 _first_seen: dict[tuple[str, str], float] = {}
 
@@ -127,8 +135,18 @@ def _agent_timeout() -> float:
 
 
 def _core_units(runner: Any) -> list[dict]:
-    """The units the core restart wait counts (turns, cron, delegations, watched processes, notices)."""
-    return list(runner._describe_active_work())
+    """The units the core restart wait counts (turns, cron, delegations, watched processes, notices).
+
+    ``_describe_active_work`` swallows a failure of the cron and background-process sources (a work unit would
+    read as "none"). They are read once more here WITHOUT that suppression, so a source that cannot be read
+    raises and the report turns uncertain instead of idle."""
+    units = list(runner._describe_active_work())
+    from cron.scheduler import get_running_job_details, get_wedged_job_ids
+    get_wedged_job_ids()
+    get_running_job_details()
+    from gateway.restart_when_idle import background_units
+    background_units(runner)
+    return units
 
 
 def _turn_items(units: list[dict]) -> list[dict]:
@@ -160,6 +178,18 @@ def _delegation_items(units: list[dict]) -> list[dict]:
     return items
 
 
+def _scrub_command(command: Any) -> str:
+    """A process command line for display: secrets redacted; without the redaction helper only the executable
+    and its first 3 arguments are kept. Argv is user content and may hold secrets: never log it or send it
+    to a chat (``format_report(labels=False)``)."""
+    text = str(command or "")
+    try:
+        from agent.redact import redact_sensitive_text
+        return redact_sensitive_text(text, force=True)
+    except Exception:  # health: allow BLE001 -- no helper: truncate instead
+        return " ".join(text.split()[:4])
+
+
 def _process_items(units: list[dict]) -> list[dict]:
     """Every running registry process (silent ones included) plus a watched process whose exit notice is pending."""
     from tools.process_registry import process_registry
@@ -168,10 +198,10 @@ def _process_items(units: list[dict]) -> list[dict]:
         if entry.get("status") != "running":
             continue
         listed.add(entry["session_id"])
-        items.append(_item(entry["session_id"], entry.get("command", ""), entry.get("uptime_seconds"), pid=entry.get("pid"),
+        items.append(_item(entry["session_id"], _scrub_command(entry.get("command", "")), entry.get("uptime_seconds"), pid=entry.get("pid"),
                            watched=bool(entry.get("notify_on_complete") or entry.get("watch_patterns")) or None,
                            persist_on_release=entry.get("persist_on_release") or None))
-    items += [_item(u.get("process_id"), u.get("command", ""), u.get("elapsed_s"), exited=True)
+    items += [_item(u.get("process_id"), _scrub_command(u.get("command", "")), u.get("elapsed_s"), exited=True)
               for u in units if u.get("kind") == "process" and u.get("process_id") not in listed and u.get("exited")]
     return items
 
@@ -222,17 +252,35 @@ def _section(items: list[dict]) -> dict:
             "oldest_age_s": max(ages) if ages else None, "items": items}
 
 
-def collect(runner: Any = None, now: Optional[float] = None) -> dict:
-    """The busy report. Call on the loop thread (or through :func:`collect_threadsafe`)."""
+def collect(runner: Any = None, now: Optional[float] = None, *, strict: bool = False) -> dict:
+    """The busy report. Call on the loop thread (or through :func:`collect_threadsafe`).
+
+    ``strict``: a failing section always makes the report uncertain (never degrades to ``unavailable``)."""
     runner = runner if runner is not None else current_runner()
     now = time.time() if now is None else now
     errors: dict[str, str] = {}
+    unavailable: dict[str, str] = {}
     units: list[dict] = []
+
+    def failed(name: str, exc: Exception, *, degrade: bool) -> None:
+        msg = f"{type(exc).__name__}: {exc}"
+        with _lock:
+            streak = _error_streak[name] = _error_streak.get(name, 0) + 1
+        if streak == 1 or streak == PROBE_ERROR_LIMIT:
+            logger.warning("busy report: section %r cannot be read (%s); failure %d of %d before it is listed as "
+                           "unavailable and stops blocking a restart", name, msg, streak, PROBE_ERROR_LIMIT)
+        if degrade and not strict and streak >= PROBE_ERROR_LIMIT:
+            unavailable[name] = msg
+        else:
+            errors[name] = msg
+
     if runner is not None:
         try:
             units = _core_units(runner)
+            with _lock:
+                _error_streak.pop("core_units", None)
         except Exception as exc:  # health: allow BLE001 -- a source that cannot be read makes the report uncertain
-            errors["core_units"] = f"{type(exc).__name__}: {exc}"
+            failed("core_units", exc, degrade=False)
     sections: dict[str, Callable[[], list[dict]]] = {
         "turns": lambda: _turn_items(units), "processes": lambda: _process_items(units),
         "kernels": lambda: _kernel_items(now), "cron": lambda: _cron_items(units),
@@ -244,8 +292,10 @@ def collect(runner: Any = None, now: Optional[float] = None) -> dict:
     for name, build in (*sections.items(), *((n, (lambda f=f: _probe_items(f))) for n, f in sorted(probes.items()))):
         try:
             kinds[name] = _section(build())
+            with _lock:
+                _error_streak.pop(name, None)
         except Exception as exc:  # health: allow BLE001 -- one broken section must not hide the others
-            errors[name] = f"{type(exc).__name__}: {exc}"
+            failed(name, exc, degrade=True)
             kinds[name] = _section([])
     with _lock:  # ids that are gone must not keep an age for a later namesake
         live = {(k, i["id"]) for k, s in kinds.items() for i in s["items"]}
@@ -253,10 +303,10 @@ def collect(runner: Any = None, now: Optional[float] = None) -> dict:
             del _first_seen[key]
     blocking = sum(s["blocking"] for s in kinds.values())
     return {"generated_at": now, "busy": blocking > 0 or bool(errors), "blocking": blocking,
-            "uncertain": bool(errors), "kinds": kinds, "errors": errors}
+            "uncertain": bool(errors), "kinds": kinds, "errors": errors, "unavailable": unavailable}
 
 
-def collect_threadsafe(timeout: float = 5.0) -> dict:
+def collect_threadsafe(timeout: float = 5.0, *, strict: bool = False) -> dict:
     """:func:`collect` run on the gateway loop from any thread. No runner: an idle, empty report. A loop that does
     not answer within *timeout* is reported as uncertain (busy): a stalled gateway is not an idle one."""
     runner = current_runner()
@@ -264,17 +314,17 @@ def collect_threadsafe(timeout: float = 5.0) -> dict:
         loop = _loop
     if runner is None or loop is None or loop.is_closed():
         return {"generated_at": time.time(), "busy": False, "blocking": 0, "uncertain": False, "kinds": {},
-                "errors": {}, "no_runner": True}
+                "errors": {}, "unavailable": {}, "no_runner": True}
     try:
         if asyncio.get_running_loop() is loop:
-            return collect(runner)
+            return collect(runner, strict=strict)
     except RuntimeError:
         pass
     done: concurrent.futures.Future = concurrent.futures.Future()
 
     def _run() -> None:
         try:
-            done.set_result(collect(runner))
+            done.set_result(collect(runner, strict=strict))
         except Exception as exc:  # health: allow BLE001 -- surface to the waiting thread
             done.set_exception(exc)
     try:
@@ -282,7 +332,7 @@ def collect_threadsafe(timeout: float = 5.0) -> dict:
         return done.result(timeout=timeout)
     except Exception as exc:  # health: allow BLE001 -- timeout, closed loop, collect failure: all "cannot tell"
         return {"generated_at": time.time(), "busy": True, "blocking": 0, "uncertain": True, "kinds": {},
-                "errors": {"loop": f"{type(exc).__name__}: {exc}" or "no answer"}}
+                "unavailable": {}, "errors": {"loop": f"{type(exc).__name__}: {exc}" or "no answer"}}
 
 
 # ---------------------------------------------------------------------------------------------------------
@@ -295,11 +345,16 @@ def _age(seconds: Optional[float]) -> str:
     return f"{s // 3600}h{s % 3600 // 60:02d}m" if s >= 3600 else (f"{s // 60}m{s % 60:02d}s" if s >= 60 else f"{s}s")
 
 
-def format_report(report: dict, *, limit: int = 6) -> str:
-    """Human-readable lines for a chat reply or a terminal (item labels are user content: for people, not logs)."""
+def format_report(report: dict, *, limit: int = 6, labels: bool = True) -> str:
+    """Human-readable lines for a chat reply or a terminal (item labels are user content: for people, not logs).
+
+    ``labels=False`` leaves every label out (kind, id and age only): the form for a message that goes to a
+    channel nobody asked in, since a label can be a process command line."""
     kinds = report.get("kinds", {})
+    unavailable = [f"unavailable (not blocking) {name}: {msg}" for name, msg in report.get("unavailable", {}).items()]
     if not report.get("busy"):
-        return "idle: nothing is running" + (" (gateway not bound)" if report.get("no_runner") else "")
+        return "\n".join(["idle: nothing is running" + (" (gateway not bound)" if report.get("no_runner") else ""),
+                          *unavailable])
     lines = [f"busy: {report.get('blocking', 0)} blocking item(s)" + (" (some sources unreadable)" if report.get("uncertain") else "")]
     for kind, section in kinds.items():
         if not section["count"]:
@@ -307,11 +362,12 @@ def format_report(report: dict, *, limit: int = 6) -> str:
         oldest = f", oldest {_age(section['oldest_age_s'])}" if section["oldest_age_s"] is not None else ""
         lines.append(f"{kind}: {section['blocking']} blocking of {section['count']}{oldest}")
         for it in section["items"][:limit]:
-            lines.append(f"  - {'' if it['blocking'] else '(not blocking) '}{it['id'][:24]} {it['label'][:60]} [{_age(it['age_s'])}]".rstrip())
+            label = f" {it['label'][:60]}" if labels else ""
+            lines.append(f"  - {'' if it['blocking'] else '(not blocking) '}{it['id'][:24]}{label} [{_age(it['age_s'])}]".rstrip())
         if section["count"] > limit:
             lines.append(f"  ... {section['count'] - limit} more")
     lines += [f"unreadable {name}: {msg}" for name, msg in report.get("errors", {}).items()]
-    return "\n".join(lines)
+    return "\n".join(lines + unavailable)
 
 
 def log_view(report: dict) -> str:
