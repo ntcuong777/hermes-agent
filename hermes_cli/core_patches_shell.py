@@ -85,11 +85,12 @@ def flavor_of(func: Callable[..., Any]) -> str:
 class Frame:
     """What one shell call saw of the original: how many times it was entered and how the last entry ended."""
 
-    __slots__ = ("entries", "state", "result", "error", "guard", "parent")
+    __slots__ = ("entries", "state", "result", "error", "guard", "parent", "closed")
 
     def __init__(self, guard: Optional["Guard"] = None, parent: Optional["Frame"] = None) -> None:
         self.entries, self.state, self.result, self.error = 0, IDLE, None, None
         self.guard, self.parent = guard, parent
+        self.closed = False  # set once the shell call that owns this frame has finished (see _frame_for)
 
     def enter(self) -> "Frame":
         self.entries, self.state = self.entries + 1, RUNNING
@@ -195,7 +196,7 @@ def _frame_for(guard: Guard) -> Optional[Frame]:
     frame = _FRAME.get()
     while frame is not None and frame.guard is not guard:
         frame = frame.parent
-    return frame
+    return None if frame is not None and frame.closed else frame
 
 
 def trampoline(guard: Guard, inner: Callable[[], Callable[..., Any]], original: Callable[..., Any],
@@ -302,12 +303,14 @@ def _sync_shell(guard: Guard, wrapped: Callable[..., Any], inner: Callable[[], C
         try:
             result = _call_in_frame(frame, wrapped, args, kwargs)
         except BaseException as exc:  # health: allow BLE001 -- classified by _decide; RAISE re-raises it
+            frame.closed = True
             untracked = guard.untracked_entries - before
             action = _decide(guard, frame, exc, delivered=False, can_return=True, untracked=untracked)
             if action == RAISE:
                 raise
             caught = exc
         else:
+            frame.closed = True
             guard.ok()
             return result
         if action == RETURN:
@@ -334,6 +337,7 @@ def _async_shell(guard: Guard, wrapped: Callable[..., Any], inner: Callable[[], 
         try:
             result = await wrapped(*args, **kwargs)
         except BaseException as exc:  # health: allow BLE001 -- classified by _decide; RAISE re-raises it
+            frame.closed = True
             _FRAME.reset(token)
             untracked = guard.untracked_entries - before
             action = _decide(guard, frame, exc, delivered=False, can_return=True, untracked=untracked)
@@ -341,6 +345,7 @@ def _async_shell(guard: Guard, wrapped: Callable[..., Any], inner: Callable[[], 
                 raise
             caught = exc
         else:
+            frame.closed = True
             _FRAME.reset(token)
             guard.ok()
             return result
@@ -380,6 +385,7 @@ def _gen_shell(guard: Guard, wrapped: Callable[..., Any], inner: Callable[[], Ca
                 try:
                     item = _step(stream, sent, thrown)
                 except StopIteration as stop:
+                    frame.closed = True
                     guard.ok()
                     return stop.value
                 finally:
@@ -395,6 +401,7 @@ def _gen_shell(guard: Guard, wrapped: Callable[..., Any], inner: Callable[[], Ca
                 except BaseException as exc:  # health: allow BLE001 -- forwarded into the wrapper's stream
                     sent, thrown = None, exc
         except BaseException as exc:  # health: allow BLE001 -- classified by _decide; RAISE re-raises it
+            frame.closed = True
             if exc is thrown:
                 raise  # the consumer threw it in and the stream let it out: not the patch's fault
             untracked = guard.untracked_entries - before
@@ -439,6 +446,7 @@ def _agen_shell(guard: Guard, wrapped: Callable[..., Any], inner: Callable[[], C
                 try:
                     item = await _astep(stream, sent, thrown)
                 except StopAsyncIteration:
+                    frame.closed = True
                     guard.ok()
                     return
                 finally:
@@ -454,6 +462,7 @@ def _agen_shell(guard: Guard, wrapped: Callable[..., Any], inner: Callable[[], C
                 except BaseException as exc:  # health: allow BLE001 -- forwarded into the wrapper's stream
                     sent, thrown = None, exc
         except BaseException as exc:  # health: allow BLE001 -- classified by _decide; RAISE re-raises it
+            frame.closed = True
             if exc is thrown:
                 raise
             untracked = guard.untracked_entries - before
