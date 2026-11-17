@@ -1070,7 +1070,7 @@ def _(rid, params: dict) -> dict:
             return dispatched
     if base:
         try:
-            with _tools_mod("hermes_cli.plugin_composer").bind_composer_text(params.get("composer_text")):
+            with _tools_mod("hermes_cli.plugin_composer").bind_composer_text(params.get("composer_text"), base):
                 plugin_output = _dispatch_plugin_in_profile_scope(base, arg, session, params.get("session_id", ""))
             if plugin_output is not None:
                 # Directive dict (e.g. /stash pop prefill) → return as the response body so the

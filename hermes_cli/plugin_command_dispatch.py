@@ -17,7 +17,7 @@ def invoke_plugin_command(handler: Callable, raw_args: str, **context: Any) -> A
     the one-argument call. Handler exceptions propagate; they are never retried as a legacy call.
     """
     from hermes_cli.plugin_composer import composer_context
-    context = {**composer_context(), **context}
+    context = {**composer_context(handler), **context}
     try:
         parameters = list(inspect.signature(handler).parameters.values())
     except (TypeError, ValueError):

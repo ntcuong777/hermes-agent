@@ -64,3 +64,29 @@ def test_directives_and_composer_text_reach_the_client_over_slash_rpc(tmp_path):
                     }
 
             asyncio.run(probe())
+
+
+def test_composer_text_may_be_null_on_the_wire():
+    from gateway.session_commands import _parse
+    assert _parse({"session_id": "s", "command": "stash toggle", "composer_text": None}, False) == ("stash", "toggle")
+    assert _parse({"session_id": "s", "command": "stash toggle", "composer_text": "x"}, False) == ("stash", "toggle")
+
+
+def test_only_composer_text_may_be_null_and_nothing_else_may_be_other_than_text():
+    import pytest
+    from gateway.session_commands import _parse
+    from hermes_state_runtime import RuntimeStoreError
+    for bad in ({"session_id": "s", "command": None}, {"session_id": "s", "command": "x", "composer_text": 5},
+                {"session_id": "s", "command": "x", "profile": None}):
+        with pytest.raises(RuntimeStoreError):
+            _parse(bad, False)
+
+
+def test_only_a_well_formed_directive_passes_through_the_gateway():
+    from gateway.session_commands import _is_directive
+    assert _is_directive({"type": "prefill", "message": "m", "ack": "/x"})
+    assert _is_directive({"type": "composer-clear", "notice": "n"})
+    assert _is_directive({"type": "choices", "title": "t", "items": [{"label": "a", "select": "/s"}]})
+    for bad in ({"type": "bogus"}, {"type": "prefill", "message": 5}, {"type": "prefill", "extra": 1},
+                {"type": "choices", "items": [{"label": "a"}]}, {"type": 7}, {"message": "m"}, "text", None):
+        assert not _is_directive(bad), bad

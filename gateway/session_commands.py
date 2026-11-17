@@ -148,7 +148,9 @@ def command_verdict(name, arg=''):
 
 def _parse(params, dispatch):
     allowed = {'session_id', 'profile', 'name', 'arg'} if dispatch else {'session_id', 'profile', 'command', 'composer_text'}
-    if (set(params) - allowed or any(not isinstance(v, str) for v in params.values())):
+    # ``composer_text`` is ``str | None`` in the contract: null means the client had no text to send (an image).
+    if (set(params) - allowed
+            or any(not isinstance(v, str) for k, v in params.items() if not (k == 'composer_text' and v is None))):
         raise RuntimeStoreError('invalid_params')
     text = params.get('name', '') if dispatch else params.get('command', '')
     parts = text.strip().lstrip('/').split(None, 1)
@@ -573,11 +575,13 @@ async def execute_command(connection, ref, params, *, dispatch=False):
     if runner_command is not None:
         from gateway.plugin_command_choice import viewer_choices
         from hermes_cli.plugin_composer import bind_composer_text
+        # The chord's composer text is for the command it ran, not for one a handler invokes from inside.
+        composer_for = runner_command[1] if runner_command[0] == 'plugin' else ''
         with (_profile_runtime_scope(home), _session_workspace(authority.runner, live.source),
-              viewer_choices(live, ref.session_id), bind_composer_text(params.get('composer_text'))):
+              viewer_choices(live, ref.session_id), bind_composer_text(params.get('composer_text'), composer_for)):
             output = await _run_runner_command(authority.runner, live, name, arg, *runner_command)
         # Composer directives must reach local clients, not become a printed Python dict.
-        if isinstance(output, dict) and isinstance(output.get('type'), str):
+        if _is_directive(output):
             return output
         return {'type': 'exec', 'output': _text(output)}
     if definition is None:
@@ -595,6 +599,20 @@ async def execute_command(connection, ref, params, *, dispatch=False):
     return await _run_in_band(connection, ref, live, home, canonical, arg, definition, before)
 
 
+
+
+def _is_directive(output):
+    """A handler's dict that is a well-formed ``command.dispatch`` directive (``CommandDispatchResult``); anything
+    else is printed as text. Which commands a ``choices`` row's ``select``/``drop`` may name is the client's to
+    run through the normal command path, which authorizes each as it would a typed one."""
+    if not (isinstance(output, dict) and isinstance(output.get('type'), str)):
+        return False
+    from tui_gateway.contracts.tools_commands import CommandDispatchResult
+    try:
+        CommandDispatchResult.model_validate(output)
+    except ValueError:  # pydantic's ValidationError is one
+        return False
+    return True
 
 
 def _text(output):
