@@ -23,7 +23,10 @@ MAX_FIELDS = 8
 MAX_TEXT = 64  # a segment is a glance, not a sentence
 MAX_MIN_COLS = 400
 _ID = re.compile(r"[a-z][a-z0-9_-]{0,31}")
-_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")  # a plugin's text is drawn raw: no escape sequences
+# A plugin's text is drawn raw: no escape sequences, no bidi override/isolate or zero-width characters (they
+# reorder or hide what the bar shows), no line/paragraph separators. A newline or tab is a space, not a joiner.
+_BREAK = re.compile(r"[\n\r\t\u2028\u2029]")
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]")
 
 
 def wanted_fields(cfg: Any) -> tuple[str, ...]:
@@ -44,7 +47,7 @@ def clean_fields(raw: Any, wanted: tuple[str, ...]) -> list[dict[str, Any]]:
         field_id, text = item.get("id"), item.get("text")
         if not (isinstance(field_id, str) and _ID.fullmatch(field_id) and field_id in wanted):
             continue
-        text = _CONTROL.sub("", text).strip()[:MAX_TEXT] if isinstance(text, str) else ""
+        text = _CONTROL.sub("", _BREAK.sub(" ", text)).strip()[:MAX_TEXT] if isinstance(text, str) else ""
         if not text or field_id in rows:
             continue
         row: dict[str, Any] = {"id": field_id, "text": text}

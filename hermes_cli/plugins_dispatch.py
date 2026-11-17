@@ -50,11 +50,18 @@ _HOOK_TIMEOUT_BOUNDED_HOOKS: set[str] = {
     "pre_command",
     # Fires inside the compression commit window (lease held): a hung plugin must not wedge the session.
     "post_compaction",
+    # Runs on the session.usage / message.complete frame path (and the shared gateway's loop): a hung plugin
+    # must not stall the frame. Rewrite hook, so a timeout leaves the running value unchanged (fail-open).
+    "transform_status_bar_fields",
 }
+# Chained (rewrite) hooks that run bounded too. ``invoke_hook_chained`` ran every hook unbounded, listed or not
+# (``transform_request_messages`` is listed but still unbounded there); only the hooks named here opt in.
+_HOOK_CHAINED_BOUNDED_HOOKS = frozenset({"transform_status_bar_fields"})
 # Hooks whose calls are told apart by another payload field: one session's commands are one
 # sequence, so a still-running callback skips that session's next command, not another session's.
 _HOOK_CALL_IDENTITY_FIELDS: dict[str, tuple[str, ...]] = {
     "pre_command": ("session_key",), "post_compaction": ("session_id",), "on_session_open": ("session_id",),
+    "transform_status_bar_fields": ("session_id",),
 }
 
 # Policy hooks: timeout / still-running must fail closed (block the tool).
@@ -346,12 +353,20 @@ class PluginDispatchMixin:
         callbacks = self._hooks.get(hook_name)
         if not callbacks:
             return None
+        from hermes_cli.plugins import _resolve_hook_callback_timeout
+        timeout = _resolve_hook_callback_timeout()
+        bounded = hook_name in _HOOK_CHAINED_BOUNDED_HOOKS and _hook_uses_callback_timeout(hook_name, timeout)
         current = kwargs.get(chain_key)
         for cb in callbacks:
             payload = dict(kwargs)
             payload[chain_key] = current
             try:
-                ret = self._invoke_hook_callback(cb, payload)
+                if bounded:  # a listed hook: a hung callback is abandoned and skipped, the chain goes on
+                    ret = self._run_hook_callback_bounded(hook_name, cb, payload, timeout)
+                    if ret is _HOOK_SKIPPED:
+                        continue
+                else:
+                    ret = self._invoke_hook_callback(cb, payload)
             except (Exception, SystemExit) as exc:
                 # _report_hook_failure owns the deduplicated WARNING (#111922); the traceback
                 # belongs at DEBUG so every failure is diagnosable without re-spamming.

@@ -174,3 +174,68 @@ def test_the_row_count_is_capped():
     ids = tuple(f"f{i}" for i in range(20))
     rows = [{"id": i, "text": "t"} for i in ids]
     assert len(sbf.clean_fields(rows, ids)) == sbf.MAX_FIELDS
+
+
+def test_text_has_no_bidi_overrides_zero_width_characters_or_line_breaks():
+    text = "a\nb\tc\u2028d\u2029e\u202efg\u2066h\u2069i\u200bj\ufeffk"
+    (row,) = sbf.clean_fields([{"id": "x", "text": text}], ("x",))
+    assert row["text"] == "a b c d efghijk"
+
+
+# -- a hung plugin -------------------------------------------------------------------------------------------
+
+
+def test_a_hung_plugin_is_abandoned_not_waited_on(manager, monkeypatch):
+    import threading
+    import time
+
+    monkeypatch.setattr("hermes_cli.plugins._resolve_hook_callback_timeout", lambda: 0.15)
+    hold, started = threading.Event(), threading.Event()
+
+    def hung(fields, **_):
+        started.set()
+        hold.wait(timeout=10.0)
+        return [{"id": "cost", "text": "late"}]
+
+    _register(manager, hung)
+    _register(manager, lambda fields, **_: [*fields, {"id": "cost", "text": "$1"}])
+    _bar(monkeypatch, "cost")
+    began = time.monotonic()
+    out = sbf.status_bar_fields(_agent())
+    elapsed = time.monotonic() - began
+    hold.set()
+    assert started.is_set() and elapsed < 5.0
+    assert out == {"status_fields": [{"id": "cost", "text": "$1"}]}  # fail-open: the next plugin still lands
+
+
+def test_a_plugin_that_exits_does_not_end_the_frame(manager, monkeypatch):
+    def quits(fields, **_):
+        raise SystemExit(3)
+
+    _register(manager, quits)
+    _bar(monkeypatch, "cost")
+    assert sbf.status_bar_fields(_agent()) == {}
+    assert session_usage.usage_stats(_agent())["api_calls"] == 1
+
+
+def test_the_gateways_stats_call_runs_usage_stats_off_the_event_loop(monkeypatch):
+    import asyncio
+    import threading
+
+    where = []
+    monkeypatch.setattr(session_usage, "usage_stats", lambda agent: where.append(threading.current_thread()) or {})
+    monkeypatch.setattr(session_usage, "carried_compression_count", lambda live, agent=None: 0)
+
+    class Authority:
+        sessions = {}
+
+        async def resolve(self, actor, ref):
+            return None
+
+        def agent(self, ref):
+            return None
+
+    connection = SimpleNamespace(authority=Authority(), actor=None)
+    ref = SimpleNamespace(session_id="s")
+    out = asyncio.run(session_usage.stats(connection, ref, {"session_id": "s"}))
+    assert out == {"compression_count": 0} and where and where[0] is not threading.main_thread()

@@ -8,6 +8,7 @@ call and at turn end of a local-viewer turn, and returned by the ``session.stats
 """
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import dataclasses
 import time
@@ -271,6 +272,6 @@ async def stats(connection, ref, params):
         raise RuntimeStoreError("invalid_params")
     await connection.authority.resolve(connection.actor, ref)
     agent = connection.authority.agent(ref)
-    result = usage_stats(agent)
+    result = await asyncio.to_thread(usage_stats, agent)  # off the loop: a plugin's status-bar hook runs inside
     result["compression_count"] = carried_compression_count(connection.authority.sessions.get(ref.session_id), agent)
     return result
