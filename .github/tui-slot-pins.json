@@ -1,4 +1,16 @@
 {
-  "slots": {},
+  "slots": {
+    "completion.request": {
+      "plugin": "tui-ports",
+      "reason": "mid-prompt @file and inline /skill completion at the caret; replaceTo keeps the text after it",
+      "sha": "4a2425e69fa36218c9248d8b8bcf6b727eebb531d1a5efdd20af7a63dafbfe4d",
+      "symbols": [
+        "TAB_PATH_RE",
+        "completionRequestForInput"
+      ],
+      "target_file": "ui-tui/src/hooks/useCompletion.ts",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
+    }
+  },
   "version": 1
 }

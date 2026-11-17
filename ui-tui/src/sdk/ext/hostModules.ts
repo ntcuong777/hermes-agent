@@ -9,5 +9,16 @@
  */
 import * as ink from '@hermes/ink'
 import * as React from 'react'
+import * as slash from '@hermes/shared/slash' // fork: tui slot host modules (stage 2)
+import * as slashInput from '@hermes/shared/slash-input' // fork: tui slot host modules (stage 2)
+import * as uiStore from '../../app/uiStore.js' // fork: tui slot host modules (stage 2)
+import * as i18nRuntime from '../../i18n/runtime.js' // fork: tui slot host modules (stage 2)
 
-export const HOST_MODULES: Readonly<Record<string, unknown>> = Object.freeze({ ink, react: React })
+export const HOST_MODULES: Readonly<Record<string, unknown>> = Object.freeze({
+  ink,
+  react: React,
+  'shared/slash': slash,
+  'shared/slash-input': slashInput,
+  'app/uiStore': uiStore,
+  'i18n/runtime': i18nRuntime
+})

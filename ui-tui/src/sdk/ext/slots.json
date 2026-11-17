@@ -8,6 +8,14 @@
       "props": 1,
       "summary": "Stage 0 test slot: the text canaryEcho returns for its input",
       "symbols": ["canaryEcho"]
+    },
+    "completion.request": {
+      "file": "ui-tui/src/hooks/useCompletion.ts",
+      "host": ["shared/slash", "shared/slash-input", "app/uiStore", "i18n/runtime"],
+      "kind": "fn",
+      "props": 1,
+      "summary": "What to ask the gateway to complete, from the text before the caret",
+      "symbols": ["TAB_PATH_RE", "completionRequestForInput"]
     }
   }
 }
