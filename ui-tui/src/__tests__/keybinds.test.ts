@@ -5,11 +5,16 @@ import React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  announceReserved,
   chordMatches,
   composerDraftText,
   type KeybindHost,
   parseChord,
+  reservedSpecs,
+  resetAnnouncedReserved,
+  resetCatalogRetry,
   resolveKeybinds,
+  retryCatalog,
   runKeybind,
   typedDirectives
 } from '../app/keybinds.js'
@@ -78,6 +83,75 @@ describe('resolving the table', () => {
 
   it('works with neither layer', () => {
     expect(resolveKeybinds()).toEqual([])
+  })
+
+  // Alt+G, Ctrl+G and Ctrl+K are handled after the chord table; Alt+B/F/D edit the composer as well.
+  it('ignores chords the TUI owns, in either layer, and keeps the rest', () => {
+    const user = {
+      'alt+g': '/a',
+      'ctrl+g': '/b',
+      'ctrl+k': '/c',
+      'alt+b': '/d',
+      'alt+f': '/e',
+      'alt+d': '/f',
+      'alt+shift+d': '/g',
+      'alt+x': '/ok'
+    }
+
+    const table = resolveKeybinds({ 'alt+g': '/plugin' }, user)
+
+    expect(table.map(b => b.command)).toEqual(['ok'])
+  })
+
+  it('names the reserved specs so one line can say they are ignored, once each', () => {
+    const specs = reservedSpecs({ 'alt+s': 'x' }, { 'Meta+G': '/a', 'ctrl+k': '', 'alt+z': '/z' })
+    expect(specs).toEqual(['Meta+G', 'ctrl+k'])
+
+    resetAnnouncedReserved()
+    const say = vi.fn()
+    announceReserved(specs, say)
+    announceReserved(specs, say)
+
+    expect(say).toHaveBeenCalledTimes(2)
+    expect(say.mock.calls[0]![0]).toContain('Meta+G')
+  })
+})
+
+describe('retrying a missing catalog', () => {
+  beforeEach(resetCatalogRetry)
+
+  it('says so and reloads, at most a few times, never overlapping and never too quickly', async () => {
+    const say = vi.fn()
+    const load = vi.fn(async () => undefined)
+
+    expect(retryCatalog(load, say, 10_000)).toBe(true)
+    expect(say).toHaveBeenCalledExactlyOnceWith('keybinds not loaded, retrying')
+    expect(retryCatalog(load, say, 20_000)).toBe(false) // first load still in flight
+    await settle()
+    expect(retryCatalog(load, say, 10_500)).toBe(false) // too soon
+    expect(retryCatalog(load, say, 20_000)).toBe(true)
+    await settle()
+    expect(retryCatalog(load, say, 30_000)).toBe(true)
+    await settle()
+    expect(retryCatalog(load, say, 40_000)).toBe(false) // bounded
+    expect(load).toHaveBeenCalledTimes(3)
+  })
+
+  it('never throws when the load fails, synchronously or not', async () => {
+    const say = vi.fn()
+
+    expect(() =>
+      retryCatalog(
+        () => {
+          throw new Error('boom')
+        },
+        say,
+        10_000
+      )
+    ).not.toThrow()
+    expect(retryCatalog(async () => Promise.reject(new Error('down')), say, 20_000)).toBe(true)
+    await settle()
+    expect(retryCatalog(async () => undefined, say, 30_000)).toBe(true)
   })
 })
 
@@ -224,6 +298,25 @@ describe('composer-clear', () => {
     expect(said.at(-1)).toContain('composer changed')
   })
 
+  // The command ran (the save went through); only the clearing was skipped, and the draft is still there.
+  it('does not claim nothing was applied when the save went through', async () => {
+    const { host, said, state } = setup({ save: { type: 'composer-clear', notice: 'saved' } })
+    const slow = host.request
+
+    host.request = async (...args) => {
+      state.revision++
+
+      return slow(...args)
+    }
+
+    runKeybind('save', host)
+    await settle()
+
+    expect(said.at(-1)).toBe('keybind: saved, composer kept (the composer changed meanwhile)')
+    expect(said.join('\n')).not.toContain('nothing applied')
+    expect(state.text).toBe('draft')
+  })
+
   it('does not clear the composer of another session after a switch', async () => {
     const { host, state } = setup({ save: { type: 'composer-clear' } })
     const slow = host.request
@@ -234,11 +327,15 @@ describe('composer-clear', () => {
       return slow(...args)
     }
 
+    const said: string[] = []
+    host.say = text => void said.push(text)
+
     runKeybind('save', host)
     await settle()
 
     expect(host.clear).not.toHaveBeenCalled()
     expect(state.text).toBe('draft')
+    expect(said.at(-1)).toContain('the session changed')
   })
 
   it('does not clear while an image has since been attached', async () => {
@@ -372,7 +469,7 @@ describe('choices', () => {
     await settle()
     state.sid = 'sid-2'
     dispatchWidgetInput(key('1'))
-    await vi.waitFor(() => expect(said.at(-1)).toContain('composer changed'))
+    await vi.waitFor(() => expect(said.at(-1)).toBe('keybind: the session changed, nothing applied'))
 
     expect(host.replace).not.toHaveBeenCalled()
   })

@@ -8,7 +8,8 @@ import { rpcErrorMessage } from '../lib/rpc.js'
 
 import { showChoices } from './choicePicker.js'
 import type { InputHandlerContext } from './interfaces.js'
-import { $slashCatalog } from './slashCatalog.js'
+import { $slashCatalog, loadSlashCatalog, setSlashCatalog } from './slashCatalog.js'
+import { turnController } from './turnController.js'
 import { getUiState } from './uiStore.js'
 
 /**
@@ -65,8 +66,38 @@ export const chordMatches = (c: Chord, key: { ctrl: boolean; meta: boolean; shif
   key.meta === c.alt &&
   (key.shift || ch !== ch.toLowerCase()) === c.shift
 
+/**
+ * Chords the TUI itself owns, which a configured chord must not shadow: Alt+G / Ctrl+G (editor) and Ctrl+K
+ * (dequeue) are handled after the chord table, and the composer's own editing (Alt+B/F/D word moves, Alt+V paste,
+ * Ctrl+A/E/U/W/Z/Y) sees the key too, so a bound command would fire together with it. Keyed without shift.
+ */
+const RESERVED = new Set([
+  'alt+b',
+  'alt+d',
+  'alt+f',
+  'alt+g',
+  'alt+v',
+  ...'aeuwyz'.split('').map(k => `ctrl+${k}`),
+  'ctrl+g',
+  'ctrl+k'
+])
+
+export const isReservedChord = (c: Chord): boolean => RESERVED.has(chordId({ ...c, shift: false }))
+
+/** The specs (in either layer) that name a reserved chord, so a line can say they are ignored. */
+export const reservedSpecs = (
+  ...layers: ReadonlyArray<Readonly<Record<string, unknown>> | null | undefined>
+): string[] =>
+  layers.flatMap(layer =>
+    Object.keys(layer ?? {}).filter(spec => {
+      const chord = parseChord(spec)
+
+      return chord !== null && isReservedChord(chord)
+    })
+  )
+
 /** The plugin defaults under the user's `display.tui_keybinds`; an empty or non-string command switches a chord off.
- *  Entries whose chord does not parse are dropped. */
+ *  Entries whose chord does not parse, or is reserved for the TUI itself, are dropped. */
 export function resolveKeybinds(
   defaults: Readonly<Record<string, unknown>> = {},
   user: Readonly<Record<string, unknown>> = {}
@@ -78,13 +109,62 @@ export function resolveKeybinds(
       const chord = parseChord(spec)
       const command = typeof value === 'string' ? value.trim().replace(/^\//, '') : ''
 
-      if (chord) {
+      if (chord && !isReservedChord(chord)) {
         merged.set(chordId(chord), command ? { chord, command } : null)
       }
     }
   }
 
   return [...merged.values()].filter((b): b is Keybind => b !== null)
+}
+
+// Reserved chords already announced (once per spec for the process).
+const announcedReserved = new Set<string>()
+
+/** One activity line per reserved spec found in the config, the first time it is seen. */
+export function announceReserved(specs: readonly string[], say: (text: string) => void): void {
+  specs
+    .filter(spec => !announcedReserved.has(spec))
+    .forEach(spec => {
+      announcedReserved.add(spec)
+      say(`keybind ${spec} ignored: reserved by the TUI`)
+    })
+}
+
+export const resetAnnouncedReserved = (): void => announcedReserved.clear()
+
+// The chords' defaults come with the slash catalog. When it never arrived (still loading, or the load failed)
+// a press retries the load: at most MAX tries, RETRY_GAP_MS apart, one at a time.
+const MAX_CATALOG_RETRIES = 3
+const RETRY_GAP_MS = 2000
+const catalogRetry = { at: 0, attempts: 0, busy: false }
+
+export const resetCatalogRetry = (): void => void Object.assign(catalogRetry, { at: 0, attempts: 0, busy: false })
+
+/** True when a retry was started. Never throws: a failing `load` only ends the attempt. */
+export function retryCatalog(
+  load: () => Promise<unknown>,
+  say: (text: string) => void,
+  now: number = Date.now()
+): boolean {
+  if (catalogRetry.busy || catalogRetry.attempts >= MAX_CATALOG_RETRIES || now - catalogRetry.at < RETRY_GAP_MS) {
+    return false
+  }
+
+  catalogRetry.busy = true
+  catalogRetry.attempts++
+  catalogRetry.at = now
+  say('keybinds not loaded, retrying')
+
+  try {
+    void Promise.resolve(load())
+      .catch(() => undefined)
+      .finally(() => void (catalogRetry.busy = false))
+  } catch {
+    catalogRetry.busy = false
+  }
+
+  return true
 }
 
 /** `display.tui_keybinds` as last read from the config; the plugin defaults ride the slash catalog. */
@@ -112,9 +192,15 @@ const bare = (command: string) => command.replace(/^\//, '')
 /**
  * Handle the answers to commands run on session `sid`. A directive that changes the composer applies only
  * while `intact()` holds (the session and the composer are what they were when the command started);
- * otherwise nothing is touched and a line says so. `done` runs after a picker row's command has answered.
+ * otherwise nothing is touched and a line says why (`why`). `done` runs after a picker row's command has answered.
  */
-export function directives(host: DirectiveHost, sid: string, intact: () => boolean, done: () => void = () => {}) {
+export function directives(
+  host: DirectiveHost,
+  sid: string,
+  intact: () => boolean,
+  done: () => void = () => {},
+  why: () => string = () => 'the composer changed meanwhile'
+) {
   const run = (command: string, composerText?: string): Promise<void> =>
     host
       .request(bare(command), sid, composerText)
@@ -147,7 +233,10 @@ export function directives(host: DirectiveHost, sid: string, intact: () => boole
     }
 
     if (!intact()) {
-      return host.say('keybind: the composer changed meanwhile, nothing applied')
+      // A composer-clear answer means the command already ran (a save went through): only the clearing is skipped.
+      return host.say(
+        d.type === 'composer-clear' ? `keybind: saved, composer kept (${why()})` : `keybind: ${why()}, nothing applied`
+      )
     }
 
     if (d.type === 'prefill') {
@@ -222,7 +311,14 @@ export function runKeybind(command: string, host: KeybindHost, done: () => void 
 
   const intact = () => host.sid() === sid && composer.revision() === revision && !composer.attachments()
 
-  void directives(host, sid, intact, done)
+  const why = () =>
+    host.sid() !== sid
+      ? 'the session changed'
+      : composer.attachments()
+        ? 'an image was attached'
+        : 'the composer changed meanwhile'
+
+  void directives(host, sid, intact, done, why)
     .run(command, text)
     .finally(() => {
       running.delete(key)
@@ -237,11 +333,23 @@ export function runKeybind(command: string, host: KeybindHost, done: () => void 
 export const keybindRunner =
   ({ actions, composer, gateway }: InputHandlerContext, onSettled: () => void) =>
   (key: Key, ch: string): boolean => {
-    const bound =
-      (key.meta || key.ctrl) &&
-      resolveKeybinds($slashCatalog.get()?.keybinds, $configuredKeybinds.get()).find(b =>
-        chordMatches(b.chord, key, ch)
+    const catalog = $slashCatalog.get()
+    const modified = key.meta || key.ctrl
+    const configured = $configuredKeybinds.get()
+
+    if (modified) {
+      announceReserved(reservedSpecs(catalog?.keybinds, configured), text => turnController.pushActivity(text, 'info'))
+    }
+
+    const bound = modified && resolveKeybinds(catalog?.keybinds, configured).find(b => chordMatches(b.chord, key, ch))
+
+    // No catalog means no plugin defaults (Alt+S): try loading it again rather than do nothing.
+    if (!bound && modified && !catalog && /^[a-z0-9]$/i.test(ch)) {
+      retryCatalog(
+        () => loadSlashCatalog(gateway.rpc, getUiState().sid, setSlashCatalog),
+        text => turnController.pushActivity(text, 'info')
       )
+    }
 
     if (bound) {
       runKeybind(

@@ -1062,7 +1062,8 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     }
 
     // A `display.tui_keybinds` chord, or a plugin's default one, runs its slash command (keybinds.ts).
-    // After the built-in chords above, so those win.
+    // After the built-in chords above, so those win; chords the TUI handles below or in the composer
+    // (Alt+G, Ctrl+G, Ctrl+K, Alt+B/F/D, ...) are reserved there and never reach a command.
     if (runChord(key, ch)) {
       return
     }
