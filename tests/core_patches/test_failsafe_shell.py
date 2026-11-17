@@ -22,7 +22,7 @@ def build(kind, flavor, make, original, *, max_failures=3, propagates=()):
     def inner():
         return original
 
-    candidate = make(shell.trampoline(inner, original, flavor)) if kind == "wrap" else make
+    candidate = make(shell.trampoline(guard, inner, original, flavor)) if kind == "wrap" else make
     return shell.make_shell(guard, candidate, inner, flavor), guard
 
 

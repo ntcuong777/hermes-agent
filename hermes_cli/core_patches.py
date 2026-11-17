@@ -450,8 +450,9 @@ def _link(spec: CorePatchSpec, state: _TargetState) -> _Link:
     def inner() -> Callable[..., Any]:
         return link.inner if link.inner is not None else original
 
+    guard = shell.Guard(spec.key, spec.kind, _SETTINGS.max_failures, spec.propagates, _on_guard_failure)
     try:
-        candidate = spec.fn if spec.kind == "replace" else spec.fn(shell.trampoline(inner, original, flavor))
+        candidate = spec.fn if spec.kind == "replace" else spec.fn(shell.trampoline(guard, inner, original, flavor))
     except Exception as exc:  # health: allow BLE001 -- a broken factory skips its own patch only
         link.error = f"wrap factory raised {exc!r}"
     else:
@@ -460,8 +461,8 @@ def _link(spec: CorePatchSpec, state: _TargetState) -> _Link:
         elif inspect.iscoroutinefunction(candidate) != is_async:
             link.error = "async-ness differs from the target (async target needs an async function)"
         else:
-            link.guard = shell.Guard(spec.key, spec.kind, _SETTINGS.max_failures, spec.propagates, _on_guard_failure)
-            link.wrapped = shell.make_shell(link.guard, candidate, inner, flavor)
+            link.guard = guard
+            link.wrapped = shell.make_shell(guard, candidate, inner, flavor)
     _LINKS[spec.seq] = link
     return link
 

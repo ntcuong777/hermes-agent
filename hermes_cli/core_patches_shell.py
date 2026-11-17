@@ -30,6 +30,12 @@ step. A failure before the first item was handed out is answered by the original
 first item the stream cannot be restarted: the exception propagates (counted), so a patch that breaks
 mid-stream is switched off for the next calls.
 
+Untracked entries: a trampoline entry is attributed to a call only through the frame of THAT patch
+(frames are matched per patch, ``_frame_for``). An original entered from a context the shell does not
+see (another thread, a pool, a context copied away) is an untracked entry: the shell counts it on the
+guard. When a wrapper fails with no tracked entry but with untracked entries, the original may already
+have run, so it is NOT run again: the failure is counted and propagates.
+
 ``max_failures`` consecutive patch-layer failures switch the patch off for the process: the shell
 passes every later call straight to the original and tells the registry (status
 ``disabled-after-errors``).
@@ -67,10 +73,11 @@ def flavor_of(func: Callable[..., Any]) -> str:
 class Frame:
     """What one shell call saw of the original: how many times it was entered and how the last entry ended."""
 
-    __slots__ = ("entries", "state", "result", "error")
+    __slots__ = ("entries", "state", "result", "error", "guard", "parent")
 
-    def __init__(self) -> None:
+    def __init__(self, guard: Optional["Guard"] = None, parent: Optional["Frame"] = None) -> None:
         self.entries, self.state, self.result, self.error = 0, IDLE, None, None
+        self.guard, self.parent = guard, parent
 
     def enter(self) -> "Frame":
         self.entries, self.state = self.entries + 1, RUNNING
@@ -92,6 +99,7 @@ class Guard:
         self.on_failure = on_failure
         self.consecutive = 0
         self.total = 0
+        self.untracked_entries = 0
         self.disabled = False
         self.last_error = ""
         self._last_log = float("-inf")
@@ -99,6 +107,11 @@ class Guard:
 
     def declared(self, exc: BaseException) -> bool:
         return bool(self.propagates) and isinstance(exc, self.propagates)
+
+    def note_untracked(self) -> None:
+        """The original was entered outside any frame of this patch (see the module docstring)."""
+        with self._lock:
+            self.untracked_entries += 1
 
     def ok(self) -> None:
         if self.consecutive:
@@ -163,13 +176,24 @@ async def _track_agen(stream: Any, frame: Frame) -> Any:
     frame.returned(None)
 
 
-def trampoline(inner: Callable[[], Callable[..., Any]], original: Callable[..., Any], flavor: str) -> Callable[..., Any]:
+def _frame_for(guard: Guard) -> Optional[Frame]:
+    """The innermost frame of the current call that belongs to ``guard`` (None when there is none)."""
+    frame = _FRAME.get()
+    while frame is not None and frame.guard is not guard:
+        frame = frame.parent
+    return frame
+
+
+def trampoline(guard: Guard, inner: Callable[[], Callable[..., Any]], original: Callable[..., Any],
+               flavor: str) -> Callable[..., Any]:
     """The ``original`` a wrap factory receives: forwards to ``inner()`` and records the outcome in the
-    frame of the shell call it runs under (a call outside any shell call just forwards)."""
+    frame of ``guard`` in the current call. An entry with no such frame is untracked: it is counted on
+    the guard and forwarded as before."""
     if flavor == ASYNC:
         async def forward(*args: Any, **kwargs: Any) -> Any:
-            frame = _FRAME.get()
+            frame = _frame_for(guard)
             if frame is None:
+                guard.note_untracked()
                 return await inner()(*args, **kwargs)
             frame.enter()
             try:
@@ -181,15 +205,17 @@ def trampoline(inner: Callable[[], Callable[..., Any]], original: Callable[..., 
             return result
     elif flavor in (GEN, AGEN):
         def forward(*args: Any, **kwargs: Any) -> Any:
-            frame = _FRAME.get()
+            frame = _frame_for(guard)
             stream = inner()(*args, **kwargs)
             if frame is None:
+                guard.note_untracked()
                 return stream
             return (_track_gen if flavor == GEN else _track_agen)(stream, frame.enter())
     else:
         def forward(*args: Any, **kwargs: Any) -> Any:
-            frame = _FRAME.get()
+            frame = _frame_for(guard)
             if frame is None:
+                guard.note_untracked()
                 return inner()(*args, **kwargs)
             frame.enter()
             try:
@@ -205,9 +231,11 @@ def trampoline(inner: Callable[[], Callable[..., Any]], original: Callable[..., 
 # ── the decision ────────────────────────────────────────────────────────────────────────────
 
 
-def _decide(guard: Guard, frame: Frame, exc: BaseException, *, delivered: bool, can_return: bool) -> str:
+def _decide(guard: Guard, frame: Frame, exc: BaseException, *, delivered: bool, can_return: bool,
+            untracked: int = 0) -> str:
     """RAISE (propagate ``exc``), FALLBACK (the inner callable answers; already counted), CHECKED (replace:
-    the original answers, then ``Guard.settle`` counts) or RETURN (give back ``frame.result``; counted)."""
+    the original answers, then ``Guard.settle`` counts) or RETURN (give back ``frame.result``; counted).
+    ``untracked``: untracked entries of the original during this call (see ``Guard.note_untracked``)."""
     if not isinstance(exc, Exception) or guard.declared(exc):
         guard.ok()
         return RAISE
@@ -222,9 +250,12 @@ def _decide(guard: Guard, frame: Frame, exc: BaseException, *, delivered: bool, 
     if delivered:
         guard.fail(exc, "the wrapper (mid-stream)")
         return RAISE
-    if frame.entries == 0:
+    if frame.entries == 0 and untracked == 0:
         guard.fail(exc, "the wrapper before it called the original")
         return FALLBACK
+    if frame.entries == 0 and untracked > 0:
+        guard.fail(exc, "the wrapper (the original ran outside this call's context)")
+        return RAISE  # the original may already have run: never run it again
     if frame.state == RETURNED and can_return:
         guard.fail(exc, "the wrapper after the original returned")
         return RETURN
@@ -246,11 +277,13 @@ def _sync_shell(guard: Guard, wrapped: Callable[..., Any], inner: Callable[[], C
     def shell(*args: Any, **kwargs: Any) -> Any:
         if guard.disabled:
             return inner()(*args, **kwargs)
-        frame = Frame()
+        frame = Frame(guard, _FRAME.get())
+        before = guard.untracked_entries
         try:
             result = _call_in_frame(frame, wrapped, args, kwargs)
         except BaseException as exc:  # health: allow BLE001 -- classified by _decide; RAISE re-raises it
-            action = _decide(guard, frame, exc, delivered=False, can_return=True)
+            untracked = guard.untracked_entries - before
+            action = _decide(guard, frame, exc, delivered=False, can_return=True, untracked=untracked)
             if action == RAISE:
                 raise
             caught = exc
@@ -275,13 +308,15 @@ def _async_shell(guard: Guard, wrapped: Callable[..., Any], inner: Callable[[], 
     async def shell(*args: Any, **kwargs: Any) -> Any:
         if guard.disabled:
             return await inner()(*args, **kwargs)
-        frame = Frame()
+        frame = Frame(guard, _FRAME.get())
+        before = guard.untracked_entries
         token = _FRAME.set(frame)
         try:
             result = await wrapped(*args, **kwargs)
         except BaseException as exc:  # health: allow BLE001 -- classified by _decide; RAISE re-raises it
             _FRAME.reset(token)
-            action = _decide(guard, frame, exc, delivered=False, can_return=True)
+            untracked = guard.untracked_entries - before
+            action = _decide(guard, frame, exc, delivered=False, can_return=True, untracked=untracked)
             if action == RAISE:
                 raise
             caught = exc
@@ -316,7 +351,8 @@ def _gen_shell(guard: Guard, wrapped: Callable[..., Any], inner: Callable[[], Ca
     def shell(*args: Any, **kwargs: Any) -> Any:
         if guard.disabled:
             return (yield from inner()(*args, **kwargs))
-        frame, delivered, sent, thrown = Frame(), False, None, None
+        frame, delivered, sent, thrown = Frame(guard, _FRAME.get()), False, None, None
+        before = guard.untracked_entries
         try:
             stream = iter(_call_in_frame(frame, wrapped, args, kwargs))
             while True:
@@ -341,7 +377,8 @@ def _gen_shell(guard: Guard, wrapped: Callable[..., Any], inner: Callable[[], Ca
         except BaseException as exc:  # health: allow BLE001 -- classified by _decide; RAISE re-raises it
             if exc is thrown:
                 raise  # the consumer threw it in and the stream let it out: not the patch's fault
-            action = _decide(guard, frame, exc, delivered=delivered, can_return=False)
+            untracked = guard.untracked_entries - before
+            action = _decide(guard, frame, exc, delivered=delivered, can_return=False, untracked=untracked)
             if action == RAISE:
                 raise
             caught = exc
@@ -372,7 +409,8 @@ def _agen_shell(guard: Guard, wrapped: Callable[..., Any], inner: Callable[[], C
             async for item in inner()(*args, **kwargs):
                 yield item
             return
-        frame, delivered, sent, thrown = Frame(), False, None, None
+        frame, delivered, sent, thrown = Frame(guard, _FRAME.get()), False, None, None
+        before = guard.untracked_entries
         try:
             stream = _call_in_frame(frame, wrapped, args, kwargs)
             stream = stream if hasattr(stream, "__anext__") else stream.__aiter__()
@@ -398,7 +436,8 @@ def _agen_shell(guard: Guard, wrapped: Callable[..., Any], inner: Callable[[], C
         except BaseException as exc:  # health: allow BLE001 -- classified by _decide; RAISE re-raises it
             if exc is thrown:
                 raise
-            action = _decide(guard, frame, exc, delivered=delivered, can_return=False)
+            untracked = guard.untracked_entries - before
+            action = _decide(guard, frame, exc, delivered=delivered, can_return=False, untracked=untracked)
             if action == RAISE:
                 raise
             caught = exc
