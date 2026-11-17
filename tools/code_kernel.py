@@ -804,13 +804,28 @@ def _background_reaper() -> None:
             logger.exception("kernel idle reaper pass failed; retrying next interval")
 
 
+def _human_wait_seconds() -> float:
+    """Seconds the current session has spent blocked on a human prompt (0 when unavailable)."""
+    try:
+        from tools.approval_human_wait import human_wait_seconds
+        return human_wait_seconds()
+    except Exception:
+        return 0.0
+
+
 def _await_cell(kernel: SessionKernel, timeout: int, is_interrupted) -> tuple[str, dict[str, Any]]:
-    """Wait for the cell's reply; returns (host status, payload)."""
+    """Wait for the cell's reply; returns (host status, payload). The cell's own time budget does
+    not run while one of its tool calls is parked on a human answer (approval prompt): the cell
+    would otherwise be killed at ``timeout`` with the prompt still open and the user's answer
+    arriving at a dead kernel."""
     deadline = time.monotonic() + timeout if timeout else None
+    waited_before = _human_wait_seconds()
     while True:
         if is_interrupted():
             return "interrupted", {}
-        if deadline is not None and time.monotonic() > deadline:
+        # The human-wait read (config cache + lock) only runs once the plain deadline has passed.
+        if (deadline is not None and time.monotonic() > deadline
+                and time.monotonic() > deadline + max(0.0, _human_wait_seconds() - waited_before)):
             return "timeout", {}
         try:
             payload = kernel.response_q.get(timeout=0.05)
