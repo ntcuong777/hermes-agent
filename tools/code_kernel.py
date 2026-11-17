@@ -804,6 +804,11 @@ def _background_reaper() -> None:
             logger.exception("kernel idle reaper pass failed; retrying next interval")
 
 
+# Most a cell's deadline may stretch for human waits in total, whatever approvals.timeout says (a
+# deployment may set it to a year): a wedged waiter must not keep a cell alive indefinitely.
+HUMAN_WAIT_CELL_CAP_S = 7200.0
+
+
 def _human_wait_seconds() -> float:
     """Seconds the current session has spent blocked on a human prompt (0 when unavailable)."""
     try:
@@ -825,7 +830,8 @@ def _await_cell(kernel: SessionKernel, timeout: int, is_interrupted) -> tuple[st
             return "interrupted", {}
         # The human-wait read (config cache + lock) only runs once the plain deadline has passed.
         if (deadline is not None and time.monotonic() > deadline
-                and time.monotonic() > deadline + max(0.0, _human_wait_seconds() - waited_before)):
+                and time.monotonic() > deadline + min(HUMAN_WAIT_CELL_CAP_S,
+                                                      max(0.0, _human_wait_seconds() - waited_before))):
             return "timeout", {}
         try:
             payload = kernel.response_q.get(timeout=0.05)
