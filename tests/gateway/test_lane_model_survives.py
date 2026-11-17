@@ -312,3 +312,33 @@ async def test_a_typed_reasoning_reset_is_remembered_too(tmp_path, monkeypatch):
     await _stop(again)
 
 
+
+
+async def _info_frames(world, since):
+    await asyncio.sleep(0.2)  # the event fanout drains on its own task
+    return [f['params'] for f in world.frames[since:]
+            if f['params'].get('type') == 'session.info' and 'model' in f['params']['payload']]
+
+
+@pytest.mark.asyncio
+async def test_a_mid_session_pick_repaints_the_attached_tui_at_once(tmp_path, monkeypatch):
+    """The TUI paints the model from the pick's reply but the effort only from a ``session.info`` event, and
+    drops one that lacks the owner's epoch and a generation at least its own."""
+    world = await _bound(tmp_path, monkeypatch)
+    snap = await _resume(world)  # attached, holding the owner's epoch and generation
+    seen = len(world.frames)
+    await _pick(world, effort=None)  # the TUI's /model sends the model, then the level as its own mutation
+    after_model = await _info_frames(world, seen)
+    assert after_model and after_model[-1]['payload']['model'] == PICK[0]
+    seen = len(world.frames)
+    row = world.authority.db.get_session(world.sid)
+    reply = await world.conn.dispatch({'id': 6, 'method': 'session.mutate', 'params': {
+        'session_id': world.sid, 'request_id': 'level', 'expected_revision': row['runtime_revision'],
+        'expected_generation': row['runtime_generation'], 'operation': 'reasoning', 'payload': {'effort': PICK[2]}}})
+    assert 'error' not in reply, reply
+    painted = (await _info_frames(world, seen))[-1]['payload']
+    assert (painted['model'], painted['reasoning_effort']) == (PICK[0], PICK[2])
+    assert painted['authority_epoch'] == snap['authority_epoch']
+    assert painted['execution_generation'] >= snap['execution_generation']
+    assert _effective(world) == PICK
+    await _stop(world)
