@@ -77,8 +77,9 @@ describe('buildSlotSource', () => {
     const source = 'const journaled = <T>(write: () => T): { value: T } | undefined => {\n  return { value: write() }\n}\nexport const useIt = () => journaled\nexport const sdkVersion = 1\nexport const slots = { submission: useIt }\n'
     const { code } = await buildSlotSource(source, DIR, esbuild, 'ts')
 
-    expect(code).toContain('const journaled = <T>')
-    expect(code).toContain("export default {")
+    // The ts loader ERASES the type parameter; the tsx loader would have died on `<T>` as JSX.
+    expect(code).toContain('const journaled = (write) => {')
+    expect(code).toContain('export default {')
   })
 
   it('compiles JSX to the host createElement and ends with a default export that registers the slots', async () => {
