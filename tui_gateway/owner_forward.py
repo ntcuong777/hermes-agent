@@ -31,8 +31,11 @@ logger = logging.getLogger(__name__)
 
 #: Ledger states a forwarded prompt may wait behind: they end on their own.
 FORWARDABLE_LEDGER_STATES = frozenset({"started", "queued", "registered", "running"})
-#: How long ``prompt.submit`` waits for the owner's admission receipt.
-ADMIT_TIMEOUT_S = 30.0
+#: How long ``prompt.submit`` waits for the owner's admission receipt, owner discovery included. The
+#: standalone TUI runs ``prompt.submit`` inline on its stdio reader, so this is also the longest that
+#: reader can go without seeing ``session.interrupt`` or ``approval.respond``: keep it short. A later
+#: receipt is not lost: the relay keeps going and the refusal (``OwnerUnconfirmed``) says to check the chat.
+ADMIT_TIMEOUT_S = 10.0
 #: Ceiling on one relay; the owner keeps the work either way (it is durable).
 RELAY_TIMEOUT_S = 6 * 3600.0
 #: How often an idle relay re-checks that its Desktop session still exists: a closed session
@@ -128,6 +131,8 @@ class _Relay:
 
     def run(self) -> None:
         try:
+            if self.endpoint is None:  # here, not on the submit's thread: the admit deadline covers discovery
+                self.endpoint = discover_owner(self.home)
             asyncio.run(self._run())
         except BaseException as exc:  # health: allow BLE001 -- thread boundary: handed to the waiting submit or logged with traceback
             if not self.admitted.done():
@@ -235,6 +240,8 @@ def forward_rpc(home: Path, endpoint, method: str, params: dict) -> Any:
 def forward_prompt(sid: str, session: dict, text: str, *, emit=None, home: Path | None = None) -> dict:
     """Admit ``text`` into the owner's FIFO for this session; the owner's receipt.
 
+    Waits at most ``ADMIT_TIMEOUT_S`` in all, discovery of the owner included (it runs on the relay's thread).
+
     Raises ``OwnerNotRunning`` when no gateway serves the home, ``OwnerUnavailable`` (or the
     client's refusal) when the owner did not take it, and ``OwnerUnconfirmed`` when the prompt may
     be queued there: the receipt timed out, or the owner was lost or failed after the request was sent."""
@@ -243,7 +250,7 @@ def forward_prompt(sid: str, session: dict, text: str, *, emit=None, home: Path 
     if not key:
         raise OwnerUnavailable("the chat has no stored session yet")
     home = Path(home or session.get("profile_home") or server._hermes_home).resolve()
-    relay = _Relay(sid, session, key, home, discover_owner(home), text, emit or server._emit)
+    relay = _Relay(sid, session, key, home, None, text, emit or server._emit)
     from agent.memory_provider import spawn_context_thread
     spawn_context_thread(relay.run, name=f"owner-forward-{key[:24]}").start()
     try:
