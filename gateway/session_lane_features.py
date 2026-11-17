@@ -9,4 +9,4 @@ Ids: "repaint" (stage B1), "rescue" and "gates" (B3), "forward" (B4), "pills" (B
 "wake" (B7).
 """
 
-REMOVED_FROM_CORE: frozenset = frozenset()
+REMOVED_FROM_CORE: frozenset = frozenset({"repaint"})
