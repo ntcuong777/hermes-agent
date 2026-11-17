@@ -202,6 +202,23 @@ def test_the_agent_brief_has_old_and_new_source_the_diff_the_steps_and_the_comma
     assert tsc.main(["--agent-brief", "nope", "--plugins-root", str(plugin.parent), "--fork-root", str(root)]) == 0
 
 
+def test_a_build_time_slot_lives_in_the_plugin_dir_own_table_and_lock(fork, plugin, capsys):
+    # Stage 8 / D12: a build-time slot's row sits in the PLUGIN dir's slots.json (not the TUI table) and the
+    # lock lands directly in that directory; --record must find the row there and --verify-locks must accept
+    # a root that holds the lock itself.
+    root, _ = fork
+    spec = {"sessionSwitcher": {"file": "ui-tui/src/components/sw.tsx", "symbols": ["Switcher"], "props": 1, "kind": "component", "host": [], "summary": "x"}}
+    (root / "ui-tui/src/sdk/ext/slots.json").write_text(json.dumps({"version": 1, "slots": {}}))
+    (plugin / "slots.json").write_text(json.dumps({"version": 1, "slots": spec}))
+    assert record(root, plugin) == 0
+    out = capsys.readouterr().out
+    assert "recorded" in out
+    assert (plugin / "tui_slots.lock.json").is_file()
+    capsys.readouterr()
+    assert tsc.main(["--verify-locks", str(plugin), "--fork-root", str(root)]) == 0
+    assert "| sessionSwitcher | ok |" in capsys.readouterr().out
+
+
 def test_hash_prints_the_region_hash(tmp_path, capsys):
     f = tmp_path / "x.ts"
     f.write_text(UPSTREAM)
