@@ -426,8 +426,10 @@ def publish(current: Iterable[Any], *, surface: str = "", settings: Optional[pol
         logger.debug("core patches: publish failed", exc_info=True)
 
 
-def critical_alert(problems: list[str]) -> None:
-    """A critical patch is not installed and the process starts without it (refusal is off): say so loudly."""
+def critical_alert(problems: list[str], notice_lines: list[str]) -> None:
+    """A critical patch is not installed and the process starts without it (refusal is off): say so loudly.
+    ``problems`` (with details) go to the log and the events; ``notice_lines`` (key, status, type name only)
+    are the only text sent to the home channel."""
     try:
         for line in problems:
             if ("critical", line) in _ALERTED:
@@ -436,21 +438,21 @@ def critical_alert(problems: list[str]) -> None:
             logger.error("core patches: critical patch %s; this process runs WITHOUT it (core_patches."
                          "refuse_on_critical is false, so it starts anyway)", line)
             event("critical-skipped", detail=line)
-        if problems:
-            _notify_critical(problems)
+        if notice_lines:
+            _notify_critical(notice_lines)
     except Exception:  # health: allow BLE001
         logger.debug("core patches: critical alert failed", exc_info=True)
 
 
-def _notify_critical(problems: list[str]) -> None:
+def _notify_critical(notice_lines: list[str]) -> None:
     settings = policy.load_settings()
     directory = policy.safe_state_dir()
     if not settings.notify or directory is None or (_STATE["surface"] != "gateway" and not _runner_bound()):
         return
-    if not _claim_many(directory, ["critical|" + "|".join(sorted(problems))]):
+    if not _claim_many(directory, ["critical|" + "|".join(sorted(notice_lines))]):
         return
     text = "Core patches: a CRITICAL patch is not installed; Hermes started without it.\n" + "\n".join(
-        f"- {line}" for line in problems)
+        f"- {line}" for line in notice_lines)
     threading.Thread(target=_send_when_possible, args=(text,), daemon=True, name="core-patches-notify").start()
 
 

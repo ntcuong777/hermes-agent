@@ -823,26 +823,54 @@ def load_attempted(manager: Any, loaded: Any) -> bool:
         return False
 
 
-def _missing_declared() -> list[str]:
-    """Declared-critical names (plugin.yaml) of enabled plugins that never registered them."""
-    lines = []
+def _missing_entries() -> list[tuple[str, str, str]]:
+    """(plugin key, patch name, why) of declared-critical names of enabled plugins that never registered them."""
+    entries = []
     for manager in _known_managers():
         for plugin_key, loaded in list(getattr(manager, "_plugins", {}).items()):
             names = declared_critical_names(getattr(loaded.manifest, "path", None))
             missing = sorted(n for n in names if f"{plugin_key}:{n}" not in _RECORDS)
             if missing and load_attempted(manager, loaded):
                 why = loaded.error or "register() did not call register_core_patch for it"
-                lines += [f"{plugin_key}:{n} is declared critical in plugin.yaml but not registered ({why})"
-                          for n in missing]
-    return lines
+                entries += [(plugin_key, n, why) for n in missing]
+    return entries
+
+
+def _missing_declared() -> list[str]:
+    """Declared-critical names (plugin.yaml) of enabled plugins that never registered them."""
+    return [f"{plugin_key}:{n} is declared critical in plugin.yaml but not registered ({why})"
+            for plugin_key, n, why in _missing_entries()]
 
 
 def critical_problems(current: Optional[Iterable[PatchRecord]] = None) -> list[str]:
-    """One line per critical patch that is not installed (never raises)."""
+    """One line per critical patch that is not installed, with its detail (logs, refusal; never raises)."""
     try:
         return _refused(records() if current is None else current) + _missing_declared()
     except Exception:  # health: allow BLE001
         logger.debug("core patches: could not evaluate the critical patches", exc_info=True)
+        return []
+
+
+def _exception_type_of(last_error: str) -> str:
+    """The exception type name at the head of a guard's ``last_error`` ("" when none)."""
+    head = (last_error or "").split(": ", 1)[0]
+    return head if re.fullmatch(r"[A-Za-z_][\w.]*", head) else ""
+
+
+def critical_notice_lines(current: Optional[Iterable[PatchRecord]] = None) -> list[str]:
+    """The home-channel form of ``critical_problems``: patch key, status and exception type name only (never a
+    detail, a path or an exception message). Never raises."""
+    try:
+        stats = failure_stats()
+        records_ = records() if current is None else current
+        refused = [f"{r.spec.key} is {r.status}" + (f" ({kind})" if (kind := _exception_type_of(
+                       stats.get(r.spec.key, (0, 0, ""))[2])) else "")
+                   for r in records_ if r.critical and r.status in REFUSE_STATUSES]
+        missing = [f"{plugin_key}:{n} is declared critical but not registered"
+                   for plugin_key, n, _why in _missing_entries()]
+        return refused + missing
+    except Exception:  # health: allow BLE001
+        logger.debug("core patches: could not build the critical notice", exc_info=True)
         return []
 
 
@@ -943,7 +971,7 @@ def apply_core_patches(surface: str = "") -> tuple[PatchRecord, ...]:
         report.publish(current, surface=surface or "?", settings=settings, summary=True,
                        wait_s=min(1.0, settings.apply_timeout_s))
         if problems and not settings.refuse_on_critical:
-            report.critical_alert(problems)
+            report.critical_alert(problems, critical_notice_lines(current))
     except Exception:  # health: allow BLE001 -- reporting is best effort
         logger.debug("core patches: reporting failed (%s)", surface or "?", exc_info=True)
     if problems and settings.refuse_on_critical:

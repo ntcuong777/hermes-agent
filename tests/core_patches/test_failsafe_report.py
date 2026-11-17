@@ -222,3 +222,22 @@ def test_the_notice_names_the_key_status_and_exception_type_and_nothing_of_the_d
     assert "/Users/x" not in text and "secret" not in text and "boom" not in text
     assert "demo:up" in text and "skipped-error" in text and "RuntimeError" in text
     assert "a" * 12 not in text and "pkg.mod" not in text  # no fingerprints, no targets: key, status, type only
+
+
+def test_the_critical_notice_names_key_and_status_only_while_the_error_log_keeps_the_detail(
+        surfaces_gateway, monkeypatch, caplog, tmp_path):
+    from types import SimpleNamespace
+
+    caplog.set_level(logging.ERROR, logger="hermes_cli.core_patches")
+    monkeypatch.setattr(policy, "safe_state_dir", lambda: tmp_path)
+    monkeypatch.setattr(policy, "load_settings", lambda: policy.Settings())
+    monkeypatch.setitem(report._STATE, "surface", "gateway")
+    record = SimpleNamespace(spec=SimpleNamespace(key="demo:up", target="pkg.mod:greet", plugin_dir=None),
+                             status=cp.SKIPPED_ERROR, detail="/Users/x/secret/path: boom", critical=True)
+    report.critical_alert(cp.critical_problems([record]), cp.critical_notice_lines([record]))
+    assert len(surfaces_gateway) == 1
+    notice = surfaces_gateway[0]
+    assert "demo:up" in notice and "skipped-error" in notice
+    assert "secret/path" not in notice and "boom" not in notice
+    logged = [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR]
+    assert any("/Users/x/secret/path: boom" in message for message in logged)
