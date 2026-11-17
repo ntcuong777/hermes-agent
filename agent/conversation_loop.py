@@ -16,6 +16,7 @@ from dataclasses import dataclass, field, fields
 from typing import Any, Dict, List, Optional
 
 from agent.agent_runtime_helpers_placeholders import hidden_interrupt_placeholder_row
+from agent.agent_runtimes import run_registered_turn
 from agent.codex_responses_adapter import _summarize_user_message_for_log
 from agent.fast_mode import begin_turn as begin_fast_mode_turn
 from agent.message_metadata import append_message, without_persistence_fields
@@ -1688,12 +1689,12 @@ def _finalize_from_state(agent: Any, s: _LoopState) -> dict[str, Any]:
 def _turn_without_loop(agent: Any, s: _LoopState, block_message: str) -> Optional[dict[str, Any]]:
     """The turn's result when it never enters the generic loop, else None. A ``pre_llm_call``
     veto finalizes with no inference request (the block message closes the transcript pair);
-    the opt-in native runtimes run the whole turn themselves — the codex app-server subprocess
-    (agent/transports/codex_app_server_session.py) or the Cursor SDK worker (agent/cursor_runtime.py)."""
+    the opt-in codex app-server runtime runs the whole turn in its subprocess
+    (agent/transports/codex_app_server_session.py)."""
     if block_message:
         s.final_response, s._turn_exit_reason = block_message, PRE_LLM_BLOCK_EXIT_REASON
         return _finalize_from_state(agent, s)
-    return _native_runtime_turn(agent, s)
+    return _codex_app_server_turn(agent, s) if agent.api_mode == "codex_app_server" else run_registered_turn(agent, s)
 
 
 def _codex_app_server_turn(agent: Any, s: Any) -> Optional[dict[str, Any]]:
@@ -1711,21 +1712,6 @@ def _codex_app_server_turn(agent: Any, s: Any) -> Optional[dict[str, Any]]:
     # loop below, keeping codex's projected rows and its failed API call in the turn's accounting.
     s.api_call_count = int(codex_result.get("api_calls") or 0)
     s.active_system_prompt = _sync_failover_system_message(agent, None, s.active_system_prompt)
-    return None
-
-
-def _native_runtime_turn(agent: Any, s: Any) -> Optional[dict[str, Any]]:
-    """The result of a whole-turn native runtime, or None to run the generic loop. ``cursor_sdk`` hands
-    the turn to the Cursor SDK worker (agent/cursor_runtime.py) with no fallback: a failed turn is
-    reported, never retried on another provider."""
-    if agent.api_mode == "codex_app_server":
-        return _codex_app_server_turn(agent, s)
-    if agent.api_mode == "cursor_sdk":
-        return agent._run_cursor_sdk_turn(
-            user_message=s.user_message, original_user_message=s.original_user_message,
-            messages=s.messages, effective_task_id=s.effective_task_id,
-            should_review_memory=s._should_review_memory,
-        )
     return None
 
 

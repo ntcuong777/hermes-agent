@@ -198,7 +198,7 @@ class CompressionSettings(SimpleNamespace):
 
 _EXPLICIT_API_MODES = {
     "chat_completions", "codex_responses", "anthropic_messages", "bedrock_converse",
-    "codex_app_server", "cursor_sdk",
+    "codex_app_server",
 }
 
 
@@ -943,19 +943,17 @@ def _load_tools(agent, enabled_toolsets, disabled_toolsets):
     from tools.registry import registry as _snapshot_registry
     agent._tool_snapshot_generation, agent._delegation_backend = _snapshot_registry._generation, saved_backend()
     import model_tools
+    from agent.agent_runtimes import wants_full_tool_schemas
     from agent.oneshot_footprint import agent_is_oneshot
     from toolsets import agent_tool_surface, session_disabled_toolsets, tool_selection_key
     agent._configured_disabled_toolsets, disabled_toolsets = disabled_toolsets, session_disabled_toolsets(
         disabled_toolsets, getattr(agent, "platform", None), oneshot=agent_is_oneshot(agent))  # pin restore reads both
     agent.disabled_toolsets = disabled_toolsets  # so the tool_search bridge and delegate children drop them too
     agent._tool_snapshot_selection = tool_selection_key(enabled_toolsets, disabled_toolsets)  # tools[] freeze gate
-    # A whole-turn runtime (cursor_sdk) declares agent.tools to the SDK once and cannot inject schemas
-    # mid-turn, so the tool_search bridge would only bait the model into calling deferred names the
-    # worker never declared — Cursor reports that as a native tool call and forbids the turn. Every
-    # enabled tool goes out as a full schema instead.
+    # A whole-turn plugin runtime that declared full_tool_schemas cannot inject schemas mid-turn (agent/agent_runtimes.py).
     agent.tools = agent_tool_surface(agent, model_tools.get_tool_definitions(
         enabled_toolsets=enabled_toolsets, disabled_toolsets=disabled_toolsets, quiet_mode=agent.quiet_mode,
-        skip_tool_search_assembly=getattr(agent, "api_mode", "") == "cursor_sdk") or [])
+        skip_tool_search_assembly=wants_full_tool_schemas(getattr(agent, "api_mode", ""))) or [])
     agent.valid_tool_names = {tool["function"]["name"] for tool in agent.tools} if agent.tools else set()
     # Kanban guidance is session-static for the dispatcher-owned worker only. Profiles may
     # expose kanban_show interactively, and children/cron runs inherit the env var, without

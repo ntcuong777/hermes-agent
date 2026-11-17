@@ -15,6 +15,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from agent.agent_runtimes import RuntimeRoute, register_agent_runtime
 from providers import register_provider
 from providers.base import ProviderProfile, _profile_user_agent
 
@@ -204,3 +205,21 @@ cursor = _CursorProfile(
 )
 
 register_provider(cursor)
+
+
+def _claims(route: RuntimeRoute) -> bool:
+    """Choosing the provider IS the switch, so no other model changes; ``model.cursor_runtime: chat`` pins the plain
+    wire. The worker authenticates with CURSOR_API_KEY, not the resolved credential."""
+    return "cursor" in (route.provider, route.requested_provider) and (
+        str(route.model_cfg.get("cursor_runtime") or "").strip().lower() != "chat")
+
+
+def _run_turn(agent, *, turn_id=None, **turn):
+    """One whole turn on the SDK worker, no fallback: a failed turn is reported, never retried elsewhere."""
+    from agent.cursor_runtime import run_cursor_sdk_turn
+    return run_cursor_sdk_turn(agent, **turn)
+
+
+# The SDK declares agent.tools once and cannot take schemas mid-turn: a tool_search bridge would point the model at
+# deferred names the worker never declared, and Cursor forbids the turn on that native tool call.
+register_agent_runtime("cursor_sdk", _run_turn, claims=_claims, full_tool_schemas=True)

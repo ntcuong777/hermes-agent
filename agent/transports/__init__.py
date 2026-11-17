@@ -53,4 +53,5 @@ def registered_api_modes() -> frozenset:
     """
     if not _discovered:
         _discover_transports()
-    return frozenset(_REGISTRY)
+    from agent.agent_runtimes import registered_runtime_modes  # whole-turn plugin runtimes are api_modes too
+    return frozenset(_REGISTRY) | registered_runtime_modes()
