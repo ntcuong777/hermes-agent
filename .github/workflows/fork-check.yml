@@ -33,6 +33,7 @@ env:
     tests/gateway/test_complete_path_host_plugin_backend.py
     tests/gateway/test_complete_path_at_filter.py
     tests/tui_gateway
+    tests/fork_hooks
   FORK_VITEST_FILTER: src/__tests__/textInput
 
 jobs:
