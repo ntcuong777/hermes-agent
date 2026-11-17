@@ -34,6 +34,7 @@ env:
     tests/gateway/test_complete_path_at_filter.py
     tests/tui_gateway
     tests/fork_hooks
+    tests/session_lane_seam
   FORK_VITEST_FILTER: src/__tests__/textInput
 
 jobs:
