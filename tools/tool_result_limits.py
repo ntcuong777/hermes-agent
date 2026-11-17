@@ -10,9 +10,12 @@ One hook, called (without arguments beyond ``context_length``) where the limits 
 * ``tools/terminal_tool_result.py::_redact_spill_file``: :func:`redact_spill` (``redact_spill``).
 
 A callback returns ``None`` or a dict with any of those keys. Sizes and the age are positive ints, and
-``redact_spill`` is a bool; anything else is ignored. For each key the first callback (registration
-order) with a valid value wins. Fail-open: a callback that raises is reported and skipped by the
-plugin manager, and with no valid value upstream's default stands (``redact_spill`` True).
+``redact_spill`` is a bool; anything else is ignored. Any plugin can register the hook, so the most
+conservative answer wins: for each size or age the SMALLEST valid value across the callbacks, and
+``redact_spill: false`` only when the ``config-seams`` plugin says it (``tools/hook_sources.py``; a
+``false`` from another plugin is ignored, ``true`` is the default anyway). Fail-open: a callback that
+raises is reported and skipped by the plugin manager, and with no valid value upstream's default
+stands (``redact_spill`` True); so does any error in this module.
 
 Semantics: ``result_size_chars`` / ``turn_budget_chars`` lower upstream's ceilings (a context-sized
 budget keeps upstream's 8,000 / 16,000 floors; a budget without a known context uses the value as
@@ -25,7 +28,9 @@ from __future__ import annotations
 
 import dataclasses
 import importlib
-from typing import Any, Mapping, Optional
+from typing import Any, Iterable, Mapping, Optional
+
+from tools.hook_sources import attributed
 
 HOOK = "resolve_tool_result_limits"
 INT_KEYS = ("result_size_chars", "turn_budget_chars", "preview_size_chars", "spillover_max_age_hours")
@@ -38,31 +43,39 @@ def _valid(key: str, value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
-def merge(results: Any) -> dict[str, Any]:
-    """The first valid value per known key across the callbacks' dicts."""
-    rows = [r for r in (results or ()) if isinstance(r, Mapping)]
-    return {key: next(r[key] for r in rows if key in r and _valid(key, r[key]))
-            for key in (*INT_KEYS, *BOOL_KEYS)
-            if any(key in r and _valid(key, r[key]) for r in rows)}
+def merge(results: Iterable[tuple[bool, Any]]) -> dict[str, Any]:
+    """The merged ``(from the trusted plugin, value)`` results: the smallest valid value per int key,
+    ``redact_spill: False`` only from the trusted plugin."""
+    rows = [(trusted, r) for trusted, r in (results or ()) if isinstance(r, Mapping)]
+    smallest = {key: min(r[key] for _, r in rows if key in r and _valid(key, r[key]))
+                for key in INT_KEYS if any(key in r and _valid(key, r[key]) for _, r in rows)}
+    unredacted = any(trusted and r.get("redact_spill") is False for trusted, r in rows)
+    return {**smallest, **({"redact_spill": False} if unredacted else {})}
 
 
 def limits(context_length: Optional[int] = None) -> dict[str, Any]:
     """The merged plugin limits, ``{}`` when no plugin answers (or the plugin system is absent)."""
     try:
-        from hermes_cli.plugins import has_hook, invoke_hook
+        from hermes_cli.plugins import has_hook
 
         if not has_hook(HOOK):
             return {}
-        return merge(invoke_hook(HOOK, context_length=context_length))
+        return merge(attributed(HOOK, context_length=context_length))
     except Exception:  # health: allow BLE001 -- fail open: upstream's limits
         return {}
 
 
 def apply_budget_limits(budget: Any, context_length: Optional[int] = None) -> Any:
-    """``budget`` (a ``tools.budget_config.BudgetConfig``) with the plugin limits applied."""
-    found = limits(context_length)
-    keys = {"result_size_chars", "turn_budget_chars", "preview_size_chars"}
-    if not keys & set(found):
+    """``budget`` (a ``tools.budget_config.BudgetConfig``) with the plugin limits applied; ``budget``
+    itself on any error (the call site's fallback would otherwise drop upstream's MCP threshold)."""
+    try:
+        return _with_limits(budget, limits(context_length), context_length)
+    except Exception:  # health: allow BLE001 -- fail open: upstream's budget
+        return budget
+
+
+def _with_limits(budget: Any, found: Mapping[str, Any], context_length: Optional[int]) -> Any:
+    if not {"result_size_chars", "turn_budget_chars", "preview_size_chars"} & set(found):
         return budget
     config = importlib.import_module("tools.budget_config")
     sized = bool(context_length) and context_length > 0

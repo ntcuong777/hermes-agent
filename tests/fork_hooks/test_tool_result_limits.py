@@ -20,11 +20,49 @@ def test_without_a_callback_nothing_changes(manager):
     assert trl.redact_spill() is True
 
 
-def test_the_first_valid_value_per_key_wins(register):
+SEAMS_MODULE = "hermes_plugins.config_seams.cs_tool_limits"
+
+
+def _as_config_seams(callback):
+    """Make ``callback`` look as the loader names the config-seams plugin's functions (tools/hook_sources.py)."""
+    def seams_callback(**kwargs):
+        return callback(**kwargs)
+    seams_callback.__module__ = SEAMS_MODULE
+    return seams_callback
+
+
+def test_the_smallest_valid_value_per_key_wins(register):
     register(trl.HOOK, lambda **_: {"result_size_chars": "8192", "preview_size_chars": 0, "redact_spill": "no"})
-    register(trl.HOOK, lambda **_: {"result_size_chars": 9000, "preview_size_chars": 4096, "redact_spill": False})
-    register(trl.HOOK, lambda **_: {"result_size_chars": 1, "unknown": 5})
-    assert trl.limits() == {"result_size_chars": 9000, "preview_size_chars": 4096, "redact_spill": False}
+    register(trl.HOOK, lambda **_: {"result_size_chars": 9000, "preview_size_chars": 4096, "turn_budget_chars": 70000})
+    register(trl.HOOK, lambda **_: {"result_size_chars": 7000, "turn_budget_chars": 60000, "unknown": 5})
+    assert trl.limits() == {"result_size_chars": 7000, "preview_size_chars": 4096, "turn_budget_chars": 60000}
+
+
+def test_redact_spill_false_counts_only_from_config_seams(register):
+    register(trl.HOOK, lambda **_: {"redact_spill": False})
+    assert trl.limits() == {} and trl.redact_spill() is True
+    register(trl.HOOK, _as_config_seams(lambda **_: {"redact_spill": False}))
+    assert trl.limits() == {"redact_spill": False} and trl.redact_spill() is False
+
+
+def test_a_foreign_true_does_not_undo_config_seams_false(register):
+    register(trl.HOOK, _as_config_seams(lambda **_: {"redact_spill": False}))
+    register(trl.HOOK, lambda **_: {"redact_spill": True})
+    assert trl.redact_spill() is False
+
+
+def test_a_larger_size_from_another_plugin_does_not_loosen_the_budget_without_a_context(register):
+    register(trl.HOOK, lambda **_: {"result_size_chars": 5_000_000})
+    register(trl.HOOK, _as_config_seams(lambda **_: {"result_size_chars": 8192}))
+    budget = trl.apply_budget_limits(budget_config.budget_for_context_window(None), None)
+    assert budget.default_result_size == 8192
+
+
+def test_an_error_applying_the_limits_returns_the_upstream_budget(register, monkeypatch):
+    register(trl.HOOK, lambda **_: {"result_size_chars": 8192})
+    upstream = budget_config.budget_for_context_window(None)
+    monkeypatch.setattr(trl.dataclasses, "replace", lambda *a, **k: (_ for _ in ()).throw(ValueError("x")))
+    assert trl.apply_budget_limits(upstream, None) is upstream
 
 
 def test_a_raising_callback_is_skipped(register):
@@ -83,7 +121,7 @@ def test_the_sweep_keeps_a_spill_younger_than_the_plugins_age(register, tmp_path
 def test_redact_spill_false_leaves_the_spill_file_raw(register, tmp_path):
     from tools.terminal_tool_result import _redact_spill_file
 
-    register(trl.HOOK, lambda **_: {"redact_spill": False})
+    register(trl.HOOK, _as_config_seams(lambda **_: {"redact_spill": False}))
     spill = tmp_path / "spill.txt"
     raw = "\x1b[31mOPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz0123456789\x1b[0m\n"
     spill.write_text(raw)
