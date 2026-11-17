@@ -20,6 +20,7 @@ import ast
 import contextlib
 import copy
 import difflib
+import errno
 import hashlib
 import importlib.util
 import json
@@ -27,6 +28,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,7 +40,8 @@ NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")  # a patch name (also the sn
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 GIT_TIMEOUT_S = 10.0
 LOCK_FILE = "core_patches.lock.json"
-LOCK_VERSION = 2          # v2 = provenance record + snapshot file; v1 (inline `source`) is still read;
+LOCK_WAIT_S = 10.0       # how long a writer waits for a plugin's lock file (flock) before it gives up
+LOCK_VERSION = 2         # v2 = provenance record + snapshot file; v1 (inline `source`) is still read;
                          # optional field snapshot_source ("git:<commit[:12]>" or "working-tree")
 SNAPSHOT_DIR = "upstream-source"
 PIN_KEYS = ("target", "ast_sha", "plugin", "kind", "target_file", "upstream_commit", "upstream_release", "reason")
@@ -289,11 +292,14 @@ def _write_lock(plugin_dir: Path, patches: Mapping[str, Any]) -> None:
 
 def migrate_lock(plugin_dir: Path) -> int:
     """Rewrite a v1 lock as v2 in place (snapshot files, no inline source). Returns how many entries moved."""
-    patches = read_lock(plugin_dir)
-    moved = sum(1 for e in patches.values() if isinstance(e, dict) and "source" in e and "snapshot" not in e)
-    if moved or lock_version(plugin_dir) != LOCK_VERSION:
-        _write_lock(plugin_dir, _migrated(plugin_dir, patches))
-    return moved
+    with _lock_file_held(Path(plugin_dir)):
+        if lock_version(plugin_dir) > LOCK_VERSION:
+            raise CorePatchFileError("lock file is a newer schema; update the fork first")
+        patches = read_lock(plugin_dir)
+        moved = sum(1 for e in patches.values() if isinstance(e, dict) and "source" in e and "snapshot" not in e)
+        if moved or lock_version(plugin_dir) != LOCK_VERSION:
+            _write_lock(plugin_dir, _migrated(plugin_dir, patches))
+        return moved
 
 
 def target_file_rel(current: TargetSource, source_root: Optional[Path] = None) -> str:
@@ -315,7 +321,17 @@ def _lock_file_held(plugin_dir: Path) -> Iterator[None]:
         return
     plugin_dir.mkdir(parents=True, exist_ok=True)
     with open(plugin_dir / (LOCK_FILE + ".lock"), "a", encoding="utf-8") as handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
+        deadline = time.monotonic() + LOCK_WAIT_S
+        while True:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError as exc:
+                if exc.errno not in (errno.EWOULDBLOCK, errno.EAGAIN):
+                    raise
+                if time.monotonic() >= deadline:
+                    raise CorePatchFileError("lock file busy") from None
+                time.sleep(0.05)
         try:
             yield
         finally:
@@ -329,8 +345,10 @@ def _committed_text(source_root: Optional[Path], commit: str, rel: str) -> Optio
         return None
     try:
         run_ = subprocess.run(["git", "-C", str(root), "show", f"{commit}:{rel}"], capture_output=True, text=True,
-                              timeout=GIT_TIMEOUT_S, check=False,
-                              env={**os.environ, "GIT_NO_LAZY_FETCH": "1"})
+                              timeout=GIT_TIMEOUT_S, check=False, stdin=subprocess.DEVNULL,
+                              start_new_session=True,
+                              env={**os.environ, "GIT_NO_LAZY_FETCH": "1", "GIT_TERMINAL_PROMPT": "0",
+                                   "GIT_ASKPASS": "true"})
     except (OSError, subprocess.SubprocessError, ValueError):
         return None
     return run_.stdout if run_.returncode == 0 else None

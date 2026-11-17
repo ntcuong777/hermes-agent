@@ -711,18 +711,12 @@ def _sorted_records(recs: Iterable[PatchRecord]) -> tuple[PatchRecord, ...]:
 
 
 def records() -> tuple[PatchRecord, ...]:
-    if not _LOCK.acquire(timeout=_LOCK_WAIT_S):
-        return ()
-    try:
-        return _sorted_records(_RECORDS.values())
-    finally:
-        _LOCK.release()
+    return _snapshot_or_busy(_LOCK_WAIT_S)
 
 
 def failure_stats() -> dict[str, tuple[int, int, str]]:
     """``{key: (failures in total, failures in a row, last error)}`` of every patch the safety shell guards."""
-    with _LOCK:
-        links = list(_LINKS.values())
+    links = list(_LINKS.values())  # atomic in CPython; never wait on _LOCK here
     return {link.key: (link.guard.total, link.guard.consecutive, link.guard.last_error)
             for link in links if link.guard is not None}
 

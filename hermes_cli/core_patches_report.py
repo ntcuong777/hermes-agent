@@ -438,8 +438,8 @@ def critical_alert(problems: list[str], notice_lines: list[str]) -> None:
             logger.error("core patches: critical patch %s; this process runs WITHOUT it (core_patches."
                          "refuse_on_critical is false, so it starts anyway)", line)
             event("critical-skipped", detail=line)
-        if notice_lines:
-            _notify_critical(notice_lines)
+        if problems or notice_lines:
+            _notify_critical(notice_lines or ["a critical core patch is not installed"])
     except Exception:  # health: allow BLE001
         logger.debug("core patches: critical alert failed", exc_info=True)
 
