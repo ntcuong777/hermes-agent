@@ -236,11 +236,23 @@ def _sandbox_failure_hint(stderr_text: str, enabled_tools=None) -> Optional[str]
     return None
 
 
+def _rpc_wait_seconds() -> float:
+    """How long a stub waits for one tool result: the host's human-wait ceiling (a call parked on an
+    approval answers only when its human does) plus the old 300 s tool budget. Shorter would make the
+    stub give up on a call the host is still legitimately waiting on."""
+    try:
+        from tools.approval_human_wait import human_wait_ceiling
+        return float(human_wait_ceiling()) + 300.0
+    except Exception:
+        return 300.0
+
+
 def generate_hermes_tools_module(enabled_tools: list[str],
                                  transport: str = "uds") -> str:
     """Source of the hermes_tools.py stub module for SANDBOX_ALLOWED_TOOLS ∩ *enabled_tools*.
     ``transport``: ``"uds"`` (local socket client) or ``"file"`` (file RPC, remote backends)."""
     header = _FILE_TRANSPORT_HEADER if transport == "file" else _UDS_TRANSPORT_HEADER
+    header = header.replace("__RPC_WAIT_S__", repr(_rpc_wait_seconds()))
     wanted, allowed = set(enabled_tools), sandbox_allowed_tools()
     stubs = [
         f"def {name}({sig}):\n    {doc}\n    return _call({name!r}, {args_expr})\n"
@@ -334,8 +346,20 @@ def _connect():
         else:
             _sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             _sock.connect(endpoint)
-        _sock.settimeout(300)
+        # Covers a call parked on a human approval; the host's cell deadline is the real bound.
+        _sock.settimeout(__RPC_WAIT_S__)
     return _sock
+
+def _peer_gone(conn):
+    """True when the server already closed an idle connection (EOF or error pending), so the request
+    can be sent on a fresh socket instead of a dead one."""
+    import select
+    try:
+        if not select.select([conn], [], [], 0)[0]:
+            return False
+        return conn.recv(1, socket.MSG_PEEK) == b""
+    except (OSError, ValueError):
+        return True
 
 def _call(tool_name, args):
     """Send a tool call to the parent process and return the parsed result."""
@@ -344,26 +368,21 @@ def _call(tool_name, args):
         "args": args,
         "token": os.environ.get("HERMES_RPC_TOKEN", ""),
     }) + "\\n"
-    # Session kernels outlive the RPC server's 300s idle window, so their
-    # connection can be legitimately gone by the next cell. The server
-    # re-accepts (HERMES_RPC_PERSISTENT=1); retry once on a fresh socket.
+    # Session kernels outlive the RPC server's 300s idle window, so their connection can be
+    # legitimately gone by the next cell. The server re-accepts (HERMES_RPC_PERSISTENT=1); a stale
+    # socket is detected and replaced BEFORE the request goes out, and a connect/send failure is
+    # retried once on a fresh socket. Once the request has been sent it is never re-sent: the host
+    # serves RPC serially, so a retry would dispatch the (possibly approval-gated) call twice.
     _attempts = 2 if os.environ.get("HERMES_RPC_PERSISTENT") == "1" else 1
+    global _sock
     with _call_lock:
         for _attempt in range(_attempts):
             try:
                 conn = _connect()
+                if _attempt == 0 and _attempts > 1 and _peer_gone(conn):
+                    raise ConnectionResetError("stale RPC connection")
                 conn.sendall(request.encode())
-                buf = b""
-                while True:
-                    chunk = conn.recv(65536)
-                    if not chunk:
-                        raise RuntimeError("Agent process disconnected")
-                    buf += chunk
-                    if buf.endswith(b"\\n"):
-                        break
-                break
-            except (OSError, RuntimeError):
-                global _sock
+            except OSError:
                 try:
                     if _sock is not None:
                         _sock.close()
@@ -372,6 +391,25 @@ def _call(tool_name, args):
                 _sock = None
                 if _attempt + 1 >= _attempts:
                     raise
+                continue
+            break
+        buf = b""
+        try:
+            while True:
+                chunk = conn.recv(65536)
+                if not chunk:
+                    raise RuntimeError("Agent process disconnected")
+                buf += chunk
+                if buf.endswith(b"\\n"):
+                    break
+        except (OSError, RuntimeError):
+            try:
+                if _sock is not None:
+                    _sock.close()
+            except OSError:
+                pass
+            _sock = None
+            raise
     raw = buf.decode().strip()
     result = json.loads(raw)
     if isinstance(result, str):
@@ -425,11 +463,11 @@ def _call(tool_name, args):
     os.rename(tmp, req_file)
 
     # Wait for response with adaptive polling
-    deadline = time.monotonic() + 300  # 5-minute timeout per tool call
+    deadline = time.monotonic() + __RPC_WAIT_S__  # covers a call parked on a human approval
     poll_interval = 0.05  # Start at 50ms
     while not os.path.exists(res_file):
         if time.monotonic() > deadline:
-            raise RuntimeError(f"RPC timeout: no response for {tool_name} after 300s")
+            raise RuntimeError(f"RPC timeout: no response for {tool_name} after {int(__RPC_WAIT_S__)}s")
         time.sleep(poll_interval)
         poll_interval = min(poll_interval * 1.2, 0.25)  # Back off to 250ms
 
