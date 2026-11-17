@@ -103,7 +103,8 @@ def _durable_spec(sid: str, record: dict[str, Any], parent_agent: Any) -> tuple[
     if not isinstance(request, dict) or not record.get("session_id"):
         return None, (f"Subagent '{sid}' ran on a route that cannot be rebuilt after a restart. "
                       "Spawn a new task instead.")
-    routes, err = resolve_task_routes([{"goal": record.get("goal"), **request}], _load_config(), parent_agent)
+    routes, err = resolve_task_routes([{"goal": record.get("goal"), **request}], _load_config(), parent_agent,
+                                      confirm=False)  # the person approved this child's launch when it first ran
     if err or not routes or routes[0].error:
         return None, err or (routes[0].error if routes else "no route")
     return {**record, "route": routes[0], "endpoint": tuple(record.get("endpoint") or ()) or None}, None

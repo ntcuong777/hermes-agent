@@ -92,8 +92,9 @@ is the default route, and `self.settings(config)` is your backend's own block,
 | Member | Required | Contract |
 |---|---|---|
 | `name` | yes | The `delegation.backend` value. `default` belongs to the bundled default strategy. |
-| `route_task(task, config)` | yes | Return the route dict for one task. `task` carries `goal`, `context`, `index` and the values the model supplied for your parameters. Raise `DelegationRouteError` to refuse; its message is the tool error the model reads. |
-| `task_parameters(config)` | no | `{name: json_schema}` merged into `tasks.items.properties`. Core enforces `enum` before `route_task` runs and refuses core-owned names (`goal`, `context`, `index`, `output_schema`, `images`, `group`, `role`, `toolsets`, `provider`, `model`, `base_url`, `api_key`, `api_mode`, `acp_command`, `acp_args`). |
+| `route_task(task, config)` | yes | Return the route dict for one task. `task` carries `goal`, `context`, `index`, `parent` (`{"model", "provider"}` the delegating agent runs on) and the values the model supplied for your parameters. Raise `DelegationRouteError` to refuse; its message is the tool error the model reads. |
+| `task_parameters(config)` | no | `{name: json_schema}` merged into `tasks.items.properties`. Core enforces `enum` before `route_task` runs and refuses core-owned names (`goal`, `context`, `index`, `output_schema`, `images`, `group`, `toolsets`, `base_url`, `api_key`, `api_mode`, `acp_command`, `acp_args`). `role`, `model` and `provider` are core-reserved too, but a provider may declare them (`PROVIDER_DECLARABLE_PARAMETERS`): `role` for a profile enum, `model`/`provider` for a launch it confirms (`confirm` route key). |
+| `check_tasks(tasks, config)` | no | Raise `DelegationRouteError` to refuse the **whole call** before any route is resolved or child built (a task naming a profile nobody declared). `tasks` are the payloads `route_task` will get. Not defining it keeps every refusal per task. |
 | `description(config)` | no | Guidance appended to the `delegate_task` description. |
 | `is_available()` | no | No network calls. `False` fails delegation closed while your backend is selected: `delegate_task` returns a tool error naming it and the fix (`/delegation default`, or `hermes config set delegation.backend default`); it never switches to `default` on its own. |
 | `settings(config)` | inherited | `delegation.backends.<name>` as a mapping (empty when unset). Do not override. |
@@ -123,6 +124,16 @@ A route is a dict with any of:
   session database (it is the parent's work) and it keeps the parent's toolset. Other route keys are
   ignored on a profile route.
 - `label`: short text identifying the route (an option title, a profile name).
+- `toolsets`: the toolsets the child may use. Core **intersects** them with the parent's: a toolset the parent
+  lacks is dropped, never added, and no `toolsets` means the parent's whole set. A continued child keeps its own.
+- `instructions`: text added to the child's system prompt, right after its opening line and headed
+  `ROLE: <child_profile>`.
+- `child_profile`: a name the child carries (`child._delegate_profile`) and the `subagent_start` hook reports as
+  `child_profile` (`None` for a child that has none), so a plugin can grade a child against the profile it ran as.
+- `confirm`: `{"question", "approve", "deny", "refusal"}` (or the question as text). Before any child is built the
+  parent's human must pick `approve` through the parent's `clarify` surface. Anything else (deny, timeout, cancel,
+  no human surface, yolo) refuses the **whole call** with `refusal`; the approval is never cached, so every launch
+  asks again. A rebuild of an already approved child after a restart does not ask again.
 
 Unknown keys are dropped. On a profile route, `service_tier` and `reasoning_effort` are ignored too.
 
@@ -131,6 +142,7 @@ A non-profile route without `fallback_providers` of its own gets `delegation.fal
 
 ### Refusals are per task
 
+(`check_tasks` and a declined `confirm` are the exceptions: they refuse the whole call before any child is built.)
 A `DelegationRouteError` from `route_task`, a parameter your backend did not declare, a value outside
 your parameter's `enum`, an unknown
 `reasoning_effort`, a tier the route does not offer, or a credential the route cannot resolve refuses

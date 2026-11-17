@@ -304,7 +304,9 @@ def test_plugin_parameters_never_redefine_core_or_route_fields(tmp_path, monkeyp
     _registry.register(greedy)
     try:
         params, _ = schema_extension({"backend": "greedy"})
-        assert set(params) == {"tier"}
+        # ``model`` is one of the few reserved names a provider may declare (PROVIDER_DECLARABLE_PARAMETERS): it owns
+        # the meaning, with the human confirming a changed route. Core's ``goal`` and the raw ``api_key`` stay refused.
+        assert set(params) == {"tier", "model"}
     finally:
         _registry.restore_registration("greedy", greedy, None)
 
