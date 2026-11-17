@@ -1063,29 +1063,6 @@ def _gateway_idle_delivery(session_key: str) -> tuple[object, bool]:
     return notify_cb, True
 
 
-def _gateway_card_data(pattern_key, pattern_keys, display_command, display_description,
-                       smart_denied, one_shot, idle_lane, mcp_context) -> dict:
-    """The /approve card payload. Smart-DENY overrides are one-operation decisions, so the UI must
-    not offer a permanent or session scope — and so is a command the scanners could not read to
-    the end (``one_shot``). ``mcp_context`` rides the same display boundary as the
-    MCP trust gate: the wire contract's `mcp` card (tui_gateway/contracts/server_requests.py
-    ApprovalMcpContext) — surfaces render server/tool/description/redacted arguments instead of
-    command chrome."""
-    data = {
-        "command": display_command, "pattern_key": pattern_key,
-        "pattern_keys": pattern_keys, "description": display_description,
-        "allow_permanent": not one_shot,
-        "allow_session": not one_shot,
-    }
-    if smart_denied:
-        data["smart_denied"] = True
-    if idle_lane:
-        data["idle"] = True
-    if mcp_context:
-        data["mcp"] = mcp_context
-    return data
-
-
 def _human_decision(spec: _GateSpec, *, command: str, description: str,
                     pattern_key: str, pattern_keys: list[str],
                     session_key: str, approval_callback, is_cli: bool, is_gateway: bool,
@@ -1170,8 +1147,23 @@ def _human_decision(spec: _GateSpec, *, command: str, description: str,
         display_description = redact_approval_display(description)
         notify_cb, idle_lane = _gateway_idle_delivery(session_key)
         if notify_cb is not None:
-            data = _gateway_card_data(pattern_key, pattern_keys, display_command, display_description,
-                                      smart_denied, one_shot, idle_lane, mcp_context)
+            # Smart DENY overrides are one-operation decisions, so the UI must not offer a
+            # permanent or session scope.
+            data = {
+                "command": display_command, "pattern_key": pattern_key,
+                "pattern_keys": pattern_keys, "description": display_description,
+                "allow_permanent": not one_shot,
+                "allow_session": not one_shot,
+            }
+            if smart_denied:
+                data["smart_denied"] = True
+            if idle_lane:
+                data["idle"] = True
+            if mcp_context:
+                # Same display boundary as the MCP trust gate: the wire contract's `mcp` card
+                # (tui_gateway/contracts/server_requests.py ApprovalMcpContext) — surfaces render
+                # server/tool/description/redacted arguments instead of command chrome.
+                data["mcp"] = mcp_context
             decision = _await_gateway_decision(session_key, notify_cb, data, surface="gateway", identity=command)
             if decision.get("notify_failed"):
                 return _denied(spec.notify_failed, pattern_key=pattern_key,
@@ -1211,18 +1203,6 @@ def _human_decision(spec: _GateSpec, *, command: str, description: str,
             )
 
     # CLI interactive: single combined prompt, wrapped in the pre/post plugin hooks.
-    return _cli_prompt_decision(spec, command, description, pattern_key, pattern_keys, session_key,
-                                deny, grant, allow_permanent=allow_permanent, allow_session=not one_shot,
-                                smart_denied=smart_denied, approval_callback=approval_callback)
-
-
-def _cli_prompt_decision(spec: _GateSpec, command: str, description: str, pattern_key: str,
-                         pattern_keys: list[str], session_key: str, deny, grant, *,
-                         allow_permanent: bool, allow_session: bool, smart_denied: bool,
-                         approval_callback) -> dict:
-    """The synchronous CLI prompt and its pre/post plugin hooks, resolved into the gate result."""
-    from agent.redact import redact_approval_display
-
     prompt_command, prompt_description = command, description
     if spec.redact_cli:
         prompt_command = redact_approval_display(command)
@@ -1231,7 +1211,7 @@ def _cli_prompt_decision(spec: _GateSpec, command: str, description: str, patter
                        pattern_keys=list(pattern_keys), session_key=session_key, surface="cli")
     approval_context._fire_approval_hook("pre_approval_request", **hook_kwargs)
     choice = prompt_dangerous_approval(prompt_command, prompt_description, allow_permanent=allow_permanent,
-                                       allow_session=allow_session, smart_denied=smart_denied,
+                                       allow_session=not one_shot, smart_denied=smart_denied,
                                        approval_callback=approval_callback)
     approval_context._fire_approval_hook("post_approval_response", **hook_kwargs, choice=choice)
     if choice == "timeout":
