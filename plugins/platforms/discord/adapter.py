@@ -25,7 +25,7 @@ import tempfile
 import threading
 import time
 import traceback
-from collections import defaultdict
+from collections import defaultdict, deque
 from contextlib import nullcontext, suppress
 from typing import Callable, Dict, List, Optional, Any, Tuple
 from urllib.parse import quote, urljoin
@@ -1212,6 +1212,7 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
         super().__init__(config, Platform.DISCORD)
         self._client: Optional[commands.Bot] = None
         self._ready_event = asyncio.Event()
+        self._approval_card_message_ids: deque = deque(maxlen=512)  # exec-approval cards sent by this process
         self._allowed_user_ids: set = set()  # For button approval authorization
         self._username_resolved_ids: set = set()  # IDs resolved from username entries (gateway authz union)
         self._username_to_id: dict[str, str] = {}  # lowercased username -> ID, kept across gate refreshes
@@ -5649,19 +5650,42 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
     # without this the clicker only sees "This interaction failed".
     _ORPHAN_COMPONENT_GRACE_S = 2.0
 
+    def _component_has_live_view(self, interaction) -> Optional[bool]:
+        """Whether discord.py would route this click to a view that can still answer it, mirroring
+        ``ViewStore.dispatch_view`` (the message's view, a persistent view, or a dynamic item).
+        ``None`` when the store cannot be read (library internals changed): the caller then stays silent."""
+        try:
+            store = self._client._connection._view_store
+            data = getattr(interaction, "data", None) or {}
+            custom_id, component_type = data.get("custom_id"), data.get("component_type")
+            if custom_id is None or component_type is None:
+                return None
+            if any(pattern.match(str(custom_id)) for pattern in store._dynamic_items):
+                return True
+            message_id = getattr(getattr(interaction, "message", None), "id", None)
+            key = (component_type, custom_id)
+            for entity_id in (message_id, None):
+                item = store._views.get(entity_id, {}).get(key)
+                if item is not None:
+                    return item.view is not None and not item.view.is_finished()
+            return False
+        except Exception:
+            return None
+
     async def _answer_orphaned_component(self, interaction) -> None:
-        """Answer a button click nothing acked within the grace window with an ephemeral "expired or
-        already answered" note (best effort; a live view's own ack wins and this stays silent)."""
+        """Answer a button click that has no live view (timed out, answered, or the gateway restarted)
+        with an ephemeral "expired or already answered" note. Never acts on a click a live view will
+        answer, however slow its ack: ``is_done()`` flips only after the ack's HTTP call returns, so
+        racing it would fail the view's own response (40060)."""
         component_type = getattr(getattr(discord, "InteractionType", None), "component", None)
         if component_type is None or getattr(interaction, "type", None) != component_type:
             return
         await asyncio.sleep(self._ORPHAN_COMPONENT_GRACE_S)
         try:
-            if interaction.response.is_done():
+            if self._component_has_live_view(interaction) is not False or interaction.response.is_done():
                 return
-            embeds = getattr(getattr(interaction, "message", None), "embeds", None) or []
-            title = str(getattr(embeds[0], "title", "") or "") if embeds else ""
-            key = ("platform.discord.approval.no_longer_pending" if title.startswith("\u26a0")
+            message_id = str(getattr(getattr(interaction, "message", None), "id", "") or "")
+            key = ("platform.discord.approval.no_longer_pending" if message_id in self._approval_card_message_ids
                    else "platform.discord.prompt.expired_footer")
             await interaction.response.send_message(t(key), ephemeral=True)
         except Exception:
@@ -5753,6 +5777,8 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
                     )
             return send_kwargs, view
         result = await self._send_prompt(prompt.chat_id, prompt.metadata, _build)
+        if result.success and result.message_id:
+            self._approval_card_message_ids.append(str(result.message_id))
         if result.success and view.pending_retire:
             await view.retire(view.pending_retire)
         return result
