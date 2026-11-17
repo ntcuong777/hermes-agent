@@ -13,6 +13,15 @@ import * as slash from '@hermes/shared/slash' // fork: tui slot host modules (st
 import * as slashInput from '@hermes/shared/slash-input' // fork: tui slot host modules (stage 2)
 import * as uiStore from '../../app/uiStore.js' // fork: tui slot host modules (stage 2)
 import * as i18nRuntime from '../../i18n/runtime.js' // fork: tui slot host modules (stage 2)
+import * as fuzzy from '@hermes/shared/fuzzy' // fork: tui slot host modules (stage 3)
+import * as overlayStore from '../../app/overlayStore.js' // fork: tui slot host modules (stage 3)
+import * as sessionDelete from '../../hooks/useSessionDelete.js' // fork: tui slot host modules (stage 3)
+import * as useT from '../../i18n/useT.js' // fork: tui slot host modules (stage 3)
+import * as rpc from '../../lib/rpc.js' // fork: tui slot host modules (stage 3)
+import * as modelPicker from '../../components/modelPicker.js' // fork: tui slot host modules (stage 3)
+import * as overlayControls from '../../components/overlayControls.js' // fork: tui slot host modules (stage 3)
+import * as overlayPrimitives from '../../components/overlayPrimitives.js' // fork: tui slot host modules (stage 3)
+import * as textInputModule from '../../components/textInput.js' // fork: tui slot host modules (stage 3)
 
 export const HOST_MODULES: Readonly<Record<string, unknown>> = Object.freeze({
   ink,
@@ -20,5 +29,14 @@ export const HOST_MODULES: Readonly<Record<string, unknown>> = Object.freeze({
   'shared/slash': slash,
   'shared/slash-input': slashInput,
   'app/uiStore': uiStore,
-  'i18n/runtime': i18nRuntime
+  'i18n/runtime': i18nRuntime,
+  'shared/fuzzy': fuzzy,
+  'app/overlayStore': overlayStore,
+  'hooks/useSessionDelete': sessionDelete,
+  'i18n/useT': useT,
+  'lib/rpc': rpc,
+  'components/modelPicker': modelPicker,
+  'components/overlayControls': overlayControls,
+  'components/overlayPrimitives': overlayPrimitives,
+  'components/textInput': textInputModule
 })

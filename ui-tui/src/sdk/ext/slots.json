@@ -16,6 +16,28 @@
       "props": 1,
       "summary": "What to ask the gateway to complete, from the text before the caret",
       "symbols": ["TAB_PATH_RE", "completionRequestForInput"]
+    },
+    "sessionSwitcher": {
+      "file": "ui-tui/src/components/activeSessionSwitcher.tsx",
+      "host": [
+        "ink",
+        "react",
+        "shared/fuzzy",
+        "shared/slash-input",
+        "app/overlayStore",
+        "hooks/useSessionDelete",
+        "i18n/runtime",
+        "i18n/useT",
+        "lib/rpc",
+        "components/modelPicker",
+        "components/overlayControls",
+        "components/overlayPrimitives",
+        "components/textInput"
+      ],
+      "kind": "component",
+      "props": 1,
+      "summary": "The active session switcher overlay",
+      "symbols": []
     }
   }
 }

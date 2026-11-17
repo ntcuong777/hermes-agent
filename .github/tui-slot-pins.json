@@ -10,6 +10,14 @@
       ],
       "target_file": "ui-tui/src/hooks/useCompletion.ts",
       "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
+    },
+    "sessionSwitcher": {
+      "plugin": "tui-switcher",
+      "reason": "workspace filter, + new row with prompt and model draft, reasoning in the model picker, Esc modes",
+      "sha": "b10a2d624a1916843822936273b6a6ae43887dae758b60f82306a34a8e6aacb2",
+      "symbols": [],
+      "target_file": "ui-tui/src/components/activeSessionSwitcher.tsx",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
     }
   },
   "version": 1
