@@ -1,6 +1,6 @@
 """Generic seams for "restart only when idle": the restart request, the marker file and the notices.
 
-The policy (when is the gateway idle enough, drain mode, deadlines) lives in a plugin; this file is what
+The policy (when is the gateway idle enough, deadlines) lives in a plugin; this file is what
 a plugin, ``hermes gateway restart --when-idle`` and shell tooling share.
 
 * :func:`request_graceful_restart` is the ONE way to start the gateway's own graceful restart from outside
@@ -8,13 +8,16 @@ a plugin, ``hermes gateway restart --when-idle`` and shell tooling share.
   launchd or systemd relaunches it), after logging what is running at that moment. Callable from any thread.
 * The marker ``<hermes home>/restart-requested.json`` is how an external tool asks for a deferred restart::
 
-      {"requested_at": <epoch s>, "reason": str, "mode": "wait" | "drain", "max_wait": <s> | null,
+      {"requested_at": <epoch s>, "reason": str, "mode": "wait", "max_wait": <s> | null,
        "requested_by": str}
 
   ``max_wait`` is the deadline in seconds from ``requested_at``: ``null`` = the consumer's default, ``0`` = none.
-  ``wait`` serves normally until an idle moment; ``drain`` also holds new inbound turns. A consumer adds
-  ``fired_at`` and ``fired_by_pid`` right before it asks for the restart, so the next process knows the
-  request was carried out (a different pid) and removes it.
+  ``wait`` serves normally until an idle moment and never holds a message; it is the only mode (a marker
+  that names another one is ignored with a warning). A consumer adds
+  ``fired_at``, ``fired_by_pid`` and ``fired_by_boot_at`` (its process start time) right before it asks for
+  the restart, so the next process knows the request was carried out (a different pid or start time) and
+  removes it. A ``requested_at`` in the future reads as now (``clamped`` is then true, so a consumer can
+  persist it).
 * ``<hermes home>/graceful-restart/status.json`` is the consumer's heartbeat (``heartbeat_at``, ``pid``,
   ``phase``) and ``busy.txt`` its last busy report as text: tooling that wants to know whether a consumer
   is alive, or what blocks, reads those and never needs to reach the gateway.
@@ -27,6 +30,7 @@ import json
 import logging
 import os
 import re
+import sys
 import time
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -37,7 +41,7 @@ logger = logging.getLogger("gateway.run")
 
 MARKER_NAME = "restart-requested.json"
 STATE_DIR = "graceful-restart"
-MODES = ("wait", "drain")
+MODES = ("wait",)
 # A consumer that has not written its heartbeat for this long is not alive (its poll is every few seconds).
 HEARTBEAT_MAX_AGE_S = 45.0
 
@@ -112,8 +116,14 @@ def read_marker(home: Optional[Path] = None) -> Optional[dict]:
         logger.warning("Ignoring %s: no numeric requested_at", path)
         return None
     max_wait = data.get("max_wait")
-    return {**data, "reason": str(data.get("reason") or ""),
-            "mode": data.get("mode") if data.get("mode") in MODES else "wait",
+    mode = data.get("mode", "wait")
+    if mode not in MODES:
+        logger.warning("Ignoring %s: unknown mode %r (only %s)", path, mode, ", ".join(MODES))
+        return None
+    now = time.time()
+    future = data["requested_at"] > now  # a far-future stamp would never reach its deadline: it counts as now
+    return {**data, "reason": str(data.get("reason") or ""), "mode": mode,
+            "requested_at": min(float(data["requested_at"]), now), **({"clamped": True} if future else {}),
             "max_wait": float(max_wait) if isinstance(max_wait, (int, float)) and max_wait >= 0 else None}
 
 
@@ -253,18 +263,25 @@ def _spawn_coro(make: Callable[[Any], Any], *, timeout: float) -> int:
 # `hermes gateway restart --when-idle`
 
 def cmd_restart_when_idle(args: Any) -> None:
-    """Write the marker and return at once: nothing is stopped, the running gateway decides when to restart."""
-    mode = "drain" if getattr(args, "drain", False) else "wait"
-    max_wait = parse_duration(getattr(args, "max_wait", None))
-    marker = write_marker(reason=getattr(args, "reason", None) or "hermes gateway restart --when-idle", mode=mode,
-                          max_wait=max_wait, requested_by="cli")
-    print(f"Restart requested for the next idle moment (mode={mode}, max wait "
-          f"{'default' if max_wait is None else ('none' if max_wait == 0 else f'{max_wait:.0f}s')}): {marker_path()}")
+    """Write the marker and return at once: nothing is stopped, the running gateway decides when to restart.
+
+    Exit 2 and nothing written when no plugin heartbeat is alive (same as ``hgr --when-idle``): a marker nobody
+    reads would look like a pending restart that never comes."""
+    try:
+        max_wait = parse_duration(getattr(args, "max_wait", None))
+    except ValueError as exc:
+        print(f"hermes gateway restart --when-idle: --max-wait: {exc}", file=sys.stderr)
+        raise SystemExit(1) from None
     if not consumer_alive():
-        print("Warning: no graceful-restart plugin heartbeat. Nothing consumes the request: a gateway that runs the "
-              "plugin acts on it, but it is dropped if the gateway restarts first. `hermes gateway restart` (without "
-              "--when-idle) restarts when idle on the core path, which kills background processes it does not count.")
-        return
+        print(f"no live graceful-restart plugin heartbeat ({status_path()}); the running gateway cannot act on a marker.\n"
+              "  Nothing was written and nothing was stopped. Restart it now with: hermes gateway restart "
+              "(restarts when idle on the core path, which kills background processes it does not count)\n"
+              "  or load the plugin first (enable graceful-restart, then restart once by hand).", file=sys.stderr)
+        raise SystemExit(2)
+    marker = write_marker(reason=getattr(args, "reason", None) or "hermes gateway restart --when-idle",
+                          max_wait=max_wait, requested_by="cli")
+    print(f"Restart requested for the next idle moment (max wait "
+          f"{'default' if max_wait is None else ('none' if max_wait == 0 else f'{max_wait:.0f}s')}): {marker_path()}")
     try:
         print(busy_text_path().read_text(encoding="utf-8").rstrip() or "idle: nothing is running")
     except OSError:
