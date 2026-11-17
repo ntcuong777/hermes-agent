@@ -103,3 +103,49 @@ def test_the_module_imports_only_the_standard_library():
     top = {alias.name.split(".")[0] for node in tree.body if isinstance(node, _ast.Import) for alias in node.names}
     top |= {node.module.split(".")[0] for node in tree.body if isinstance(node, _ast.ImportFrom) and node.module}
     assert top <= set(sys.stdlib_module_names) | {"__future__"}
+
+
+def test_empty_pins_say_nothing_was_verified(tmp_path, capsys):
+    pins = tmp_path / "pins.json"
+    pins.write_text('{"pins": {}, "version": 1}\n', encoding="utf-8")
+    assert cpa.main(["--verify-pins", str(pins)]) == 0
+    out = capsys.readouterr().out
+    assert "no pins recorded (nothing verified)" in out and "no drift" not in out
+
+
+@pytest.mark.parametrize("content", [None, "{not json", b"\xff\xfe\x00bad", '{"pins": []}'])
+def test_a_missing_or_malformed_pins_file_is_a_clear_exit_2(tmp_path, capsys, content):
+    pins = tmp_path / "pins.json"
+    if isinstance(content, bytes):
+        pins.write_bytes(content)
+    elif content is not None:
+        pins.write_text(content, encoding="utf-8")
+    assert cpa.main(["--verify-pins", str(pins)]) == 2
+    assert "core_patches_ast:" in capsys.readouterr().err
+
+
+def test_a_malformed_lock_is_a_reported_problem_not_a_traceback(tmp_path, capsys):
+    root, plugin = _copy_fixtures(tmp_path)
+    (plugin / cpa.LOCK_FILE).write_text("{oops", encoding="utf-8")
+    assert cpa.main(["--verify-locks", str(plugin.parent), "--source-root", str(root)]) == 1
+    assert "ERROR demo:" in capsys.readouterr().err
+
+
+def _plugin_with_literal(plugin, sha):
+    (plugin / "__init__.py").write_text(
+        f'EXPECT = "{sha}"\n\n\ndef register(ctx):\n'
+        '    ctx.register_core_patch("shout", target="cpdemo_target:greet", kind="wrap", fn=lambda o: o,\n'
+        '                            expect_ast_sha=EXPECT)\n', encoding="utf-8")
+
+
+def test_the_plugins_expect_ast_sha_must_equal_its_lock(tmp_path, capsys):
+    root, plugin = _copy_fixtures(tmp_path)
+    cpa.write_lock_entry(plugin, "shout", "cpdemo_target:greet", root)
+    pins = tmp_path / "pins.json"
+    cpa.write_pins(plugin.parent, pins)
+    _plugin_with_literal(plugin, GREET_SHA)
+    assert cpa.main(["--verify-pins", str(pins), "--plugins-root", str(plugin.parent), "--source-root", str(root)]) == 0
+    _plugin_with_literal(plugin, "0" * 64)  # the lock was refreshed, the literal was not
+    assert cpa.main(["--verify-pins", str(pins), "--plugins-root", str(plugin.parent), "--source-root", str(root)]) == 1
+    assert "MISMATCH demo/shout" in capsys.readouterr().err
+    assert cpa.main(["--verify-locks", str(plugin.parent), "--source-root", str(root)]) == 1
