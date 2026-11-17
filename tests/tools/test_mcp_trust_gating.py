@@ -146,7 +146,7 @@ class TestTrustGateAtCallTime:
     def test_approval_carries_structured_mcp_context(self, fake_session, monkeypatch):
         """The approval payload carries server/tool/tool-description/arguments as structure, so
         surfaces render a tool-call card instead of parsing the message; the context copy gets
-        the wider (4k) arguments bound and never leaks secrets."""
+        the wider (20k) arguments bound and never leaks secrets."""
         import agent.redact
         monkeypatch.setattr(agent.redact, "_REDACT_ENABLED", False)
         _set_trust("srv", "untrusted")
@@ -169,8 +169,8 @@ class TestTrustGateAtCallTime:
         # The message's embedded copy stays messaging-cap sized; the structured copy is roomier.
         assert "truncated" in _mcp_handlers._format_trust_gate_arguments({"blob": "x" * 5_000})
         assert len(_mcp_handlers._format_trust_gate_arguments({"blob": "x" * 5_000})) <= 1_200
-        assert len(_mcp_handlers._format_trust_gate_arguments(
-            {"blob": "x" * 5_000}, max_chars=_mcp_handlers._MCP_CONTEXT_ARGUMENTS_MAX_CHARS)) == 4_000
+        bound = _mcp_handlers._MCP_CONTEXT_ARGUMENTS_MAX_CHARS
+        assert len(_mcp_handlers._format_trust_gate_arguments({"blob": "x" * (bound + 5_000)}, max_chars=bound)) == bound
 
     def test_registration_captures_sanitized_tool_descriptions(self):
         """Discovery records a bounded, sanitized description per tool: control characters are
