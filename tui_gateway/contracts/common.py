@@ -16,11 +16,14 @@ class OpenModel(Result):
     model_config = Result.model_config | {"extra": "allow"}
 
 
-class QuotaWindow(OpenModel):
-    """``tui_gateway/usage_status.py::quota_fields``: one subscription window of the active account."""
+class StatusField(Result):
+    """``tui_gateway/status_bar_fields.py``: one plugin-supplied status-bar segment (hook ``transform_status_bar_fields``).
+    ``tone`` colours the text (default muted); ``min_cols`` is the narrowest terminal that shows it."""
 
-    label: str = ""
-    used_percent: float = 0.0
+    id: str
+    text: str
+    tone: Literal["muted", "good", "warn", "bad"] | None = None
+    min_cols: int | None = None
 
 
 class PlanGauge(Result):
@@ -58,7 +61,7 @@ class Usage(OpenModel):
     dev_credits_spent_micros: int | None = None
     cost_usd: float | None = None
     cost_status: str | None = None
-    quota: list[QuotaWindow] | None = None
+    status_fields: list[StatusField] | None = None
     plan_gauge: PlanGauge | None = None
 
 

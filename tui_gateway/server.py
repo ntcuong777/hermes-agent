@@ -1330,14 +1330,8 @@ def _get_usage(agent) -> dict:
             spent = agent.get_credits_spent_micros()
             if spent is not None:
                 usage["dev_credits_spent_micros"] = int(spent)
-    # Opt-in status-bar read-outs (display.status_bar.fields): session cost, active account's quota windows.
-    with contextlib.suppress(Exception):
-        from tui_gateway.usage_status import bar_wants, cost_fields, quota_fields
-        _bar_cfg = _load_cfg_raw()
-        if bar_wants(_bar_cfg, "cost"):
-            usage.update(cost_fields(agent))
-        if bar_wants(_bar_cfg, "quota"):
-            usage.update(quota_fields(agent))
+    from tui_gateway.status_bar_fields import status_bar_fields  # plugin segments listed in display.status_bar.fields
+    usage.update(status_bar_fields(agent, _load_cfg_raw))
     return usage
 
 

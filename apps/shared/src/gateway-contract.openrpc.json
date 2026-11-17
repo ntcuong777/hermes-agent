@@ -34467,24 +34467,6 @@
         "title": "QueuedPrompt",
         "type": "object"
       },
-      "QuotaWindow": {
-        "additionalProperties": true,
-        "description": "``tui_gateway/usage_status.py::quota_fields``: one subscription window of the active account.",
-        "properties": {
-          "label": {
-            "default": "",
-            "title": "Label",
-            "type": "string"
-          },
-          "used_percent": {
-            "default": 0.0,
-            "title": "Used Percent",
-            "type": "number"
-          }
-        },
-        "title": "QuotaWindow",
-        "type": "object"
-      },
       "ReactionAuthor": {
         "enum": [
           "user",
@@ -41673,11 +41655,11 @@
             "default": null,
             "title": "Cost Status"
           },
-          "quota": {
+          "status_fields": {
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/QuotaWindow"
+                  "$ref": "#/components/schemas/StatusField"
                 },
                 "type": "array"
               },
@@ -41686,7 +41668,7 @@
               }
             ],
             "default": null,
-            "title": "Quota"
+            "title": "Status Fields"
           },
           "plan_gauge": {
             "anyOf": [
@@ -44266,6 +44248,56 @@
           "profile_home"
         ],
         "title": "StagedFileUpload",
+        "type": "object"
+      },
+      "StatusField": {
+        "additionalProperties": false,
+        "description": "``tui_gateway/status_bar_fields.py``: one plugin-supplied status-bar segment (hook ``transform_status_bar_fields``).\n``tone`` colours the text (default muted); ``min_cols`` is the narrowest terminal that shows it.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "tone": {
+            "anyOf": [
+              {
+                "enum": [
+                  "muted",
+                  "good",
+                  "warn",
+                  "bad"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tone"
+          },
+          "min_cols": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Min Cols"
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ],
+        "title": "StatusField",
         "type": "object"
       },
       "StatusUpdatePayload": {
@@ -47847,11 +47879,11 @@
             "default": null,
             "title": "Cost Status"
           },
-          "quota": {
+          "status_fields": {
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/QuotaWindow"
+                  "$ref": "#/components/schemas/StatusField"
                 },
                 "type": "array"
               },
@@ -47860,7 +47892,7 @@
               }
             ],
             "default": null,
-            "title": "Quota"
+            "title": "Status Fields"
           },
           "plan_gauge": {
             "anyOf": [

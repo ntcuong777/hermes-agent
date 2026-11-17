@@ -606,15 +606,16 @@ export interface Usage {
   dev_credits_spent_micros?: number | null
   cost_usd?: number | null
   cost_status?: string | null
-  quota?: QuotaWindow[] | null
+  status_fields?: StatusField[] | null
   plan_gauge?: PlanGauge | null
   [key: string]: unknown
 }
-/** ``tui_gateway/usage_status.py::quota_fields``: one subscription window of the active account. */
-export interface QuotaWindow {
-  label?: string
-  used_percent?: number
-  [key: string]: unknown
+/** ``tui_gateway/status_bar_fields.py``: one plugin-supplied status-bar segment (hook ``transform_status_bar_fields``). ``tone`` colours the text (default muted); ``min_cols`` is the narrowest terminal that shows it. */
+export interface StatusField {
+  id: string
+  text: string
+  tone?: 'muted' | 'good' | 'warn' | 'bad' | null
+  min_cols?: number | null
 }
 /** ``gateway/session_usage.py::plan_gauge``: a window plan's allowance for the status bar. */
 export interface PlanGauge {
@@ -3635,7 +3636,7 @@ export interface SessionUsageResult {
   dev_credits_spent_micros?: number | null
   cost_usd?: number | null
   cost_status?: string | null
-  quota?: QuotaWindow[] | null
+  status_fields?: StatusField[] | null
   plan_gauge?: PlanGauge | null
   credits_lines?: string[] | null
   credits_usage_window?: boolean | null
