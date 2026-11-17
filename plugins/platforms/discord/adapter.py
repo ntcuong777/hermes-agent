@@ -5685,7 +5685,7 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
             if self._component_has_live_view(interaction) is not False or interaction.response.is_done():
                 return
             message_id = str(getattr(getattr(interaction, "message", None), "id", "") or "")
-            key = ("platform.discord.approval.no_longer_pending" if message_id in self._approval_card_message_ids
+            key = ("platform.discord.approval.no_longer_pending" if message_id in getattr(self, "_approval_card_message_ids", ())
                    else "platform.discord.prompt.expired_footer")
             await interaction.response.send_message(t(key), ephemeral=True)
         except Exception:
@@ -5778,7 +5778,10 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
             return send_kwargs, view
         result = await self._send_prompt(prompt.chat_id, prompt.metadata, _build)
         if result.success and result.message_id:
-            self._approval_card_message_ids.append(str(result.message_id))
+            ids = getattr(self, "_approval_card_message_ids", None)
+            if ids is None:
+                ids = self._approval_card_message_ids = deque(maxlen=512)
+            ids.append(str(result.message_id))
         if result.success and view.pending_retire:
             await view.retire(view.pending_retire)
         return result
