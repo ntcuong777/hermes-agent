@@ -95,12 +95,13 @@ def build_exec_approval_view(discord, base, *, unauthorized):
         async def _resolve(self, interaction: discord.Interaction, choice: str, color: discord.Color, label_key: str):
             """Resolve the approval via the gateway approval queue and update the embed. A failure
             before the click was acked still answers the clicker (ephemeral) instead of leaving
-            Discord's "interaction failed"; the error is re-raised for the view's error log."""
+            Discord's "interaction failed"; the error is re-raised for the view's error log. Not when
+            the choice was already recorded (``_backend_settled``): "click again" would be false."""
             try:
                 await self._resolve_click(interaction, choice, color, label_key)
             except Exception:
                 try:
-                    if not interaction.response.is_done():
+                    if not self._backend_settled and not interaction.response.is_done():
                         await interaction.response.send_message(
                             t("platform.discord.approval.click_failed"), ephemeral=True)
                 except Exception:
