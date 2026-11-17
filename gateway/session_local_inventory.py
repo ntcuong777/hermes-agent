@@ -206,6 +206,13 @@ async def snapshot_info(authority, ref):
     return {**inventory, **info}
 
 
+# The only fields a viewer reads off a resume reply for its model and effort pills (the TUI's
+# createGatewayEventHandler / status bar). Anything else in ``local_session_info`` (source, lazy, title,
+# tool_count, credential_hint, ...) would be merged by the viewer over what it holds and could blank it.
+LANE_ROUTE_FIELDS = ('model', 'reasoning_effort', 'reasoning_effort_wire', 'service_tier', 'fast')
+LANE_ROUTE_TIMEOUT_S = 3.0
+
+
 async def lane_route_info(authority, ref) -> dict:
     """The model and effort pills for a viewer that attaches to a session with no frozen local policy (a
     messaging lane's thread, a history mount). ``snapshot_info`` is for a LOCAL route; without this the
@@ -219,10 +226,14 @@ async def lane_route_info(authority, ref) -> dict:
         with owner_scope(authority):
             return local_session_info(authority, ref)
     try:
-        return await asyncio.to_thread(read)
+        # Bounded: a saturated default executor must not stall the resume (the read thread, if it ever
+        # starts, finishes on its own and its result is dropped).
+        info = await asyncio.wait_for(asyncio.to_thread(read), LANE_ROUTE_TIMEOUT_S)
     except Exception:  # health: allow BLE001 -- pills are decoration: a failed read must not fail the attach
         logger.debug('route info for a lane attach unavailable: %s', ref.session_id, exc_info=True)
         return {}
+    # Only the pill fields, and never a None: a viewer merges the reply over what it holds.
+    return {key: info[key] for key in LANE_ROUTE_FIELDS if info.get(key) is not None}
 
 
 def agent_inventory(agent) -> dict:

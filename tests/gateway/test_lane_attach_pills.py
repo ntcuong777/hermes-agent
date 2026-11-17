@@ -63,3 +63,32 @@ async def test_an_unreadable_route_leaves_the_attach_working(tmp_path, monkeypat
     assert resumed['result']['info'] == {'desktop_protocol': 'hermes-gateway-v1'}
     await conn.close()
     authority.db.close()
+
+
+@pytest.mark.asyncio
+async def test_the_lane_reply_carries_only_the_pill_fields_and_never_a_none():
+    """A viewer merges the resume reply over what it holds: a None (or a stray field) blanks its pills."""
+    from gateway.session_local_inventory import lane_route_info
+    full = {'source': 'discord', 'lazy': True, 'title': None, 'archived': False, 'yolo': False,
+            'api_mode': None, 'tool_count': None, 'credential_hint': None, 'profile_id': 'p',
+            'model': 'claude-opus-5-5', 'reasoning_effort': 'high', 'reasoning_effort_wire': None,
+            'service_tier': '', 'fast': False}
+    with patch('gateway.session_local.local_session_info', return_value=full), \
+            patch('gateway.session_authorities.owner_scope'):
+        info = await lane_route_info(SimpleNamespace(), SimpleNamespace(session_id='s'))
+    assert info == {'model': 'claude-opus-5-5', 'reasoning_effort': 'high', 'service_tier': '', 'fast': False}
+
+
+@pytest.mark.asyncio
+async def test_a_stalled_route_read_does_not_stall_the_resume(monkeypatch):
+    import threading
+    from gateway import session_local_inventory
+    monkeypatch.setattr(session_local_inventory, 'LANE_ROUTE_TIMEOUT_S', 0.1)
+    release = threading.Event()
+    try:
+        with patch('gateway.session_local.local_session_info', side_effect=lambda *a: release.wait(5)), \
+                patch('gateway.session_authorities.owner_scope'):
+            info = await session_local_inventory.lane_route_info(SimpleNamespace(), SimpleNamespace(session_id='s'))
+    finally:
+        release.set()
+    assert info == {}
