@@ -48,17 +48,31 @@ _REASONING_DISPLAY_TOGGLES = {"show": True, "on": True, "hide": False, "off": Fa
 
 def _model_switch_skew_guard() -> Optional[str]:
     """Refuse a model switch when the gateway is running stale code: a first-time lazy import on
-    a new code path can crash on a stale cached dependency. Scoped to the highest-risk trigger."""
-    from gateway.code_skew import detect_code_skew
+    a new code path can crash on a stale cached dependency. Scoped to the highest-risk trigger.
 
-    skew = detect_code_skew()
-    if not skew:
+    ``gateway.model_switch_skew_guard`` picks the behaviour (``refuse`` default, ``warn``, ``off``); only
+    ``refuse`` returns text here. ``warn`` is ``_model_switch_skew_note``."""
+    from gateway.code_skew import model_switch_skew
+
+    mode, skew = model_switch_skew()
+    if not skew or mode != "refuse":
         return None
     boot_rev, disk_rev = skew
     return t(
         "gateway.model.error_prefix",
         error=t("gateway.model.err_skew", boot_rev=boot_rev, disk_rev=disk_rev),
     )
+
+
+def _model_switch_skew_note() -> Optional[str]:
+    """The one-line note a ``warn``-mode switch carries: it ran, on code older than the checkout."""
+    from gateway.code_skew import model_switch_skew
+
+    mode, skew = model_switch_skew()
+    if not skew or mode != "warn":
+        return None
+    boot_rev, disk_rev = skew
+    return t("gateway.model.warn_skew", boot_rev=boot_rev, disk_rev=disk_rev)
 
 
 async def _persist_model_switch_to_config(
@@ -192,6 +206,8 @@ class GatewayModelCommandsMixin:
             )
         except Exception as exc:
             logger.debug("preflight-compression switch warning failed: %s", exc)
+        if note := _model_switch_skew_note():
+            result.warning_message = "\n".join(filter(None, (result.warning_message, note)))
         return result, None
 
     def _switch_cached_agent_model(self, result, ctx: _ModelSwitchContext, picker: bool) -> Optional[str]:

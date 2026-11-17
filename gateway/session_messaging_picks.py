@@ -37,8 +37,13 @@ async def _pick_model(authority, owner, live, payload, row):
     """The chat's ``/model <name> [--provider p]`` resolution, guarded like a LOCAL pick, then committed
     as its session override. Returns the receipt fields, or the guard's confirmation request."""
     from gateway.session_mutation_model import _Route, _selection_guard_refusal, is_model_reset
-    from gateway.slash_commands_model import _ModelSwitchContext
+    from agent.i18n import t
+    from gateway.slash_commands_model import _ModelSwitchContext, _model_switch_skew_guard, _model_switch_skew_note
     from hermes_constants import get_hermes_home
+    if _model_switch_skew_guard():
+        # The full refusal is far longer than a refusal's 160-character detail (it was cut mid-word, to
+        # "...restart the g"), so the wire carries the short form. Nothing is recorded.
+        raise RuntimeStoreError('model_resolution_failed', detail=t('gateway.model.err_skew_short'))
     runner = authority.runner
     ctx = _ModelSwitchContext(session_key=live.route, source=live.source,
                               config_path=get_hermes_home() / 'config.yaml', persist_global=False)
@@ -62,6 +67,10 @@ async def _pick_model(authority, owner, live, payload, row):
     # next turn builds from, and the record step evicts the cached agent.
     await runner._record_model_switch(result, ctx, source=live.source, one_turn=False, picker=True)
     fields = {'model': result.new_model, 'provider': result.target_provider}
+    if skew_note := _model_switch_skew_note():  # ``warn`` mode: the switch ran on older code than the checkout
+        from hermes_cli.model_switch import format_model_for_display
+        fields['note'] = '\n'.join((t('gateway.model.switched', model=format_model_for_display(result.new_model)),
+                                    skew_note))
     if 'reasoning' in payload:
         _apply_reasoning(runner, live, payload['reasoning'])
         fields['effort'] = payload['reasoning']

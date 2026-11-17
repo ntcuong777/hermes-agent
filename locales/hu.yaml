@@ -70,6 +70,8 @@ gateway:
     reset_done: "A munkamenet modell-felülbírálása törölve — mostantól a `{model}` (csatorna/globális alapértelmezés) van használatban. A beszélgetés előzményei megmaradnak."
     reset_none: "Nincs aktív modell-felülbírálás ebben a munkamenetben — már a `{model}` (csatorna/globális alapértelmezés) van használatban."
     err_skew: "Ez az átjáró a(z) {boot_rev} revízió kódját futtatja, de a lemezen már a(z) {disk_rev} van kicsekkolva. A modellváltás elavult modul miatti összeomlást kockáztatna — indítsd újra az átjárót az új kód betöltéséhez: hermes gateway restart"
+    err_skew_short: "Ez az átjáró régebbi kódot futtat, mint a kicsekkolt változat. A modellváltáshoz indítsd újra: hermes gateway restart"
+    warn_skew: "Megjegyzés: ez az átjáró még a(z) {boot_rev} kódját futtatja (a kicsekkolt változat most {disk_rev}); indítsd újra, amikor alkalmas: hermes gateway restart"
     err_switch_failed: "A(z) {model} modellre váltás nem sikerült ({error}); marad: {current}."
     err_config_not_updated: "a config.yaml nem frissült ({error})"
     err_stale_override: "a config.yaml-be mentve, de az elavult munkamenet-felülírás nem törlődött ({error})"
