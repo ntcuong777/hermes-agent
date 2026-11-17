@@ -289,11 +289,14 @@ def _write_lock(plugin_dir: Path, patches: Mapping[str, Any]) -> None:
 
 def migrate_lock(plugin_dir: Path) -> int:
     """Rewrite a v1 lock as v2 in place (snapshot files, no inline source). Returns how many entries moved."""
-    patches = read_lock(plugin_dir)
-    moved = sum(1 for e in patches.values() if isinstance(e, dict) and "source" in e and "snapshot" not in e)
-    if moved or lock_version(plugin_dir) != LOCK_VERSION:
-        _write_lock(plugin_dir, _migrated(plugin_dir, patches))
-    return moved
+    with _lock_file_held(Path(plugin_dir)):
+        if lock_version(plugin_dir) > LOCK_VERSION:
+            raise CorePatchFileError("lock file is a newer schema; update the fork first")
+        patches = read_lock(plugin_dir)
+        moved = sum(1 for e in patches.values() if isinstance(e, dict) and "source" in e and "snapshot" not in e)
+        if moved or lock_version(plugin_dir) != LOCK_VERSION:
+            _write_lock(plugin_dir, _migrated(plugin_dir, patches))
+        return moved
 
 
 def target_file_rel(current: TargetSource, source_root: Optional[Path] = None) -> str:
