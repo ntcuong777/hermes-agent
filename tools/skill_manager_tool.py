@@ -428,7 +428,8 @@ def _guarded_write(name: str, skill_dir: Path, target: Path, action: str, label:
         if read_guard := _background_review_read_before_write_guard(name, target, action, label):
             return read_guard
         original = target.read_text(encoding="utf-8-sig")
-    if target == skill_dir / "SKILL.md" and (err := _description_budget_error(content, before=original)):
+    if (target == skill_dir / "SKILL.md" and not _approval_replay.get()
+            and (err := _description_budget_error(content, before=original))):
         return _err(err)
     scope, baseline, scan_error = _scan_baseline(skill_dir, target)
     if scan_error:
@@ -572,7 +573,9 @@ def _patch_skill(name: str, old_string: str, new_string: str, file_path: str | N
             from tools.fuzzy_match import format_no_match_hint
             match_error += format_no_match_hint(match_error, match_count, old_string, content)
         return _err(match_error) | {"file_preview": _clip(content, 500, "...")}
-    if err := _validate_content_size(new_content, label=target_label):
+    # An approved replay may patch a file that was already over the cap (legacy): the person saw the diff.
+    legacy_oversize = _approval_replay.get() and len(content) > MAX_SKILL_CONTENT_CHARS
+    if not legacy_oversize and (err := _validate_content_size(new_content, label=target_label)):
         return _err(err)
     if not file_path and (err := _validate_frontmatter(new_content)):
         return _err(f"Patch would break SKILL.md structure: {err}")
@@ -686,10 +689,22 @@ _skill_gate_bypass: _ctxvars.ContextVar[bool] = _ctxvars.ContextVar(
     "skill_gate_bypass", default=False)
 
 
+# Set only while /skills approve replays a staged write the person has just reviewed as a diff:
+# the checks that guard the MODEL's output (description budget, a legacy over-limit file growing)
+# must not strand a write the human chose to apply.
+_approval_replay: _ctxvars.ContextVar[bool] = _ctxvars.ContextVar(
+    "skill_approval_replay", default=False)
+
+
+class _StagingRefused(Exception):
+    """Raised by a ``build_staging`` callback when the write could never be applied: the model gets
+    the reason now (as an unstaged write would) instead of the person at ``/skills approve``."""
+
+
 def _run_write_gate(build_staging):
     """Shared write gate: None to proceed, else a JSON tool result (blocked/staged).
-    ``build_staging(wa) -> (payload, gist)`` runs only when staging. Fails open if
-    write_approval cannot be imported."""
+    ``build_staging(wa) -> (payload, gist)`` runs only when staging (it may raise
+    ``_StagingRefused``). Fails open if write_approval cannot be imported."""
     try:
         from tools import write_approval as wa
     except Exception:
@@ -699,7 +714,10 @@ def _run_write_gate(build_staging):
         return None
     if decision.blocked:
         return tool_error(decision.message, success=False)
-    payload, gist = build_staging(wa)
+    try:
+        payload, gist = build_staging(wa)
+    except _StagingRefused as refused:
+        return tool_error(str(refused), success=False)
     record = wa.stage_write(wa.SKILLS, payload, summary=gist, origin=wa.current_origin())
     return json.dumps({"success": True, "staged": True, "pending_id": record["id"],
                        "gist": gist, "message": decision.message}, ensure_ascii=False)
@@ -714,6 +732,7 @@ def _apply_skill_write_gate(action, name, **payload_kwargs):
                    **{k: v for k, v in payload_kwargs.items() if v is not None}}
         gist_kw = {k: payload_kwargs.get(k) or ""
                    for k in ("content", "file_path", "old_string", "new_string")}
+        _staging_precheck([payload], [name])
         return payload, wa.skill_gist(action, name, **gist_kw)
     return _run_write_gate(_staging)
 
@@ -730,6 +749,60 @@ def _skill_manage_from(payload: dict[str, Any], **extra) -> str:
         **{k: payload.get(k) for k in _FLAT_OP_KEYS}, **extra)
 
 
+def _staging_op_error(act: str, nm: str, op: dict[str, Any], touched: set) -> Optional[str]:
+    """The content-only reason one op could never be applied, from the same validators the handlers
+    run, or None. A targeted patch/write is dry-run against the file as it is now only when no earlier
+    op of the batch touched that file (else the file's future text is unknown here)."""
+    content, fp = op.get("content"), (op.get("file_path") or "").strip()
+    root = (act in {"create", "edit"} or (act == "patch" and bool(content)))
+    key = (nm, "SKILL.md" if root or (act == "patch" and not fp) else fp)
+    fresh = key not in touched
+    touched.add(key)
+    if root:
+        before = None
+        if act != "create" and (existing := _find_skill(nm)):
+            with suppress(OSError):
+                before = (Path(existing["path"]) / "SKILL.md").read_text(encoding="utf-8-sig")
+        err = (_validate_frontmatter(content or "") or _validate_content_size(content or "")
+               or _description_budget_error(content or "", before=before))
+        if act == "create" and not err and _find_skill(nm):
+            err = f"A skill named '{nm}' already exists."
+        return err
+    if act == "write_file":
+        return _validate_file_path(fp) or _validate_content_size(op.get("file_content") or "", label=fp)
+    if act != "patch" or not fresh or not (existing := _find_skill(nm)):
+        return None
+    if fp:
+        target, bad = _resolve_supporting_file(Path(existing["path"]), fp)
+        if bad:
+            return bad.get("error")
+    else:
+        target = Path(existing["path"]) / "SKILL.md"
+    if not target.is_file():
+        return f"File not found: {fp or 'SKILL.md'}"
+    from tools.fuzzy_match import fuzzy_find_and_replace
+    with suppress(OSError):
+        _, _, _, match_error = fuzzy_find_and_replace(
+            target.read_text(encoding="utf-8-sig"), op.get("old_string") or "",
+            op.get("new_string") or "", bool(op.get("replace_all")))
+        return match_error or None
+    return None
+
+
+def _staging_precheck(operations: list, names: list) -> None:
+    """Refuse (``_StagingRefused``) to stage a write that ``/skills approve`` could never apply: a bad
+    frontmatter, an over-budget description, a name collision or an old_string that no longer matches
+    would otherwise sit in the queue and fail only when the person reviews it, who cannot fix it."""
+    touched: set = set()
+    for i, (op, nm) in enumerate(zip(operations, names)):
+        if not isinstance(op, dict):
+            continue
+        if err := _staging_op_error(op.get("action", ""), nm, op, touched):
+            raise _StagingRefused(
+                f"Not staged: operations[{i}] ({op.get('action')} on '{nm}') cannot be applied: {err} "
+                "Fix that and call skill_manage again.")
+
+
 def apply_skill_pending(payload: dict[str, Any], origin: str = "foreground") -> str:
     """Replay a staged skill write, bypassing the gate (the /skills approve handler). A write the
     background-review fork staged keeps its mandatory scan; only the scan, not the fork's other
@@ -737,9 +810,11 @@ def apply_skill_pending(payload: dict[str, Any], origin: str = "foreground") -> 
     from tools.skill_provenance import BACKGROUND_REVIEW
     token = _skill_gate_bypass.set(True)
     bg_token = _replaying_background_write.set(origin == BACKGROUND_REVIEW)
+    replay_token = _approval_replay.set(True)
     try:
         return _skill_manage_from(payload)
     finally:
+        _approval_replay.reset(replay_token)
         _replaying_background_write.reset(bg_token)
         _skill_gate_bypass.reset(token)
 
