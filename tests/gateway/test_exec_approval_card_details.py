@@ -126,7 +126,7 @@ async def test_the_prompt_handed_to_an_adapter_carries_the_whole_body_and_the_sh
 
 @pytest.mark.asyncio
 async def test_an_mcp_call_whose_arguments_were_cut_is_deny_only_and_says_so():
-    """Over 4,000 characters the structured context itself is cut: sending that same text ahead of the card
+    """Over 20,000 characters the structured context itself is cut: sending that same text ahead of the card
     cannot make it whole, so nobody can approve it from a card ("nobody approves a cut call")."""
     adapter = _Chat()
     mcp = {"server": "files", "tool": "write", "arguments": '{"a": 1}\n... [arguments truncated]', "arguments_cut": True}

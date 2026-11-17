@@ -165,19 +165,31 @@ def resolve_gateway_approval(session_key: str, choice: str,
     # (``choice == "once"`` covers only the leader) and the protected-write and elicitation
     # gates read ``entry.result`` directly, so an alias of "once" must already be "once" here.
     choice = canonical_approval_choice(choice)
+
+    def answerable(entry) -> bool:
+        # An MCP call whose arguments were cut even in the structured context can only be denied, whatever
+        # surface answers (a card, typed /approve, a canonical viewer, the TUI): it stays pending for a deny
+        # or the timeout instead of being approved unread.
+        mcp = entry.data.get("mcp")
+        return choice == "deny" or not (isinstance(mcp, dict) and mcp.get("arguments_cut"))
+
     with _lock:
         queue = _gateway_queues.get(session_key)
         if not queue:
             return 0
         if request_id:
-            targets = [entry for entry in queue if entry.data.get("request_id") == request_id]
+            targets = [entry for entry in queue if entry.data.get("request_id") == request_id and answerable(entry)]
             if not targets:
                 return 0
             queue[:] = [entry for entry in queue if entry not in targets]
         elif resolve_all:
-            targets = list(queue)
-            queue.clear()
+            targets = [entry for entry in queue if answerable(entry)]
+            if not targets:
+                return 0
+            queue[:] = [entry for entry in queue if entry not in targets]
         else:
+            if not answerable(queue[0]):
+                return 0
             targets = [queue.pop(0)]
         if not queue:
             _gateway_queues.pop(session_key, None)

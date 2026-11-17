@@ -104,6 +104,8 @@ export interface ApprovalMcpContext {
   tool: string
   tool_description?: string | null
   arguments?: string | null
+  /** The arguments were cut even in the structured context: only Deny is offered. */
+  arguments_cut?: boolean
 }
 
 export interface ApprovalReq {

@@ -24,6 +24,12 @@ describe('approval MCP context extraction', () => {
     expect(approvalMcpContext(undefined)).toBeUndefined()
   })
 
+  it('carries the cut flag (only an explicit true), so the card can say only deny works', () => {
+    expect(approvalMcpContext({ server: 's', tool: 't', arguments_cut: true })?.arguments_cut).toBe(true)
+    expect(approvalMcpContext({ server: 's', tool: 't', arguments_cut: 'yes' })).not.toHaveProperty('arguments_cut')
+    expect(approvalMcpContext({ server: 's', tool: 't' })).not.toHaveProperty('arguments_cut')
+  })
+
   it('ignores non-string fields instead of echoing them', () => {
     expect(approvalMcpContext({ server: 's', tool: 't', arguments: 42 })).toEqual({
       server: 's',

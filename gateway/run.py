@@ -551,8 +551,10 @@ def _format_exec_approval_fallback(
     else:
         heading = f"⚠️ **{ea_header_text()}**"
 
-    choices = [t("gateway.exec_approval.text_choice_once", prefix=command_prefix)]
-    if not smart_denied and allow_session:
+    from gateway.platforms.base_exec_approval import mcp_arguments_cut
+    args_cut = mcp_arguments_cut(mcp)
+    choices = [] if args_cut else [t("gateway.exec_approval.text_choice_once", prefix=command_prefix)]
+    if not args_cut and not smart_denied and allow_session:
         choices.append(t("gateway.exec_approval.text_choice_session", prefix=command_prefix))
         if allow_permanent:
             choices.append(t("gateway.exec_approval.text_choice_always", prefix=command_prefix))
@@ -564,6 +566,9 @@ def _format_exec_approval_fallback(
              reason_label=ea_reason_label_text(), reason=reason)
     fence = code_fence(body)
     text = text.replace(f"```\n{marker}\n```", f"{fence}\n{body}\n{fence}", 1)
+    if args_cut:  # only Deny: say why, then how
+        return (text + t("gateway.exec_approval.truncated_deny_only", total=len(body)) + "\n"
+                + choices[-1].capitalize() + ".\n" + format_approval_deadline_line(approval_timeout_seconds()))
     return (
         text
         + t("gateway.exec_approval.text_choice_joiner").join(choices[:-1])

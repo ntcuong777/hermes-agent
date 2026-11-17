@@ -38,6 +38,8 @@ class PendingControls:
             if 'edit' in data:
                 prompt['edit'] = deepcopy(data['edit'])
                 prompt['choices'] = ['once', 'deny']
+            if isinstance(data.get('mcp'), dict) and data['mcp'].get('arguments_cut'):
+                prompt['choices'] = ['deny']  # the arguments were cut: nobody approves a call they could not read
             if timeout_s is not None:
                 prompt['timeout_s'] = timeout_s
             self.pending[prompt_id] = (route, prompt)

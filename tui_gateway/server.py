@@ -652,6 +652,8 @@ def _broadcast_global_event(event: str, payload: dict | None = None, *, skip=fro
 def _approval_request_payload(data: dict | None) -> dict:
     """Build the client-safe representation of a pending approval."""
     payload = dict(data or {})
+    if isinstance(payload.get("mcp"), dict) and payload["mcp"].get("arguments_cut"):
+        payload["choices"] = ["deny"]  # a call nobody could read whole is never approved
     if "choices" not in payload:
         choices = ["once"]
         if not payload.get("smart_denied") and payload.get("allow_session") is not False:

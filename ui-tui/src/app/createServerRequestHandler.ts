@@ -45,7 +45,8 @@ export function approvalMcpContext(v: unknown): ApprovalMcpContext | undefined {
         server,
         tool,
         tool_description: str(raw.tool_description).trim() || null,
-        arguments: str(raw.arguments).trim() || null
+        arguments: str(raw.arguments).trim() || null,
+        ...(raw.arguments_cut === true ? { arguments_cut: true } : {})
       }
     : undefined
 }

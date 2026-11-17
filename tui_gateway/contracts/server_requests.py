@@ -178,6 +178,9 @@ class ApprovalMcpContext(Params):
     tool: str
     tool_description: str | None = None
     arguments: str | None = None
+    # The arguments were cut even here (over the bound): no surface can show the whole call, so only Deny is
+    # offered (``choices``) and ``tools.approval.resolve_gateway_approval`` refuses any approving answer.
+    arguments_cut: bool | None = None
 
 
 class ApprovalRequestParams(ServerRequestParams):
