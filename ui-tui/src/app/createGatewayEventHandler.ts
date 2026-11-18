@@ -1,6 +1,7 @@
 import { execFile } from 'child_process'
 
 import { forceRedraw, onTerminalBackground, onTerminalForeground } from '@hermes/ink'
+import { extensionHost } from '../sdk/ext/host.js' // fork: tui slot
 import { stripAnsi } from '@hermes/shared/ansi'
 import { relativeLuminance } from '@hermes/shared/color'
 import type { MessageDeltaPayload, SubagentStatus, Usage } from '@hermes/shared/gateway-events'
@@ -1212,6 +1213,12 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       return
     }
 
+    // fork: tui slot. A plugin may answer an event the stock switch does not handle (the lane relay
+    // echoes `command.output` from a bound thread). Fail-open: no handler, stock behaviour.
+    if (extensionHost.has('gateway.event')) {
+      void extensionHost.runHook('gateway.event', { ev, sys })
+    }
+
     if (handledBeforeSwitch(ev)) {
       return
     }
@@ -1264,19 +1271,6 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         applyDeferredPickOutcome(ev.payload as Record<string, unknown> | undefined, sid, gw, sys)
 
         return
-      case 'command.output' as typeof ev.type: {
-        // A slash command ran in the thread this session is mirrored onto (typed here and relayed, or typed
-        // there): the thread got its reply, this transcript gets it too.
-        const p = ev.payload as { command?: string; output?: string } | undefined
-        const output = typeof p?.output === 'string' ? p.output.trim() : ''
-
-        if (output) {
-          sys(p?.command ? `↳ ${p.command}\n${output}` : output)
-        }
-
-        return
-      }
-
       case 'session.replay_gap':
         // The authority retired this subscription (fanout overflow) while the
         // socket stayed healthy, so no reconnect will ever re-attach it and the

@@ -44,7 +44,8 @@ export const HOOKS: Readonly<Record<string, HookSpec>> = Object.freeze({
   /** Payload `{}`. The first handler to return a non-empty string wins: the absolute path of a PNG it staged from the system clipboard. */
   'composer.clipboardImage': { mode: 'first' },
   /** Payload `{ text, bracketed }`. Return `{ text }` to replace the pasted text, `null` to swallow the paste, nothing to keep it. */
-  'composer.paste': { mode: 'transform' }
+  'composer.paste': { mode: 'transform' },
+  'gateway.event': { mode: 'all' }
 })
 
 /**

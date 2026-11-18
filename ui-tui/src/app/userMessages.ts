@@ -200,13 +200,6 @@ export const describeRpcError = (err: unknown): string => {
 export const isUnsupportedCommand = (err: unknown): boolean =>
   (err as { data?: { reason?: string } } | null)?.data?.reason === 'unsupported_command'
 
-/** The owner's `lane_owned` refusal (gateway/session_lane.py): the session is bound to a messaging
- *  thread (the Discord session mirror) that writes its conversation, so a transcript write sent over
- *  its own RPC (`/compress`, `/undo`, `/retry`, `/branch`, `/bg`, `/btw`, `/rollback <n>`) is re-sent as
- *  the typed command through `slash.exec`, which relays it to that thread. Nothing ran here. */
-export const isLaneOwned = (err: unknown): boolean =>
-  (err as { data?: { reason?: string } } | null)?.data?.reason === 'lane_owned'
-
 /** The shared owner refuses `!cmd` / `{!cmd}` for a session whose terminal backend is not local
  *  (gateway/session_shell.py): the command would run on the gateway host, outside the session's
  *  sandbox. Name the backend and point at the agent; other errors read as describeRpcError. */

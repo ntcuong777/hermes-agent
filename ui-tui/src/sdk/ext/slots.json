@@ -96,6 +96,22 @@
       "props": 1,
       "summary": "The canonical session controls (fork: reasoning efforts, model payload split, compress timeout)",
       "symbols": []
+    },
+    "slash.refused": {
+      "file": "ui-tui/src/app/createSlashHandler.ts",
+      "host": ["app/userMessages"],
+      "kind": "fn",
+      "props": 1,
+      "summary": "A refused command a slot may answer (the lane relay resends lane_owned as typed)",
+      "symbols": []
+    },
+    "gateway.event": {
+      "file": "ui-tui/src/app/createGatewayEventHandler.ts",
+      "host": [],
+      "kind": "hook",
+      "props": 1,
+      "summary": "Every gateway event before the stock switch (the lane relay echoes command.output)",
+      "symbols": []
     }
   }
 }
