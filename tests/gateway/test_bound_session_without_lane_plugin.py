@@ -199,3 +199,15 @@ async def test_without_the_plugin_a_typed_command_is_refused_not_forwarded(tmp_p
     reply = await _call(world, 'slash.exec', command=command)
     assert _reason(reply) in ('permission_denied', 'unsupported_command'), reply
     assert world.lane.forwarded == []
+
+
+# ── stage B6: the model and effort carry is plugin-owned ─────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_without_the_plugin_a_hand_off_records_no_carried_route(tmp_path):
+    """The lane move itself is core (`hand_off_conversations`); remembering the released route for the lane is the plugin's."""
+    world = await _bound(tmp_path)
+    with world.authority.db._read_ctx() as conn:
+        keys = [row[0] for row in conn.execute("SELECT key FROM state_meta WHERE key GLOB 'gateway.lane_model.v1:*'")]
+    assert keys == []

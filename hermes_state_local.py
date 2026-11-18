@@ -166,8 +166,6 @@ def retire_local_receipts(conn, session_ids):
     gone += [key for key, value in conn.execute('SELECT key,value FROM state_meta WHERE key GLOB ?',
                                                 (API_DECLARED_PREFIX + '*',)) if value in targets]
     gone += [API_BINDING_PREFIX + sid for sid in targets]
-    from gateway.session_lane_model import CARRY_PREFIX
-    gone += [CARRY_PREFIX + sid for sid in targets]  # a handed-off local route (gateway.session_lane_model)
     conn.executemany('DELETE FROM state_meta WHERE key=?', [(key,) for key in gone])
 
 
@@ -227,9 +225,7 @@ def hand_off_conversations(conn, moved):
         if not isinstance(lineage, list) or not all(isinstance(sid, str) for sid in lineage):
             continue
         segments = list(dict.fromkeys([owner, *lineage]))
-        # The released policy's route stays the conversation's: the lane adopts it as the chat's pick.
-        from gateway.session_lane_model import record_carried_route
-        record_carried_route(conn, target, ((_receipt(saved[0]) or {}).get('policy') or {}) if saved else {})
+        __import__("gateway.session_lane_seam").session_lane_seam.record_handoff(conn, target, ((_receipt(saved[0]) or {}).get('policy') or {}) if saved else {})
         conn.execute(f'UPDATE sessions SET ({_LANE_IDENTITY}) = (SELECT {_LANE_IDENTITY} FROM sessions WHERE id=?) '
                      'WHERE id IN (SELECT value FROM json_each(?)) AND id != ?', (target, json.dumps(segments), target))
         _title_follows_head(conn, owner, _segment_root(conn, segments, target))

@@ -130,8 +130,6 @@ def messaging_route_info(runner, live):
     channel = runner._channel_override_for(live.source)
     if channel is not None:
         model, provider = channel.model or model, channel.provider or provider
-    from gateway.session_lane_model import adopt_carried_model
-    adopt_carried_model(runner, live.route)  # a handed-off local chat shows the route it keeps
     override = runner._session_model_override(live.route) or runner.session_store.get_model_override(live.route) or {}
     model = override.get('model') or model
     provider, base_url = override.get('provider') or provider, override.get('base_url') or base_url
