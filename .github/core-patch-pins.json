@@ -289,6 +289,16 @@
       "target_file": "gateway/session_policy.py",
       "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
       "upstream_release": "0.23.0"
+    },
+    "lane-mirror/settle-register": {
+      "ast_sha": "679b32defaac5579bbf8f0e7dc9e48d2abf59c486f7acc34b30fa81ff978ca70",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "An approval answered anywhere (a platform card tap, /approve in the thread, a timeout) is withdrawn from every attached viewer at once (approval settle)",
+      "target": "gateway.session_pending_controls:PendingControls.register",
+      "target_file": "gateway/session_pending_controls.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
     }
   },
   "version": 2
