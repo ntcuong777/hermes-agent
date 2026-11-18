@@ -6,8 +6,10 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { runExtCommand, runExtensionsCommand } from '../../sdk/ext/command.js'
+import type { SlotDef } from '../../sdk/ext/contract.js'
 import { createHost } from '../../sdk/ext/host.js'
 import { memoryStore } from '../../sdk/ext/store.js'
+import { createFakeHost } from '../../sdk/ext/testing.js'
 
 const HELLO = `export default {
   sdkVersion: 1,
@@ -167,5 +169,39 @@ describe('/extensions and /ext', () => {
     expect(await host.runHook('x', 1)).toBe(1)
     expect(await host.refresh()).toEqual([])
     expect(await runExtCommand(host, 'hello')).toEqual(["unknown extension command 'hello' (/ext lists them)"])
+  })
+})
+
+describe('/extensions slots (drift marker)', () => {
+  const slotDef: SlotDef = { file: 'ui-tui/src/x.ts', host: [], kind: 'fn', props: 1, summary: 'x', symbols: ['x'] }
+  const declared = (id: string) => ({
+    expectUpstream: 'a'.repeat(64),
+    id,
+    props: 1,
+    reason: 'why it exists',
+    upstreamCommit: '0123456789abcdef'
+  })
+
+  it('marks a drifted mounted slot DRIFTED and leaves the clean one unmarked', async () => {
+    const h = createFakeHost({
+      slotDefs: { 't.clean': slotDef, 't.drift': slotDef },
+      upstream: { 't.clean': 'a'.repeat(64), 't.drift': 'c'.repeat(64) }
+    })
+
+    await h.activate(
+      {
+        activate: (api: any) => ['t.drift', 't.clean'].forEach(id => api.slots.register(id, () => 'ext')),
+        sdkVersion: 1
+      },
+      { slots: [declared('t.drift'), declared('t.clean')] }
+    )
+
+    const lines = await runExtensionsCommand({ idleReason: () => '', runtime: () => h.runtime } as never, 'slots')
+    const drifted = lines.find(line => line.includes('t.drift'))
+    const clean = lines.find(line => line.includes('t.clean'))
+
+    expect(drifted).toMatch(/^active DRIFTED\s+t\.drift\s/)
+    expect(clean).toMatch(/^active\s+t\.clean\s/)
+    expect(clean).not.toContain('DRIFTED')
   })
 })
