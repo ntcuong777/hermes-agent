@@ -90,6 +90,56 @@
       "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
       "upstream_release": "0.23.0"
     },
+    "lane-mirror/gates-attach": {
+      "ast_sha": "13c8bcd98f7682864cba4f432aa2dc6c9897cb0e397c460b1769398af0f65bf6",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A file dropped in the TUI on a lane-bound session is staged in the folder the session recorded, under its viewer policy (lane takeover, gates)",
+      "target": "gateway.session_ancillary:attach_file",
+      "target_file": "gateway/session_ancillary.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/gates-local-source": {
+      "ast_sha": "ffb861abf42680adee48fdac8774d3591cb628286285ce44d60a23d35ae60d35",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "The subscribed operator's own client may run a shell command in a lane-bound session: the local-source gate is open for that one call (lane takeover, gates)",
+      "target": "gateway.session_local:authorize_local_source",
+      "target_file": "gateway/session_local.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/gates-mutate": {
+      "ast_sha": "af0dac372e2eae7a53d4c9b5dcdf619253e630b407c7de473ebaa27069cc829c",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "Compress, rewind, reset and branch never commit on a session a Discord thread writes: lane_owned, the TUI relays the typed command (lane takeover, gates)",
+      "target": "gateway.session_mutations:mutate_session",
+      "target_file": "gateway/session_mutations.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/gates-shell": {
+      "ast_sha": "701cb5257dcc24eed78d3ba3c1a0495e8a686a2c9d9d5c93c23fe8c039bae0d8",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A !cmd typed in the TUI on a lane-bound session runs in the folder the session recorded, for the subscribed operator only (lane takeover, gates)",
+      "target": "gateway.session_shell:shell_exec",
+      "target_file": "gateway/session_shell.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/gates-side": {
+      "ast_sha": "bf777e9b0ab56ecc97398f94af4ca88568c05163b68b4e4f60bfbc66ea6b4c3c",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "/bg and /btw on a lane-bound session are lane_owned: the thread runs the side agent, never a second writer here (lane takeover, gates)",
+      "target": "gateway.session_tui_side:_admit",
+      "target_file": "gateway/session_tui_side.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
     "lane-mirror/repaint-goal": {
       "ast_sha": "723da958f25a2bae72f869d32486d37153905d6a42432d0aab293f00e2dc7fd2",
       "kind": "wrap",
@@ -157,6 +207,16 @@
       "reason": "A /subgoal command run in a Discord thread bound to a TUI session repaints the viewer's goal and loop bars (lane viewer repaint)",
       "target": "gateway.slash_commands_goals:GatewayGoalCommandsMixin._handle_subgoal_command",
       "target_file": "gateway/slash_commands_goals.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/rescue-policy": {
+      "ast_sha": "dddc4dee3f4e0d040767289a8cc91cd86c63aaeeaaffc49ae1910aef4d4ec7ff",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A non-LOCAL source has no launch policy except while a read of a lane-bound session is re-run under its viewer policy (lane takeover, rescue)",
+      "target": "gateway.session_policy:policy_for_source",
+      "target_file": "gateway/session_policy.py",
       "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
       "upstream_release": "0.23.0"
     }
