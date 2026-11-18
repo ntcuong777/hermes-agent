@@ -21,6 +21,7 @@ from agent.delegation_provider import (
     PROVIDER_DECLARABLE_PARAMETERS, RESERVED_TASK_PARAMETERS, ROUTE_KEYS, DelegationProvider, DelegationRouteError,
 )
 from tools.delegate_tool_scope import SCOPE_KEYS, call_refusal, clean_scope, confirm_launches, parent_route
+from tools.delegate_tool_config import _resolve_delegation_credentials
 
 logger = logging.getLogger("tools.delegate_tool")  # log-record parity with the origin module
 
@@ -250,7 +251,6 @@ def _with_inherited_fallback(route: dict[str, Any], config: Mapping[str, Any]) -
 def _resolve_route(route: dict[str, Any], parent_agent: Any, backend: str) -> TaskRoute:
     if route.get("profile"):
         return replace(_profile_route(_profile_home(route["profile"])), backend=backend)
-    from tools.delegate_tool import _resolve_delegation_credentials  # the facade is the patch seam
     creds = _resolve_delegation_credentials(route, parent_agent)
     if route.get("service_tier") not in (None, ""):
         from tools.delegate_tool_tuning import task_service_tier
@@ -362,5 +362,4 @@ def resolve_task_routes(task_list: list[dict[str, Any]], config: Mapping[str, An
 def route_for_config(routing_cfg: dict[str, Any], parent_agent: Any) -> TaskRoute:
     """The route an internal caller's explicit config block describes (``/review`` ->
     ``auxiliary.review``); bypasses the provider, as those callers own their route."""
-    from tools.delegate_tool import _resolve_delegation_credentials  # the facade is the patch seam
     return TaskRoute(_resolve_delegation_credentials(routing_cfg, parent_agent), routing_cfg)

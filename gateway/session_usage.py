@@ -227,8 +227,9 @@ def snapshot_usage(authority, ref, agent) -> dict | None:
         result = usage_stats(agent)
         result["compression_count"] = carried_compression_count(authority.sessions.get(ref.session_id), agent)
         return tui_usage(result)
-    row = authority.db.get_session(ref.session_id)
-    return tui_usage(_stored_stats(row)) if row else None
+    from gateway.session_persistence import authority_persistence
+    row = authority_persistence(authority).sessions.get(ref.session_id)
+    return tui_usage(_stored_stats(row.as_session_row())) if row else None
 
 
 async def account_usage(connection, ref, params):
@@ -267,9 +268,9 @@ async def account_usage(connection, ref, params):
 
 async def stats(connection, ref, params):
     """``session.stats {session_id}``: the same dict ``session.usage`` carries."""
-    from hermes_state_runtime import RuntimeStoreError
+    from persistence.core.errors import AuthorityRefusal
     if set(params) - {"session_id", "profile"}:
-        raise RuntimeStoreError("invalid_params")
+        raise AuthorityRefusal("invalid_params")
     await connection.authority.resolve(connection.actor, ref)
     agent = connection.authority.agent(ref)
     result = await asyncio.to_thread(usage_stats, agent)  # off the loop: a plugin's status-bar hook runs inside
