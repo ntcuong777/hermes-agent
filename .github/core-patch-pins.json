@@ -31,14 +31,14 @@
       "upstream_release": "0.23.0"
     },
     "config-seams/p27-profile-config": {
-      "ast_sha": "26cf67e356a4310de830c565b629ab9df472a0440e7454b8b0d16c493fd0da76",
+      "ast_sha": "ed67e8491b8108e3f9b71d4f96d48fbab09b9138751e864e65b1e672989796df",
       "kind": "replace",
       "plugin": "config-seams",
       "reason": "A local session's frozen profile config follows the CLI model: host.yaml laid over the profile config (local sessions run the CLI model; 7-line copy of a 4-line function)",
       "target": "gateway.session_policy:profile_config",
       "target_file": "gateway/session_policy.py",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
-      "upstream_release": "0.23.0"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
     },
     "core-fixes/checkpoint-stale-lock": {
       "ast_sha": "36df092499e414dc1b775e0b55b8e6f922ffae427e69bac085c6711cef00a887",
@@ -341,14 +341,14 @@
       "upstream_release": "0.22.5"
     },
     "lane-mirror/residue-pick-stamp": {
-      "ast_sha": "d6b32cb384994d4615c15c3952894be5ba61069e28fc03919742c0533b9d38c5",
+      "ast_sha": "d242459f01578b4454dbfffc19f2044ed3a3e0db43f37113f5bc596be71743bb",
       "kind": "replace",
       "plugin": "lane-mirror",
       "reason": "A model or effort pick on a messaging chat repaints the bound viewer's pills with the owner stamp (authority_epoch, execution_generation) its lifecycle fence needs (lane residue; 38-line copy)",
       "target": "gateway.session_messaging_picks:apply_chat_pick",
       "target_file": "gateway/session_messaging_picks.py",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
-      "upstream_release": "0.23.0"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
     },
     "lane-mirror/residue-publish-control": {
       "ast_sha": "49eed5949be6d2d24662cce72e7bd8b36ec5e2ce6d87922076df04343bc07c54",
