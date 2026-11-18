@@ -63,12 +63,30 @@ describe('checkSlot', () => {
     expect(checkSlot(decl('t.fn', { reason: '' }), DEFS, upstream).status).toBe('skipped-error')
     expect(checkSlot(decl('t.other'), DEFS, upstream).detail).toContain('no upstream hash')
 
-    const drift = checkSlot(decl('t.fn', { expectUpstream: 'b'.repeat(64) }), DEFS, upstream)
+    const drift = checkSlot(decl('t.fn', { expectUpstream: 'b'.repeat(64), onDrift: 'skip' }), DEFS, upstream)
 
     expect(drift.status).toBe('skipped-drift')
     expect(drift.detail).toContain('ui-tui/src/x.ts changed since 0123456789')
     expect(drift.detail).toContain('tui-slot-check --agent-brief t.fn')
     expect(checkSlot(decl('t.fn'), DEFS, upstream)).toEqual({ detail: '', status: 'active' })
+  })
+
+  it('on_drift apply (the default): a changed region is active and drifted, with the same detail; hard cases stay skipped', () => {
+    const upstream = { 't.fn': HASH }
+    const changed = { expectUpstream: 'b'.repeat(64) }
+
+    for (const given of [decl('t.fn', changed), decl('t.fn', { ...changed, onDrift: 'apply' })]) {
+      const verdict = checkSlot(given, DEFS, upstream)
+
+      expect(verdict).toMatchObject({ drifted: true, status: 'active' })
+      expect(verdict.detail).toContain('ui-tui/src/x.ts changed since 0123456789')
+      expect(verdict.detail).toContain('tui-slot-check --agent-brief t.fn')
+      expect(verdict.detail).toContain('mounted anyway (on_drift apply)')
+    }
+
+    expect(checkSlot(decl('zzz', changed), DEFS, upstream).status).toBe('skipped-error')
+    expect(checkSlot(decl('t.fn', { ...changed, props: 2 }), DEFS, upstream).status).toBe('skipped-incompatible')
+    expect(checkSlot(decl('t.other', changed), DEFS, upstream).detail).toContain('no upstream hash')
   })
 })
 
@@ -106,10 +124,28 @@ describe('registering slots', () => {
     expect(second.detail).toContain("slot 't.fn' is already provided by fake/one")
   })
 
-  it('a drifted slot is not mounted, is listed with the reason and notified once', async () => {
+  it('on_drift apply (the default): a drifted slot is mounted, listed as drifted, notified once, event drift-first-seen', async () => {
     const h = host({ upstream: { 't.fn': 'c'.repeat(64) } })
 
     await h.activate(ext(['t.fn']), { slots: [decl('t.fn')] })
+
+    expect(h.runtime.slotFor('t.fn')?.extId).toBe('fake/ext')
+    expect(h.runtime.slotRows()).toMatchObject([
+      { drifted: true, id: 't.fn', status: 'active', upstreamCommit: '0123456789abcdef' }
+    ])
+    expect(
+      h.logs.some(line => line.startsWith('tui slot t.fn active but drifted: upstream ui-tui/src/x.ts changed'))
+    ).toBe(true)
+    expect(h.notices.filter(n => n.text.includes('the copy runs anyway'))).toHaveLength(1)
+    expect(h.slotEvents.map(e => e.kind)).toEqual(['drift-first-seen'])
+    h.runtime.slotFailed('t.fn', 'boom') // the runtime net is unchanged: failures are counted like any slot
+    expect(h.runtime.slotRows()[0]?.failures).toBe(1)
+  })
+
+  it('on_drift skip (the old behaviour): a drifted slot is not mounted, is listed with the reason and notified once', async () => {
+    const h = host({ upstream: { 't.fn': 'c'.repeat(64) } })
+
+    await h.activate(ext(['t.fn']), { slots: [decl('t.fn', { onDrift: 'skip' })] })
 
     expect(h.runtime.slotFor('t.fn')).toBeUndefined()
     expect(h.runtime.slotRows()).toMatchObject([

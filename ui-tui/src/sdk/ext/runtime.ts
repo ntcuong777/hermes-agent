@@ -30,6 +30,8 @@ export type Handler = (payload: any) => any
 export interface SlotReg {
   decl: SlotDeclaration
   detail: string
+  /** Mounted although the upstream region changed (on_drift apply). */
+  drifted: boolean
   failures: number
   impl: unknown
   status: SlotStatus
@@ -38,6 +40,7 @@ export interface SlotReg {
 /** What `/extensions slots`, the status file and the events list. */
 export interface SlotRow {
   detail: string
+  drifted: boolean
   extId: string
   failures: number
   id: string
@@ -339,11 +342,26 @@ export const createRuntime = (options: RuntimeOptions): Runtime => {
     const verdict = off
       ? { detail: off, status: 'disabled-after-errors' as const }
       : checkSlot(decl, slotDefs, upstream)
-    const reg: SlotReg = { decl, detail: verdict.detail, failures: 0, impl, status: verdict.status }
+    const reg: SlotReg = {
+      decl,
+      detail: verdict.detail,
+      drifted: 'drifted' in verdict && verdict.drifted === true,
+      failures: 0,
+      impl,
+      status: verdict.status
+    }
 
     entry.slots.set(id, reg)
 
-    if (reg.status === 'active') {
+    if (reg.status === 'active' && reg.drifted) {
+      options.log?.(`tui slot ${id} active but drifted: ${reg.detail}`)
+
+      if (options.announce?.(`${id}:drifted:${reg.detail}`) ?? true) {
+        options.notify(`slot ${id} drifted, the copy runs anyway: ${reg.detail}`, 'warn')
+      }
+
+      emit('drift-first-seen', entry, reg)
+    } else if (reg.status === 'active') {
       options.log?.(mountLine(decl, entry.id))
       emit('applied', entry, reg)
     } else {
@@ -365,6 +383,7 @@ export const createRuntime = (options: RuntimeOptions): Runtime => {
         const reg: SlotReg = {
           decl,
           detail: 'declared in plugin.yaml but the extension did not register it',
+          drifted: false,
           failures: 0,
           impl: undefined,
           status: 'skipped-error'
@@ -447,6 +466,7 @@ export const createRuntime = (options: RuntimeOptions): Runtime => {
 
         return {
           detail: reg ? reg.detail : entry.detail,
+          drifted: reg?.drifted ?? false,
           extId: entry.id,
           failures: reg?.failures ?? 0,
           id: decl.id,

@@ -9,6 +9,8 @@ export { UPSTREAM_HASHES }
 
 export interface SlotVerdict {
   detail: string
+  /** `active` although the upstream region changed (on_drift apply): `detail` is the drift text. Absent when clean. */
+  drifted?: true
   status: SlotStatus
 }
 
@@ -53,12 +55,17 @@ export const checkSlot = (
     }
   }
 
-  return have === decl.expectUpstream
-    ? { detail: '', status: 'active' }
-    : {
-        detail: `upstream ${def.file} changed since ${decl.upstreamCommit.slice(0, 10)} (recorded ${decl.expectUpstream.slice(0, 8)}, this TUI ${have.slice(0, 8)}): re-sync the copy (tui-slot-check --agent-brief ${decl.id})`,
-        status: 'skipped-drift'
-      }
+  if (have === decl.expectUpstream) {
+    return { detail: '', status: 'active' }
+  }
+
+  const detail = `upstream ${def.file} changed since ${decl.upstreamCommit.slice(0, 10)} (recorded ${decl.expectUpstream.slice(0, 8)}, this TUI ${have.slice(0, 8)}): re-sync the copy (tui-slot-check --agent-brief ${decl.id})`
+
+  // spec 09: the region is located but changed. `apply` (default) mounts the copy anyway and reports the drift; the
+  // slot's runtime net (a throw shows the stock code, three throws switch it off) stays. `skip` is the old behaviour.
+  return decl.onDrift === 'skip'
+    ? { detail, status: 'skipped-drift' }
+    : { detail: `${detail}; the copy is mounted anyway (on_drift apply)`, drifted: true, status: 'active' }
 }
 
 /** The line logged when a slot is mounted: names the slot, the extension and the upstream commit it was written against. */

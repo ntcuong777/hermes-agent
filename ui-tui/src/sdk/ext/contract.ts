@@ -71,6 +71,8 @@ export interface SlotDeclaration {
   /** Hash of the upstream region the copy was written against (algo `sha256-lf-region`). */
   expectUpstream: string
   id: string
+  /** What a drifted region means: `apply` (default, plugin-first: the copy is mounted and the drift reported) or `skip`. */
+  onDrift?: 'apply' | 'skip'
   props: number
   reason: string
   /** The upstream commit it was copied from. */

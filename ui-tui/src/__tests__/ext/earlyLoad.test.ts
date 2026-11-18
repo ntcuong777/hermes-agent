@@ -20,7 +20,7 @@ const DEFS: Record<string, SlotDef> = {
 const SOURCE = `export default { sdkVersion: 1, activate(api) { api.slots.register('t.fn', () => 'from the extension') } }\n`
 const sha = (text: string) => createHash('sha256').update(text).digest('hex')
 
-const wire = (root: string, entry: string, source: string, granted = true) => ({
+const wire = (root: string, entry: string, source: string, granted = true, onDrift?: string) => ({
   entry,
   granted,
   id: 'p/x',
@@ -31,7 +31,16 @@ const wire = (root: string, entry: string, source: string, granted = true) => ({
   root,
   sdk: 1,
   sha256: sha(source),
-  slots: [{ expect_upstream: HASH, id: 't.fn', props: 1, reason: 'why', upstream_commit: 'abcdef0123456789' }],
+  slots: [
+    {
+      expect_upstream: HASH,
+      id: 't.fn',
+      on_drift: onDrift,
+      props: 1,
+      reason: 'why',
+      upstream_commit: 'abcdef0123456789'
+    }
+  ],
   title: 'x'
 })
 
@@ -121,8 +130,8 @@ describe('primeExtensionSlots', () => {
     expect(host.slotFor('t.fn')).toBeUndefined()
   })
 
-  it('holds notices raised early until the UI attaches, then delivers them', async () => {
-    const t = setup((root, entry) => [wire(root, entry, SOURCE)])
+  it('holds notices raised early until the UI attaches, then delivers them (on_drift skip)', async () => {
+    const t = setup((root, entry) => [wire(root, entry, SOURCE, true, 'skip')])
     const host = createHost()
 
     await primeExtensionSlots({} as never, host, 1500, () => t.deps({ upstream: { 't.fn': 'b'.repeat(64) } }))

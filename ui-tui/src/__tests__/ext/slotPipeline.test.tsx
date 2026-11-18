@@ -62,7 +62,11 @@ const props = { cols: 70, onChoice: () => {}, onTell: () => {}, req, t: DEFAULT_
  * Build the copy of the whole prompts.tsx (every top-level export of it), activate it in a fake host and return the host.
  * `edit` changes the copy (a deliberate fork change); `embedded` is the hash "this TUI build" carries for upstream.
  */
-const mounted = async (edit: (text: string) => string = text => text, embedded?: string) => {
+const mounted = async (
+  edit: (text: string) => string = text => text,
+  embedded?: string,
+  onDrift?: 'apply' | 'skip'
+) => {
   const upstreamText = readFileSync(PROMPTS, 'utf8')
   const recorded = regionHash(upstreamText, ['ApprovalPrompt'])
 
@@ -80,6 +84,7 @@ const mounted = async (edit: (text: string) => string = text => text, embedded?:
       {
         expectUpstream: recorded,
         id: 'test.approval',
+        onDrift,
         props: 1,
         reason: 'pipeline test',
         upstreamCommit: 'abcdef0123456789'
@@ -140,8 +145,18 @@ describe('slot pipeline on the real ApprovalPrompt', () => {
     expect(result.textA).not.toContain('DENY')
   })
 
-  it('upstream drift (the build embeds another hash): not mounted, the stock component renders, loudly', async () => {
+  it('upstream drift with on_drift apply (the default): the copy is mounted and renders, the drift is reported', async () => {
     const { host } = await mounted(text => text, 'f'.repeat(64))
+    const Slot = slotComponent('test.approval', ApprovalPrompt, host.host)
+
+    expect(host.runtime.slotRows()[0]).toMatchObject({ drifted: true, status: 'active' })
+    expect(host.runtime.slotFor('test.approval')?.extId).toBe('fake/ext')
+    expect(host.slotEvents.map(event => event.kind)).toEqual(['drift-first-seen'])
+    expect((await sameRender(<ApprovalPrompt {...props} />, <Slot {...props} />)).same).toBe(true)
+  })
+
+  it('upstream drift with on_drift skip (the build embeds another hash): not mounted, the stock component renders, loudly', async () => {
+    const { host } = await mounted(text => text, 'f'.repeat(64), 'skip')
     const Slot = slotComponent('test.approval', ApprovalPrompt, host.host)
     const row = host.runtime.slotRows()[0]
 

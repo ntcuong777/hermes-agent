@@ -42,6 +42,7 @@ const parseSlot = (raw: unknown): SlotDeclaration | null => {
     ? {
         expectUpstream: text(item.expect_upstream ?? item.expectUpstream),
         id: item.id,
+        onDrift: (item.on_drift ?? item.onDrift) === 'skip' ? 'skip' : 'apply',
         props: item.props,
         reason: text(item.reason),
         upstreamCommit: text(item.upstream_commit ?? item.upstreamCommit)

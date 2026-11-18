@@ -104,6 +104,7 @@ export const fileStatusSink = (
             sdk,
             slots: rows.map(row => ({
               detail: row.detail,
+              drifted: row.drifted,
               extension: row.extId,
               failures: row.failures,
               id: row.id,
