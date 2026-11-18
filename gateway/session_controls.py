@@ -813,18 +813,8 @@ class AuthorityConnection:
         if self._voice_stop_replay(ref, params) or await self._typed_voice_stop(ref, params):
             self._record_voice_stop(ref, params)
             return {'voice_stopped': True}
-        submission = self.submission(ref, params)
-        # A session whose live source is a messaging chat is that chat's one writer: an attached
-        # surface's prompt must not be queued into the messaging route, where it would run under
-        # the profile default and its reply would land in the chat (G1 F3). The refusal is what
-        # the lane-mirror plugin's forward gate answers: it relays the prompt into the thread,
-        # the same path an un-attached prompt takes; without the plugin it stands fail-closed.
-        from gateway.config import Platform
-        live = self.authority.sessions.get(ref.session_id)
-        if live is not None and live.source is not None and live.source.platform != Platform.LOCAL:
-            raise AuthorityRefusal('permission_denied')
         # The interactive WS is the one surface a restart's after-turn wait admits (#139041).
-        receipt = await self.authority.submit(self.actor, submission,
+        receipt = await self.authority.submit(self.actor, self.submission(ref, params),
                                               queue_while_restarting=self._operator is True)
         return asdict(receipt)
 

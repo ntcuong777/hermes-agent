@@ -223,39 +223,6 @@ async def test_without_the_plugin_an_unattached_prompt_is_refused_not_forwarded(
 
 
 @pytest.mark.asyncio
-async def test_without_the_plugin_an_attached_prompt_on_a_bound_session_is_refused_not_run_locally(tmp_path):
-    """G1 F3: an attached TUI's prompt on a session a Discord thread owns used to be queued and then
-    RUN through the messaging handler under the profile default, its reply landing in the chat. Core
-    refuses the submit now; the lane-mirror plugin's forward gate is what turns the refusal into the
-    relay into the thread, the same path an un-attached prompt takes. Without the plugin it stands."""
-    world = await _bound(tmp_path)
-    await _open(world)  # attach and subscribe: the submitter is the attached TUI itself
-    reply = await _call(world, 'prompt.submit', text='probe hello', submission_id='sub-att')
-    assert _reason(reply) == 'permission_denied', reply
-    assert world.lane.forwarded == []
-    assert _contents(_store(world.authority), world.sid) == []  # nothing was queued or written
-
-
-@pytest.mark.asyncio
-async def test_without_the_plugin_the_drain_never_runs_a_bound_prompt_through_messaging(tmp_path, monkeypatch):
-    """The runner-loop half of G1 F3: whatever reaches the FIFO for a session whose source is the
-    thread, `_handle_message` must not be called with it (the reply would land in the chat). The
-    submit refusal above leaves the FIFO empty; a forced drain finds nothing to run."""
-    world = await _bound(tmp_path)
-    await _open(world)
-    handled = []
-
-    async def _handle_message(event):
-        handled.append(event)
-
-    monkeypatch.setattr(world.authority.runner, '_handle_message', _handle_message, raising=False)
-    reply = await _call(world, 'prompt.submit', text='probe hello', submission_id='sub-att')
-    assert _reason(reply) == 'permission_denied', reply
-    await world.authority._drain(SimpleNamespace(session_id=world.sid))
-    assert handled == [] and world.lane.forwarded == []
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize('command', ['compress', 'status'])
 async def test_without_the_plugin_a_typed_command_is_refused_not_forwarded(tmp_path, command):
     world = await _bound(tmp_path)
