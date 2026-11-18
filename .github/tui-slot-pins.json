@@ -6,7 +6,7 @@
       "sha": "ab0fd7fa7721cb224ddf85360929f4a7bd62041f86ec3c74e78c40af7a4edc36",
       "symbols": [],
       "target_file": "ui-tui/src/components/prompts.tsx",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
     },
     "canonical.mutate": {
       "plugin": "tui-lane",
@@ -14,7 +14,7 @@
       "sha": "1bbd3a4a476d1624669a6c22f19313cd6098fdf30c0ccbf0a21adf255fed3c0d",
       "symbols": [],
       "target_file": "ui-tui/src/app/slash/canonicalSessionControls.ts",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
     },
     "completion.request": {
       "plugin": "tui-ports",
@@ -25,7 +25,7 @@
         "completionRequestForInput"
       ],
       "target_file": "ui-tui/src/hooks/useCompletion.ts",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
     },
     "gateway.event": {
       "plugin": "tui-lane",
@@ -43,7 +43,7 @@
       "sha": "d84a7128317f50a15446dc5080993b7e4680439e6641ba3e364e517807d01497",
       "symbols": [],
       "target_file": "ui-tui/src/app/useInputHandlers.ts",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
     },
     "sessionSwitcher": {
       "plugin": "tui-switcher",
@@ -51,7 +51,7 @@
       "sha": "b10a2d624a1916843822936273b6a6ae43887dae758b60f82306a34a8e6aacb2",
       "symbols": [],
       "target_file": "ui-tui/src/components/activeSessionSwitcher.tsx",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
     },
     "slash.refused": {
       "plugin": "tui-lane",
@@ -69,7 +69,7 @@
       "sha": "43a8ab0f67d86c665f6482737ed8f6268edef0b5ed9c0e96344446d561f5ba79",
       "symbols": [],
       "target_file": "ui-tui/src/components/appChrome.tsx",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
     },
     "submission": {
       "plugin": "tui-input",
@@ -77,7 +77,7 @@
       "sha": "712c2e9a61ce8b281c00986e40e0ba42856875efea6f2fa23e993d47a40012a0",
       "symbols": [],
       "target_file": "ui-tui/src/app/useSubmission.ts",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
     },
     "textInput": {
       "plugin": "tui-input",
@@ -85,7 +85,7 @@
       "sha": "9597f019001cd14b41ab5b171839992d9086b2f2f995b66d1fe94599634fcb46",
       "symbols": [],
       "target_file": "ui-tui/src/components/textInput.tsx",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
     }
   },
   "version": 1
