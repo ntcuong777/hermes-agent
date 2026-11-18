@@ -160,6 +160,56 @@
       "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
       "upstream_release": "0.23.0"
     },
+    "lane-mirror/model-adopt-rehydrate": {
+      "ast_sha": "5d40b8b2bb2eaf6fe6978f5ef24f3d486c6bd59cd5ff910244c158115cee2e14",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A local conversation a messaging lane took over adopts the route it ran as the lane chat's /model pick, once (lane model carry)",
+      "target": "gateway.run_agent_cache:GatewayAgentCacheMixin._rehydrate_session_model_override",
+      "target_file": "gateway/run_agent_cache.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/model-resolve-reasoning": {
+      "ast_sha": "c8d57e4858503f95ad069d43c534ac316d56dd8f08ba6580cae44aeb27b2493c",
+      "kind": "replace",
+      "plugin": "lane-mirror",
+      "reason": "A lane chat's effort is its own durable pick, else the level its local session ran, before the profile default (lane model carry; 20-line copy)",
+      "target": "gateway.run_config_loaders:GatewayConfigLoadersMixin._resolve_session_reasoning_config",
+      "target_file": "gateway/run_config_loaders.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/model-retire": {
+      "ast_sha": "b3cc610a23f5f8f4259f3b8bb013f0d50105f3a72ffd74dc9801481f7df4c3c9",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "Deleting a session also deletes its hand-off route record, in the same connection (lane model carry)",
+      "target": "hermes_state_local:retire_local_receipts",
+      "target_file": "hermes_state_local.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/model-route-info": {
+      "ast_sha": "9a9cbdf25392157c50e739d46a6c49d5413be072eb3e78496ed75c7dd248ef64",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A handed-off local chat shows the route it keeps in the model and effort pills (lane model carry)",
+      "target": "gateway.session_messaging_picks:messaging_route_info",
+      "target_file": "gateway/session_messaging_picks.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/model-set-reasoning": {
+      "ast_sha": "71eba9c65dafed38593bdb2a4aa059093ee456d95ba8db938c425d9e31e45afd",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A typed /reasoning or a viewer's effort pick replaces the carried level and is persisted for the lane so it survives a restart (lane model carry)",
+      "target": "gateway.run_config_loaders:GatewayConfigLoadersMixin._set_session_reasoning_override",
+      "target_file": "gateway/run_config_loaders.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
     "lane-mirror/repaint-goal": {
       "ast_sha": "723da958f25a2bae72f869d32486d37153905d6a42432d0aab293f00e2dc7fd2",
       "kind": "wrap",
