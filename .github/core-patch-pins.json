@@ -369,6 +369,36 @@
       "target_file": "gateway/session_pending_controls.py",
       "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
       "upstream_release": "0.23.0"
+    },
+    "lane-mirror/wake-retarget-enrich": {
+      "ast_sha": "2e42a94be9edb38befaf1e95847adc117d469974bb7416aed8b69cc2edcf2a1d",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A frozen completion notice is re-keyed in place (spec 08b B13)",
+      "target": "gateway.run_notifications:GatewayNotificationsMixin._enrich_async_delegation_routing",
+      "target_file": "gateway/run_notifications.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/wake-retarget-inject": {
+      "ast_sha": "698454b9892b2cc8ebb431f519b0058d2845e707281135b8e22bfeae60787240",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A frozen watch notice follows the conversation to its route (spec 08b B13)",
+      "target": "gateway.run_notifications:GatewayNotificationsMixin._inject_watch_notification",
+      "target_file": "gateway/run_notifications.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/wake-snapshot": {
+      "ast_sha": "8bfeb5e62c9b9826101a5c4be0846593993bd747dc7bb1347e51c723c2828fd6",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A route woken as its stored origin when upstream refuses not_found (spec 08b B13)",
+      "target": "gateway.session_automation:snapshot_automation",
+      "target_file": "gateway/session_automation.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
     }
   },
   "version": 2
