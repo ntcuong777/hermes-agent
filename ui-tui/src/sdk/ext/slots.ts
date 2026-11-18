@@ -59,7 +59,12 @@ export const checkSlot = (
     return { detail: '', status: 'active' }
   }
 
-  const detail = `upstream ${def.file} changed since ${decl.upstreamCommit.slice(0, 10)} (recorded ${decl.expectUpstream.slice(0, 8)}, this TUI ${have.slice(0, 8)}): re-sync the copy (tui-slot-check --agent-brief ${decl.id})`
+  const since =
+    decl.snapshotKind === 'fork-core'
+      ? `core ${def.file} changed since the fork-core snapshot of ${decl.upstreamCommit.slice(0, 10)}`
+      : `upstream ${def.file} changed since ${decl.upstreamCommit.slice(0, 10)}`
+
+  const detail = `${since} (recorded ${decl.expectUpstream.slice(0, 8)}, this TUI ${have.slice(0, 8)}): re-sync the copy (tui-slot-check --agent-brief ${decl.id})`
 
   // spec 09: the region is located but changed. `apply` (default) mounts the copy anyway and reports the drift; the
   // slot's runtime net (a throw shows the stock code, three throws switch it off) stays. `skip` is the old behaviour.
@@ -70,4 +75,4 @@ export const checkSlot = (
 
 /** The line logged when a slot is mounted: names the slot, the extension and the upstream commit it was written against. */
 export const mountLine = (decl: SlotDeclaration, extId: string): string =>
-  `tui slot ${decl.id} active: extension ${extId} written against upstream ${decl.upstreamCommit.slice(0, 10)} (${decl.reason})`
+  `tui slot ${decl.id} active: extension ${extId} written against ${decl.snapshotKind === 'fork-core' ? 'fork-core snapshot' : 'upstream'} ${decl.upstreamCommit.slice(0, 10)} (${decl.reason})`

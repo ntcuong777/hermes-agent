@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import type { SlotDeclaration, SlotDef } from '../../sdk/ext/contract.js'
+import { runExtensionsCommand } from '../../sdk/ext/command.js'
+import { parseOne } from '../../sdk/ext/loader.js'
 import { createRuntime } from '../../sdk/ext/runtime.js'
-import { checkSlot } from '../../sdk/ext/slots.js'
+import { checkSlot, mountLine } from '../../sdk/ext/slots.js'
 import { createFakeHost } from '../../sdk/ext/testing.js'
 import { memoryStore } from '../../sdk/ext/store.js'
 
@@ -87,6 +89,60 @@ describe('checkSlot', () => {
     expect(checkSlot(decl('zzz', changed), DEFS, upstream).status).toBe('skipped-error')
     expect(checkSlot(decl('t.fn', { ...changed, props: 2 }), DEFS, upstream).status).toBe('skipped-incompatible')
     expect(checkSlot(decl('t.other', changed), DEFS, upstream).detail).toContain('no upstream hash')
+  })
+})
+
+describe('snapshot kind fork-core (spec 09, option A)', () => {
+  const forkCore = { expectUpstream: 'b'.repeat(64), snapshotKind: 'fork-core' as const }
+
+  it('says fork-core snapshot instead of upstream in the drift detail and the mount line, in both modes', () => {
+    const upstream = { 't.fn': HASH }
+    const applied = checkSlot(decl('t.fn', forkCore), DEFS, upstream)
+    const skipped = checkSlot(decl('t.fn', { ...forkCore, onDrift: 'skip' }), DEFS, upstream)
+
+    expect(applied).toMatchObject({ drifted: true, status: 'active' })
+    expect(skipped.status).toBe('skipped-drift')
+
+    for (const verdict of [applied, skipped]) {
+      expect(verdict.detail).toContain('core ui-tui/src/x.ts changed since the fork-core snapshot of 0123456789')
+      expect(verdict.detail).not.toContain('upstream ui-tui')
+    }
+
+    expect(mountLine(decl('t.fn', { snapshotKind: 'fork-core' }), 'fake/ext')).toContain(
+      'written against fork-core snapshot 0123456789'
+    )
+    expect(mountLine(decl('t.fn'), 'fake/ext')).toContain('written against upstream 0123456789')
+  })
+
+  it('still drift-checks: a clean region mounts, and the row and /extensions line carry the kind', async () => {
+    const h = host()
+
+    await h.activate(ext(['t.fn']), { slots: [decl('t.fn', { snapshotKind: 'fork-core' })] })
+
+    expect(h.runtime.slotRows()).toMatchObject([{ drifted: false, snapshotKind: 'fork-core', status: 'active' }])
+    expect(await runExtensionsCommand({ idleReason: () => '', runtime: () => h.runtime } as never, 'slots')).toEqual([
+      expect.stringContaining('fork-core 0123456789')
+    ])
+  })
+
+  it('the listing parser accepts snapshot_kind (default upstream; anything but fork-core is upstream)', () => {
+    const row = (kind?: string) =>
+      parseOne({
+        entry: 'e.mjs',
+        granted: true,
+        id: 'p/x',
+        name: 'x',
+        plugin: 'p',
+        reason: '',
+        root: '/r',
+        rpc: [],
+        sdk: 1,
+        sha256: '0'.repeat(64),
+        slots: [{ id: 't.fn', props: 1, snapshot_kind: kind }],
+        title: 'x'
+      })?.slots[0]?.snapshotKind
+
+    expect([row(), row('fork-core'), row('bogus')]).toEqual(['upstream', 'fork-core', 'upstream'])
   })
 })
 

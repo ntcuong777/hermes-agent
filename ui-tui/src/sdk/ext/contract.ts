@@ -75,7 +75,9 @@ export interface SlotDeclaration {
   onDrift?: 'apply' | 'skip'
   props: number
   reason: string
-  /** The upstream commit it was copied from. */
+  /** What the recorded snapshot is: `upstream` (default) or `fork-core` (the fork's own core text; spec 09 option A). */
+  snapshotKind?: 'fork-core' | 'upstream'
+  /** The commit the snapshot is of: the upstream commit, or for `fork-core` the fork commit. */
   upstreamCommit: string
 }
 

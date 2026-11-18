@@ -111,6 +111,7 @@ export const fileStatusSink = (
               kind: row.kind,
               props: row.props,
               reason: row.reason,
+              snapshot_kind: row.snapshotKind,
               status: row.status,
               upstream_commit: row.upstreamCommit
             })),

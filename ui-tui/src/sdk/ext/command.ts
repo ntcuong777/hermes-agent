@@ -12,7 +12,7 @@ const row = (entry: Entry): string => {
 }
 
 const slotLine = (row: SlotRow): string =>
-  `${(row.drifted ? `${row.status} DRIFTED` : row.status).padEnd(22)} ${row.id}  ${row.kind}  ${row.extId}  upstream ${row.upstreamCommit.slice(0, 10) || '-'}${row.detail ? `  ${row.detail}` : ''}`
+  `${(row.drifted ? `${row.status} DRIFTED` : row.status).padEnd(22)} ${row.id}  ${row.kind}  ${row.extId}  ${row.snapshotKind === 'fork-core' ? 'fork-core' : 'upstream'} ${row.upstreamCommit.slice(0, 10) || '-'}${row.detail ? `  ${row.detail}` : ''}`
 
 const reportLines = (reports: readonly LoadReport[]): string[] =>
   reports.length

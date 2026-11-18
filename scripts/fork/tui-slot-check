@@ -13,9 +13,15 @@ it can never affect a running Hermes (the TUI makes its own runtime check agains
   tui-slot-check --agent-brief SLOT --plugins-root DIR --fork-root DIR
   tui-slot-check --record SLOT --plugin-dir DIR --fork-root DIR --reason TEXT [--upstream-commit SHA]
                  [--extension NAME] [--patch-fn FILE:EXPORT] [--copy-of FILE:SYMBOL]
+                 [--snapshot-kind upstream|fork-core] [--fork-commit REF]
   tui-slot-check --hash FILE SYMBOL...                           print the region hash (no symbols: whole file)
 
 The slot table is <fork-root>/ui-tui/src/sdk/ext/slots.json (id -> file, symbols, props). Standard library only.
+Snapshot kind (spec 09, optional lock field ``snapshot_kind``): ``upstream`` (default, absent) means the snapshot is upstream's
+region at ``upstream_ref.commit``. ``fork-core`` means the snapshot is the FORK's own core text at ``snapshot_ref.fork_commit``
+(glue the fork keeps in core next to a slot, for example the lane relay): ``upstream_ref.commit`` is then the upstream the fork
+is based on, the tool says "fork-core snapshot" instead of "upstream", and drift is still checked against the recorded
+snapshot (an upstream merge touching the glue region shows up as drift).
 The region rule is the same as ui-tui/src/sdk/ext/slotRegion.mjs; ui-tui/src/sdk/ext/slotRegion.vectors.json pins both.
 """
 
@@ -36,6 +42,24 @@ ALGO_REGION = "sha256-lf-region"
 ALGO_FILE = "sha256-lf"
 LOCK_NAME = "tui_slots.lock.json"
 REQUIRED = ("reason", "upstream_snapshot", "upstream_ref", "snapshot", "snapshot_sha256", "target_file", "symbols")
+SNAPSHOT_KINDS = ("upstream", "fork-core")
+
+
+def kind_of(entry: dict[str, Any]) -> str:
+    """``snapshot_kind`` of a lock entry or pin (absent = upstream)."""
+    return str(entry.get("snapshot_kind") or "upstream")
+
+
+def what_of(entry: dict[str, Any]) -> str:
+    """The word the outputs use for what the recorded snapshot is."""
+    return "fork-core snapshot" if kind_of(entry) == "fork-core" else "upstream"
+
+
+def snapshot_commit(entry: dict[str, Any]) -> str:
+    """The commit the snapshot text is of: the fork commit for fork-core, else ``upstream_ref.commit``."""
+    if kind_of(entry) == "fork-core":
+        return str((entry.get("snapshot_ref") or {}).get("fork_commit") or "")
+    return str((entry.get("upstream_ref") or {}).get("commit") or "")
 
 
 # ── the region rule (mirror of slotRegion.mjs) ────────────────────────────────────────────────────────────
@@ -167,6 +191,10 @@ def check_entry(root: Path, plugin_dir: Optional[Path], slot: str, entry: dict[s
     problems = [f"missing field '{f}'" for f in REQUIRED if f not in entry or entry.get(f) is None]
     if not (entry.get("upstream_ref") or {}).get("commit"):
         problems.append("missing upstream_ref.commit")
+    if kind_of(entry) not in SNAPSHOT_KINDS:
+        problems.append(f"unknown snapshot_kind {entry.get('snapshot_kind')!r} (one of {', '.join(SNAPSHOT_KINDS)})")
+    elif kind_of(entry) == "fork-core" and not snapshot_commit(entry):
+        problems.append("missing snapshot_ref.fork_commit (a fork-core snapshot names the fork commit it is of)")
     symbols = [s for s in entry.get("symbols") or [] if isinstance(s, str)]
     rel = str(entry.get("target_file") or "")
     current = read_current(root, rel) if rel else None
@@ -192,15 +220,18 @@ def check_entry(root: Path, plugin_dir: Optional[Path], slot: str, entry: dict[s
     if now == recorded:
         return {"slot": slot, "status": "ok", "problems": [], "diff": ""}
     old = (snapshot_text if snapshot_text is not None else "").rstrip("\n").split("\n")
-    commit = (entry.get("upstream_ref") or {}).get("commit", "?")[:10]
-    diff = "\n".join(difflib.unified_diff(old, now_text.split("\n"), f"upstream@{commit}", "current", lineterm=""))
-    return {"slot": slot, "status": "drift", "problems": [f"recorded {recorded[:12]}, current {now[:12]}"], "diff": diff}
+    commit = (snapshot_commit(entry) or "?")[:10]
+    label = f"fork-core@{commit}" if kind_of(entry) == "fork-core" else f"upstream@{commit}"
+    diff = "\n".join(difflib.unified_diff(old, now_text.split("\n"), label, "current", lineterm=""))
+    note = f" ({what_of(entry)} of {commit}: the core region changed since)" if kind_of(entry) == "fork-core" else ""
+    return {"slot": slot, "status": "drift", "problems": [f"recorded {recorded[:12]}, current {now[:12]}{note}"], "diff": diff,
+            "what": "fork-core snapshot" if kind_of(entry) == "fork-core" else "upstream"}
 
 
 def render_report(results: list[dict[str, Any]]) -> str:
     rows = ["# TUI slot report", "", "| slot | status | detail |", "|---|---|---|"]
     rows += [f"| {r['slot']} | {r['status']} | {'; '.join(r['problems'])} |" for r in results] or ["| (none) | | |"]
-    diffs = [f"\n## {r['slot']}: upstream changed\n\n```diff\n{r['diff']}\n```" for r in results if r["status"] == "drift" and r["diff"]]
+    diffs = [f"\n## {r['slot']}: {r.get('what', 'upstream')} changed\n\n```diff\n{r['diff']}\n```" for r in results if r["status"] == "drift" and r["diff"]]
     return "\n".join(rows + diffs) + "\n"
 
 
@@ -221,7 +252,7 @@ def verify_pins(pins_file: Path, root: Path) -> tuple[int, str]:
         except KeyError as error:
             now, problems = "", [str(error)]
         status = "ok" if not problems and now == recorded else "drift"
-        detail = problems or ([] if status == "ok" else [f"pinned {recorded[:12]}, current {now[:12]}"])
+        detail = problems or ([] if status == "ok" else [f"{what_of(pin)} pinned {recorded[:12]}, current {now[:12]}"])
         results.append({"slot": slot, "status": status, "problems": detail, "diff": ""})
     return (0 if all(r["status"] == "ok" for r in results) else 1), render_report(results)
 
@@ -235,6 +266,7 @@ def write_pins(plugins_root: Path, out: Path) -> str:
             "sha": (e.get("upstream_snapshot") or {}).get("sha"),
             "upstream_commit": (e.get("upstream_ref") or {}).get("commit"),
             "reason": e.get("reason"),
+            **({"snapshot_kind": "fork-core", "snapshot_commit": snapshot_commit(e)} if kind_of(e) == "fork-core" else {}),
         }
         for d, slot, e in entries(plugins_root)
     }
@@ -268,10 +300,16 @@ def agent_brief(slot: str, plugins_root: Path, root: Path) -> str:
             f"plugin: {entry.get('plugin', plugin_dir.name)}  extension: {entry.get('extension', '?')}",
             f"copy: {copy}  (patch_fn {entry.get('patch_fn', '?')}, copy_of {entry.get('copy_of', '?')})",
             f"upstream file: {rel}  symbols: {', '.join(symbols)}",
-            f"recorded against upstream {ref.get('commit', '?')} (release {ref.get('release', '?')})",
+            (f"snapshot: FORK-CORE snapshot of fork commit {snapshot_commit(entry)} (the fork's own core text next to the slot, "
+             f"NOT upstream's); the fork is based on upstream {ref.get('commit', '?')} (release {ref.get('release', '?')})"
+             if kind_of(entry) == "fork-core"
+             else f"recorded against upstream {ref.get('commit', '?')} (release {ref.get('release', '?')})"),
             "",
             "## Steps",
-            "1. Read the two texts below. OLD is what the copy was written against, NEW is what the checkout has now.",
+            ("1. Read the two texts below. OLD is the recorded fork-core snapshot, NEW is what the core region is now: the diff is what an "
+             "upstream merge or a fork edit changed in the glue next to the slot; re-check that the extension still matches it."
+             if kind_of(entry) == "fork-core"
+             else "1. Read the two texts below. OLD is what the copy was written against, NEW is what the checkout has now."),
             f"2. 3-way merge the copy: git merge-file -p {copy} {snap} <(NEW region as a file)  (or by hand); keep the deliberate fork changes.",
             "3. Build and test: node scripts/fork/tui-slot-build.mjs --src <copy> --out <built> --dir <upstream dir>; then the plugin's vitest",
             f"   (cd {plugin_dir}/tui && npx vitest run --config vitest.config.mjs --maxWorkers=2 <the slot's test file>).",
@@ -279,12 +317,12 @@ def agent_brief(slot: str, plugins_root: Path, root: Path) -> str:
             "5. Pins: tui-slot-check --write-pins <nix-darwin>/hermes/plugins <fork>/.github/tui-slot-pins.json; commit with --no-verify.",
             "If upstream fixed the bug the copy exists for, delete the slot instead (plugin.yaml, copy, built file, lock entry, snapshot, pin, test).",
             "",
-            "## OLD upstream region (snapshot)",
+            f"## OLD {'fork-core snapshot' if kind_of(entry) == 'fork-core' else 'upstream region'} (snapshot)",
             "```tsx",
             snap.read_text(encoding="utf-8").rstrip("\n") if snap.is_file() else "(snapshot missing)",
             "```",
             "",
-            "## NEW upstream region (the checkout now)",
+            f"## NEW {'core' if kind_of(entry) == 'fork-core' else 'upstream'} region (the checkout now)",
             "```tsx",
             now_text,
             "```",
@@ -306,16 +344,32 @@ def record(args: argparse.Namespace) -> str:
     if not (args.reason or "").strip():
         raise SystemExit("--reason is required: one line, the bug or purpose the copy exists for")
     rel, symbols = spec["file"], list(spec["symbols"])
+    kind = args.snapshot_kind or str((((load_json(plugin_dir / LOCK_NAME).get("slots") or {}).get(args.record)) or {}).get("snapshot_kind") or "upstream")
+    if kind not in SNAPSHOT_KINDS:
+        raise SystemExit(f"--snapshot-kind must be one of {', '.join(SNAPSHOT_KINDS)}")
     commit = args.upstream_commit or (read_current(root, "hermes-upstream-commit") or "").strip() or "unknown"
     if commit == "unknown":
         raise SystemExit("no upstream commit: pass --upstream-commit or stamp hermes-upstream-commit")
-    upstream = read_at(root, commit, rel)
-    if upstream is None:
-        raise SystemExit(f"{rel} does not exist at {commit}")
-    text = region_text(upstream, symbols)
-    sha = region_hash(upstream, symbols)
     current = read_current(root, rel) or ""
-    drift = "" if region_hash(current, symbols) == sha else " (WARNING: the checkout's region differs from upstream's: this slot's core file is not back to upstream yet)"
+    snapshot_ref = None
+    if kind == "fork-core":
+        # the snapshot is the fork's own core text at a fork commit (default HEAD), not upstream's
+        code, out = git(root, "rev-parse", "--verify", f"{args.fork_commit or 'HEAD'}^{{commit}}")
+        if code != 0:
+            raise SystemExit(f"--fork-commit {args.fork_commit!r} is not a commit of {root}")
+        fork_commit = out.strip()
+        source = read_at(root, fork_commit, rel)
+        if source is None:
+            raise SystemExit(f"{rel} does not exist at fork commit {fork_commit}")
+        snapshot_ref = {"fork_commit": fork_commit}
+        text, sha = region_text(source, symbols), region_hash(source, symbols)
+        drift = "" if region_hash(current, symbols) == sha else f" (WARNING: the checkout's region differs from the fork-core snapshot of {fork_commit[:10]}: uncommitted or later changes)"
+    else:
+        upstream = read_at(root, commit, rel)
+        if upstream is None:
+            raise SystemExit(f"{rel} does not exist at {commit}")
+        text, sha = region_text(upstream, symbols), region_hash(upstream, symbols)
+        drift = "" if region_hash(current, symbols) == sha else " (WARNING: the checkout's region differs from upstream's: this slot's core file is not back to upstream yet)"
     snapshot_rel = f"upstream-source/{args.record}.tsx.txt"
     snap_path = plugin_dir / snapshot_rel
     snap_path.parent.mkdir(parents=True, exist_ok=True)
@@ -342,16 +396,19 @@ def record(args: argparse.Namespace) -> str:
         "fork_head": head.strip(),
         "fork_dirty": bool(dirty.strip()),
         "upstream_ref": {"commit": commit, "release": release, "date": ""},
-        "target_file_blob_sha": blob_sha(root, f"{commit}:{rel}"),
+        "target_file_blob_sha": blob_sha(root, f"{snapshot_ref['fork_commit']}:{rel}" if snapshot_ref else f"{commit}:{rel}"),
         "fork_file_blob_sha": blob_sha(root, f"HEAD:{rel}"),
         "snapshot": snapshot_rel,
         "snapshot_sha256": hashlib.sha256(snap_path.read_bytes()).hexdigest(),
         "patch_fn": args.patch_fn or old.get("patch_fn", ""),
         "copy_of": args.copy_of or old.get("copy_of", ""),
     }
+    if snapshot_ref:  # written only for fork-core: an upstream entry keeps its schema byte for byte
+        entry.update(snapshot_kind="fork-core", snapshot_ref=snapshot_ref)
     slots = {**(lock.get("slots") or {}), args.record: entry}
     lock_path.write_text(json.dumps({"version": 2, "slots": slots}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return f"{args.record}: recorded {sha[:12]} ({rel}) against upstream {commit[:10]}; lock and snapshot written under {plugin_dir}{drift}"
+    against = f"fork-core snapshot {snapshot_ref['fork_commit'][:10]} (upstream base {commit[:10]})" if snapshot_ref else f"upstream {commit[:10]}"
+    return f"{args.record}: recorded {sha[:12]} ({rel}) against {against}; lock and snapshot written under {plugin_dir}{drift}"
 
 
 def main(argv: list[str]) -> int:
@@ -372,6 +429,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--extension", default="")
     ap.add_argument("--patch-fn", default="")
     ap.add_argument("--copy-of", default="")
+    ap.add_argument("--snapshot-kind", default="", choices=("", *SNAPSHOT_KINDS))
+    ap.add_argument("--fork-commit", default="")
     args = ap.parse_args(argv)
     root = Path(args.fork_root)
     if args.hash:

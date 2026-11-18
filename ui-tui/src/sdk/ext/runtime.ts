@@ -47,6 +47,7 @@ export interface SlotRow {
   kind: string
   props: number
   reason: string
+  snapshotKind: string
   status: SlotStatus
   upstreamCommit: string
 }
@@ -473,6 +474,7 @@ export const createRuntime = (options: RuntimeOptions): Runtime => {
           kind: slotDefs[decl.id]?.kind ?? '?',
           props: decl.props,
           reason: decl.reason,
+          snapshotKind: decl.snapshotKind ?? 'upstream',
           status: reg ? reg.status : fallbackStatus(entry),
           upstreamCommit: decl.upstreamCommit
         }

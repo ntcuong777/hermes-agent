@@ -45,6 +45,7 @@ const parseSlot = (raw: unknown): SlotDeclaration | null => {
         onDrift: (item.on_drift ?? item.onDrift) === 'skip' ? 'skip' : 'apply',
         props: item.props,
         reason: text(item.reason),
+        snapshotKind: (item.snapshot_kind ?? item.snapshotKind) === 'fork-core' ? 'fork-core' : 'upstream',
         upstreamCommit: text(item.upstream_commit ?? item.upstreamCommit)
       }
     : null
