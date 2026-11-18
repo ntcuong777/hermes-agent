@@ -42,7 +42,7 @@ const parseSlot = (raw: unknown): SlotDeclaration | null => {
     ? {
         expectUpstream: text(item.expect_upstream ?? item.expectUpstream),
         id: item.id,
-        onDrift: (item.on_drift ?? item.onDrift) === 'skip' ? 'skip' : 'apply',
+        onDrift: (item.on_drift ?? item.onDrift) === 'apply' ? 'apply' : 'skip',
         props: item.props,
         reason: text(item.reason),
         snapshotKind: (item.snapshot_kind ?? item.snapshotKind) === 'fork-core' ? 'fork-core' : 'upstream',

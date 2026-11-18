@@ -144,6 +144,22 @@ describe('primeExtensionSlots', () => {
     expect(host.slotFor('t.fn')).toBeUndefined()
   })
 
+  it('a cached row with no on_drift key (an old listing) is treated as skip: a drifted slot is not mounted', async () => {
+    const t = setup((root, entry) => {
+      const row = wire(root, entry, SOURCE)
+
+      return [{ ...row, slots: row.slots.map(({ on_drift: _absent, ...slot }) => slot) }]
+    })
+    const host = createHost()
+
+    await primeExtensionSlots({} as never, host, 1500, () => t.deps({ upstream: { 't.fn': 'b'.repeat(64) } }))
+    host.attach(t.deps({ upstream: { 't.fn': 'b'.repeat(64) } }))
+
+    expect(t.live).toHaveLength(1)
+    expect(t.live[0]).toContain('slot t.fn skipped-drift')
+    expect(host.slotFor('t.fn')).toBeUndefined()
+  })
+
   it('the second attach keeps the mounted slots and the live listing then refreshes and caches', async () => {
     const t = setup((root, entry) => [wire(root, entry, SOURCE)])
     const host = createHost()
