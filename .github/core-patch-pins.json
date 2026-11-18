@@ -1,5 +1,25 @@
 {
   "pins": {
+    "config-seams/p27-load-config": {
+      "ast_sha": "203c096032b996c4f69b75f9f10a4dbf6cd1d38cfb99e442c32f6d1500357919",
+      "kind": "wrap",
+      "plugin": "config-seams",
+      "reason": "A new TUI or Desktop session created through the gateway launches from host.yaml laid over the shared config, never from the phone's gateway.model (local sessions run the CLI model)",
+      "target": "gateway.session_local:load_profile_config",
+      "target_file": "gateway/session_local.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "config-seams/p27-profile-config": {
+      "ast_sha": "26cf67e356a4310de830c565b629ab9df472a0440e7454b8b0d16c493fd0da76",
+      "kind": "replace",
+      "plugin": "config-seams",
+      "reason": "A local session's frozen profile config follows the CLI model: host.yaml laid over the profile config (local sessions run the CLI model; 7-line copy of a 4-line function)",
+      "target": "gateway.session_policy:profile_config",
+      "target_file": "gateway/session_policy.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
     "core-fixes/checkpoint-stale-lock": {
       "ast_sha": "36df092499e414dc1b775e0b55b8e6f922ffae427e69bac085c6711cef00a887",
       "kind": "wrap",
