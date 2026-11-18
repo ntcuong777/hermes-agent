@@ -808,6 +808,20 @@ def record_error(plugin_id: str, name: Any, target: Any, kind: Any, message: str
     return key
 
 
+def report_runtime_failure(plugin_id: str, name: Any, exc: BaseException) -> None:
+    """Count an exception that a wrap of ``plugin_id:name`` handled itself (it answered the call from its own
+    handler instead of letting ``exc`` escape). It goes into the patch's safety-shell failure streak: after
+    ``max_failures`` in a row the patch is switched off, and a critical patch with a streak shows in
+    ``critical_problems()`` and the notice. An unknown patch is ignored. Never blocks (no registry lock), never raises."""
+    try:
+        record = _RECORDS.get(f"{plugin_id}:{name}")  # an atomic read: never waits on the registry lock
+        link = _LINKS.get(record.spec.seq) if record is not None else None
+        if link is not None and link.guard is not None:
+            shell.count_handled(link.guard, exc, "the wrapper's own handler")
+    except Exception:  # health: allow BLE001 -- the counter is best effort; the caller keeps its own answer
+        logger.debug("core patches: could not count a runtime failure of %s:%s", plugin_id, name, exc_info=True)
+
+
 # ── refusal ─────────────────────────────────────────────────────────────────────────────────
 
 
@@ -816,9 +830,24 @@ def _refused(current: Iterable[PatchRecord]) -> list[str]:
             for r in current if r.critical and r.status in REFUSE_STATUSES]
 
 
+def _streak(key: str, stats: dict) -> int:
+    return stats.get(key, (0, 0, ""))[1]
+
+
 def _loud(current: Iterable[PatchRecord]) -> list[str]:
-    return [f"{r.spec.key} on {r.spec.target} is {r.status} ({r.detail})"
-            for r in current if r.critical and r.status in LOUD_STATUSES]
+    """A critical patch that is not installed, or that is installed with a runtime failure streak (a wrap that
+    handled its own failures, see report_runtime_failure): one line each."""
+    stats = failure_stats()
+    lines = []
+    for r in current:
+        if not r.critical:
+            continue
+        if r.status in LOUD_STATUSES:
+            lines.append(f"{r.spec.key} on {r.spec.target} is {r.status} ({r.detail})")
+        elif _streak(r.spec.key, stats):
+            lines.append(f"{r.spec.key} on {r.spec.target} is {r.status} with {_streak(r.spec.key, stats)} runtime "
+                         f"failure(s) in a row (last: {stats[r.spec.key][2]})")
+    return lines
 
 
 def _known_managers() -> list[Any]:
@@ -884,15 +913,21 @@ def _exception_type_of(last_error: str) -> str:
     return head if re.fullmatch(r"[A-Za-z_][\w.]*", head) else ""
 
 
+def _notice_line(r: PatchRecord, stats: dict) -> str:
+    """Key, status (or the runtime failure streak) and the exception type name of the last failure, nothing else."""
+    kind = _exception_type_of(stats.get(r.spec.key, (0, 0, ""))[2])
+    status = f"{r.status}" if r.status in LOUD_STATUSES else f"{r.status} with runtime failures in a row"
+    return f"{r.spec.key} is {status}" + (f" ({kind})" if kind else "")
+
+
 def critical_notice_lines(current: Optional[Iterable[PatchRecord]] = None) -> list[str]:
     """The home-channel form of ``critical_problems``: patch key, status and exception type name only (never a
     detail, a path or an exception message). Never raises."""
     try:
         stats = failure_stats()
         records_ = records() if current is None else current
-        refused = [f"{r.spec.key} is {r.status}" + (f" ({kind})" if (kind := _exception_type_of(
-                       stats.get(r.spec.key, (0, 0, ""))[2])) else "")
-                   for r in records_ if r.critical and r.status in LOUD_STATUSES]
+        refused = [_notice_line(r, stats) for r in records_
+                   if r.critical and (r.status in LOUD_STATUSES or _streak(r.spec.key, stats))]
         missing = [f"{plugin_key}:{n} is declared critical but not registered"
                    for plugin_key, n, _why in _missing_entries()]
         return refused + missing
