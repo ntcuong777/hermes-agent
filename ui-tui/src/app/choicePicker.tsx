@@ -65,7 +65,7 @@ function ChoicePicker({ state, rows }: { state: ChoicePickerState; rows: number 
   return (
     <Box borderStyle="round" flexDirection="column">
       <Text bold>
-        {state.title} — ↑↓ Enter · 1–9{dropKey} · Esc cancel
+        {state.title}: ↑↓ Enter · 1–9{dropKey} · Esc cancel
       </Text>
       {state.choices.slice(start, start + visible).map((choice, offset) => (
         <Text inverse={start + offset === state.selected} key={start + offset} wrap="truncate-end">

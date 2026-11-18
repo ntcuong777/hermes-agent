@@ -1142,7 +1142,7 @@ def _human_decision(spec: _GateSpec, *, command: str, description: str,
                 data["idle"] = True
             if mcp_context:
                 # Same display boundary as the MCP trust gate: the wire contract's `mcp` card
-                # (tui_gateway/contracts/server_requests.py ApprovalMcpContext) — surfaces render
+                # (tui_gateway/contracts/server_requests.py ApprovalMcpContext): surfaces render
                 # server/tool/description/redacted arguments instead of command chrome.
                 data["mcp"] = mcp_context
             decision = _await_gateway_decision(session_key, notify_cb, data, surface="gateway", identity=command)
