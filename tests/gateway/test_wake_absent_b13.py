@@ -45,21 +45,41 @@ async def _wired_runner(tmp_path, monkeypatch, instance_id):
     from gateway.run import GatewayRunner
     from gateway.session_authority import SessionAuthority, initialize_session_authority
     from gateway.session_ingress_context import register_transport_home
-    from hermes_state import AsyncSessionDB, SessionDB
     from plugins.platforms.discord.adapter import DiscordAdapter
 
     monkeypatch.setattr(SessionAuthority, '_schedule', lambda self, ref: None)
     monkeypatch.setenv('DISCORD_ALLOWED_USERS', '42')
     runner = GatewayRunner(GatewayConfig(sessions_dir=tmp_path / 'sessions'))
-    db = SessionDB(tmp_path / 'state.db')
-    runner.session_store._db = db
-    runner._session_db = AsyncSessionDB(db)
-    authority = await initialize_session_authority(runner, profile_id='default', instance_id=instance_id, db=db)
+    authority = await initialize_session_authority(runner, profile_id='default', instance_id=instance_id)
+    authority.db = _DbView(authority.persistence)
     adapter = DiscordAdapter(PlatformConfig(enabled=True, token='fixture-token', typing_indicator=False))
     runner.adapters = {Platform.DISCORD: adapter}
     runner._wire_adapter_handlers(adapter)
     register_transport_home(runner, None, tmp_path)
     return runner, adapter, authority
+
+
+class _DbView:
+    """``authority.db`` for the assertions: the session row answered by the persistence handle."""
+
+    def __init__(self, persistence):
+        self.persistence = persistence
+
+    def get_session(self, session_id):
+        entry = self.persistence.sessions.summary(session_id)
+        return {} if entry is None else entry.as_list_row()
+
+
+def claim_session_input(view, *, epoch, session_id):
+    """The claim of *session_id*'s next input as a dict (``admission_id``, ``generation``, ``payload``)."""
+    claimed = view.persistence.admissions.claim(epoch=epoch, session_id=session_id)
+    return {'admission_id': claimed.admission_id, 'generation': claimed.generation, 'payload': dict(claimed.payload)}
+
+
+def list_session_admissions(view, *, session_id, pending_only=True):
+    """The admission rows of *session_id* as dicts (``admission_id``, ``status``, ``payload``)."""
+    return [{'admission_id': r.admission_id, 'status': str(r.status), 'payload': dict(r.payload)}
+            for r in view.persistence.admissions.list(session_id=session_id, pending_only=pending_only)]
 
 
 _LANE = '1571457'
@@ -70,7 +90,6 @@ async def _mirrored_session(tmp_path, monkeypatch):
     session mirror binds it. Returns (runner, adapter, authority, sid, old_local_key, lane_key)."""
     from gateway.session_contract import SessionActor, SessionRef, Submission
     from gateway.session_local import create_local_session
-    from hermes_state_runtime import claim_session_input, settle_session_input
 
     runner, adapter, authority = await _wired_runner(tmp_path, monkeypatch, 'mirrored')
     owner = SessionActor('owner', 'default', frozenset({'session:create', 'session:read', 'session:submit'}), 'socket')
@@ -83,8 +102,8 @@ async def _mirrored_session(tmp_path, monkeypatch):
                                                 {'text': '[session mirror] it looks like they are done'}, 'queue'))
     claimed = claim_session_input(authority.db, epoch=authority.epoch, session_id=sid)
     assert 'local_operator_v1' in claimed['payload']
-    settle_session_input(authority.db, epoch=authority.epoch, admission_id=claimed['admission_id'],
-                         generation=claimed['generation'], outcome='completed')
+    authority.persistence.admissions.settle(epoch=authority.epoch, admission_id=claimed['admission_id'],
+                                            generation=claimed['generation'], outcome='completed')
     lane = adapter.build_source(chat_id=_LANE, chat_type='thread', thread_id=_LANE, user_id='42',
                                 user_name='session mirror')
     from gateway.run_startup import GatewayStartupMixin
@@ -118,7 +137,6 @@ def runtime_home(tmp_path, monkeypatch):
 async def test_without_the_plugin_a_notice_frozen_on_the_old_local_route_stays_there_and_upstream_refuses_it(tmp_path, monkeypatch):
     """The representative of the moved-session cases: the plugin's re-key is absent, so the completion keeps the
     old local key, nothing is delivered to the moved conversation, and the notice stays pending (upstream's refusal)."""
-    from hermes_state_runtime import list_session_admissions
     from tools import async_delegation as delegation
 
     runner, _adapter, authority, sid, old_local_key, _lane_key = await _mirrored_session(tmp_path, monkeypatch)
