@@ -27,6 +27,14 @@
       "target_file": "ui-tui/src/hooks/useCompletion.ts",
       "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
     },
+    "gateway.event": {
+      "plugin": "tui-lane",
+      "reason": "a command that ran on the session's bound thread echoes its output into the local transcript",
+      "sha": "3907c1b1c415cd15bd2711fce5d7e1c8099d365e7ecad031ac95a288ed94d979",
+      "symbols": [],
+      "target_file": "ui-tui/src/app/createGatewayEventHandler.ts",
+      "upstream_commit": "c0c7be2df11"
+    },
     "inputHandlers": {
       "plugin": "tui-input",
       "reason": "Ctrl+C order with the compress hold, double-Esc doc, Ctrl+G raw on macOS, sessions Esc guard and completion apply at the caret end",
@@ -42,6 +50,14 @@
       "symbols": [],
       "target_file": "ui-tui/src/components/activeSessionSwitcher.tsx",
       "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
+    },
+    "slash.refused": {
+      "plugin": "tui-lane",
+      "reason": "a lane_owned refusal is resent as typed through slash.exec, which relays it to the session's bound thread",
+      "sha": "09829b8051166b35e159d44ed0c0df7f742fc46952abd133f841857f7bebb03c",
+      "symbols": [],
+      "target_file": "ui-tui/src/app/createSlashHandler.ts",
+      "upstream_commit": "c0c7be2df11"
     },
     "statusRule": {
       "plugin": "tui-chrome",
