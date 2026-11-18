@@ -17,12 +17,13 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 
-# git blob ids of the four files at upstream e96221fa73d (the B13 restore). Equal blobs mean equal bytes.
+# git blob ids of the four files at upstream main 67e4d22d83b (the sync that moved the upstream base; they were
+# at e96221fa73d before it). Equal blobs mean equal bytes.
 UPSTREAM_BLOBS = {
-    "gateway/session_automation.py": "3750387dbe15c727abdfcb878ed00edefc2b2900",
-    "gateway/session_ingress_context.py": "7b5caf9bd6a0a31ce028d4500718a0d1658e0704",
-    "gateway/session_local_recovery.py": "9b00f41786c47fef23500a9eca70f60c667ad9d4",
-    "gateway/run_notifications.py": "74806118bbb03cc63c4205a460f6901512dd3be3",
+    "gateway/session_automation.py": "ae9e68d71f02188609fbba1eccdc5af11827f3ef",
+    "gateway/session_ingress_context.py": "6910153a1a2693cdc0cb992e3ac0cdc7abafba7b",
+    "gateway/session_local_recovery.py": "ca8a206b10e31fd6422e8ea91110515ceef42c0f",
+    "gateway/run_notifications.py": "bd274aea9319ef9c811e8f47963ade2245f6c946",
 }
 
 

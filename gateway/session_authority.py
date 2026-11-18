@@ -1106,7 +1106,7 @@ class SessionAuthority:
         live = self.sessions[session_id]
         with live.event_stream.lock:
             if not live.subscribers:
-                raise RuntimeStoreError("no_viewer")
+                raise AuthorityRefusal("no_viewer")
             generation = self._handle(SessionRef(self.profile_id, session_id)).execution_generation
             live.controls.register(session_id, route, generation, {**data, "idle": True}, timeout_s=timeout_s)
 

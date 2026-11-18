@@ -12,7 +12,7 @@ from gateway.session_authority import SessionAuthority
 from gateway.session_events import SessionEvents
 from gateway.session_idle_approval import IdleApprovalNotifier
 from gateway.session_pending_controls import PendingControls
-from hermes_state_runtime import RuntimeStoreError
+from persistence.core.errors import AuthorityRefusal
 
 SID = "sess"
 
@@ -46,7 +46,7 @@ def test_an_idle_ask_is_stamped_with_the_latest_generation_and_flagged_idle(monk
 
 def test_an_idle_ask_with_nobody_attached_is_refused_not_parked():
     stub, live = _authority(viewers=False)
-    with pytest.raises(RuntimeStoreError) as refused:
+    with pytest.raises(AuthorityRefusal) as refused:
         stub.register_idle_approval(SID, "route", {"request_id": "r1"})
     assert refused.value.reason == "no_viewer"
     assert live.controls.pending == {}
@@ -79,7 +79,7 @@ def test_an_idle_ask_is_answered_without_a_running_claim_but_an_ordinary_one_is_
         return asyncio.run(SessionAuthority.respond(stub, actor, ref, 7, prompt_id, {"choice": "once"}))
 
     assert respond("r1")["status"] == "resolved"  # idle: no running claim needed
-    with pytest.raises(RuntimeStoreError) as refused:
+    with pytest.raises(AuthorityRefusal) as refused:
         respond("o1")  # ordinary: the running-claim fence still applies
     assert refused.value.reason == "stale_generation"
     assert resolved == ["r1"]

@@ -26,8 +26,13 @@ def test_session_list_has_one_rows_seam_call_and_no_cwd_code():
 
 
 def test_no_core_file_keeps_the_cwd_listing_or_the_discord_cwd_slash():
-    assert "workspace_for_dir" not in _text("hermes_state_sessions.py")
-    assert "rows_in_workspace" not in _text("hermes_state_sessions.py")
+    # The listing module (hermes_state_sessions.py) left core with the old store: no core module may define the
+    # cwd listing helpers any more (a comment that names them is fine).
+    core = [*ROOT.glob("*.py"), *(path for name in ("gateway", "persistence", "tui_gateway", "hermes_cli", "tools")
+                                  for path in (ROOT / name).rglob("*.py"))]
+    for path in core:
+        text = path.read_text(encoding="utf-8")
+        assert "def workspace_for_dir" not in text and "def rows_in_workspace" not in text, path.name
     adapter = _text("plugins/platforms/discord/adapter.py")
     for name in ("_register_cwd_slash", "_build_cwd_choices", "_TEMPLATE_NONE_REGISTRARS", "workspace_candidates"):
         assert name not in adapter, name

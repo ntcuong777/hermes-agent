@@ -86,7 +86,7 @@ class PendingControls:
         with self.events.lock:
             held = self.pending.get(prompt_id)
             if prompt_id in self.idle and held is not None and held[1]['execution_generation'] != generation:
-                raise RuntimeStoreError('stale_generation')  # an idle card answers only at its own stamp
+                raise AuthorityRefusal('stale_generation')  # an idle card answers only at its own stamp
             self.snapshot(session_id, generation)
             entry = self.pending.get(prompt_id)
             if entry is None:

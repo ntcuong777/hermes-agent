@@ -1,7 +1,7 @@
 """The session-list seam kinds of spec 08b stage B11 (`list_params`, `list_rows`, `list_row`): fail-open with no plugin."""
 
 from gateway import session_lane_seam as seam
-from hermes_state_runtime import RuntimeStoreError
+from persistence.core.errors import AuthorityRefusal
 
 
 def test_the_three_kinds_are_declared():
@@ -33,6 +33,6 @@ def test_a_plugin_false_drops_a_live_row(monkeypatch):
 def test_a_refusal_returned_by_a_plugin_is_raised_not_swallowed():
     import pytest
 
-    with pytest.raises(RuntimeStoreError) as info:
-        seam._first([RuntimeStoreError("invalid_params")])
+    with pytest.raises(AuthorityRefusal) as info:
+        seam._first([AuthorityRefusal("invalid_params")])
     assert info.value.reason == "invalid_params"

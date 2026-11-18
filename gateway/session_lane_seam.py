@@ -17,13 +17,13 @@ not block; each callback may be sync or ``async def``):
   stack in registration order (the last registered is outermost).
 * ``route_lane_operation(kind, **ctx)``: a local surface touched a session a lane may own. ``kind`` names the
   operation (the ``KINDS`` below) and ``ctx`` its inputs. A callback returns ``None`` (no opinion), a value of
-  the kind's result type, or a ``RuntimeStoreError`` INSTANCE to refuse (never raise: the plugin manager
+  the kind's result type, or an ``AuthorityRefusal`` INSTANCE to refuse (never raise: the plugin manager
   isolates a raising callback, which would turn a deliberate refusal into silence).
 
 FAIL-OPEN, everywhere: with no plugin, a missing hook, a callback that raises, a malformed result or a bug
 in this module, every dispatcher returns what upstream's code did before the seam existed (its ``default``).
 Nothing here may stop or break a call; a refusal reaches the caller only when a plugin returned a
-``RuntimeStoreError`` on purpose.
+``AuthorityRefusal`` on purpose.
 
 Kinds are not all about lanes: ``session_opened`` (and, in stage B11, ``list_params`` and ``list_rows``) serve the
 ``chat-workspaces`` plugin; it registers its own ``route_lane_operation`` callback and answers only its kinds.
@@ -50,17 +50,17 @@ KINDS = {
     "submit": "dict: a receipt-shaped result for a prompt.submit the lane took (ctx: connection, ref, params, error)",
     "command_refused": "dict: the result of a command the lane ran in place of upstream's refusal "
                        "(ctx: connection, ref, name, arg, verdict, live)",
-    "nonlocal_command": "dict: the result; RUN_HERE: run it here; RuntimeStoreError: refuse "
+    "nonlocal_command": "dict: the result; RUN_HERE: run it here; AuthorityRefusal: refuse "
                         "(ctx: connection, ref, name, arg, runner_command, capability, verdict)",
     "attach_info": "dict: extra fields for the attach reply (ctx: authority, ref)",
     "complete_info": "None (the callback edits ctx['info'] in place; ctx: authority, live, info, session_id, policy)",
     "handoff_route": "None (a sync callback inside the lane-move DB write; ctx: conn, target, policy)",
-    "rollback_policy": "a launch policy for a checkpoint read; RuntimeStoreError: refuse "
+    "rollback_policy": "a launch policy for a checkpoint read; AuthorityRefusal: refuse "
                        "(ctx: authority, ref, op: 'list', 'diff', 'restore', ...)",
     "mutation_guard": "RUN_HERE: this session is not a lane's, the write may run; anything else (None included): "
                       "the core refuses (ctx: authority, ref, operation)",
     "session_opened": "None (async; the callback binds a new session's workspace itself; ctx: runner, event, session_key, is_new)",
-    "list_params": "dict: the session.list params with a cwd translated to workspace (ctx: params); RuntimeStoreError: refuse",
+    "list_params": "dict: the session.list params with a cwd translated to workspace (ctx: params); AuthorityRefusal: refuse",
     "list_rows": "list: the rows session.list keeps (ctx: rows, params)",
     "list_row": "bool: False drops a live-listing row (ctx: row, workspace)",
 }
@@ -130,15 +130,25 @@ class _Once:
         return value
 
 
+# The state authority's refusal class. The new core names it AuthorityRefusal (persistence.core.errors); the stable
+# old core has no persistence package and names it RuntimeStoreError (hermes_state_runtime), so the seam keeps
+# importing on either and a plugin raising it on either is honoured as a deliberate refusal.
+try:
+    from persistence.core.errors import AuthorityRefusal
+except ImportError:  # the stable old core
+    from hermes_state_runtime import RuntimeStoreError as AuthorityRefusal
+_REFUSAL_NAMES = frozenset({"AuthorityRefusal", "RuntimeStoreError"})
+
+
 def _is_refusal(exc: BaseException) -> bool:
     """A deliberate refusal: the state authority's own error type. Anything else escaping a wrapper is a bug."""
-    return type(exc).__name__ == "RuntimeStoreError"
+    return type(exc).__name__ in _REFUSAL_NAMES
 
 
 async def guard(connection: Any, ref: Any, method: Any, call: Callable[[], Awaitable[Any]]) -> Any:
     """``await call()``, through the wrappers plugins returned for this RPC (see ``wrap_session_call``).
 
-    A wrapper that raises ``RuntimeStoreError`` refuses on purpose and is honoured. Any other exception out
+    A wrapper that raises ``AuthorityRefusal`` refuses on purpose and is honoured. Any other exception out
     of the wrapper chain is a plugin bug: if ``call`` had not started it runs plain; if it had, the caller gets
     the outcome of its first run, exactly what it would have seen without the plugin."""
     if not _wanted(HOOK_WRAP):
@@ -177,7 +187,7 @@ async def guard(connection: Any, ref: Any, method: Any, call: Callable[[], Await
 async def route(kind: str, **ctx: Any) -> Any:
     """The first non-None answer of the ``route_lane_operation`` callbacks for *kind*, or None.
 
-    A ``RuntimeStoreError`` instance in the results is raised (a deliberate refusal); results of another
+    An ``AuthorityRefusal`` instance in the results is raised (a deliberate refusal); results of another
     exception type are ignored. Callback exceptions never get here: the plugin manager reports and skips them."""
     if not _wanted(HOOK_ROUTE):
         return None
@@ -246,9 +256,7 @@ async def nonlocal_command(connection: Any, ref: Any, name: str, arg: str, runne
         return found
     if found == RUN_HERE:
         return None
-    from hermes_state_runtime import RuntimeStoreError
-
-    raise RuntimeStoreError("permission_denied")  # no answer, or a malformed one: upstream's refusal
+    raise AuthorityRefusal("permission_denied")  # no answer, or a malformed one: upstream's refusal
 
 
 async def attach_info(authority: Any, ref: Any) -> dict:
@@ -271,11 +279,10 @@ def record_handoff(conn: Any, target: str, policy: Any) -> None:
 async def rollback_policy(authority: Any, ref: Any, op: str) -> Any:
     """The launch policy a checkpoint operation runs under on a policy-less session. Upstream refuses with
     ``permission_denied``: so does this unless a plugin supplies a policy (or its own refusal)."""
-    from hermes_state_runtime import RuntimeStoreError
 
     found = await route("rollback_policy", authority=authority, ref=ref, op=op)
     if found is None:
-        raise RuntimeStoreError("permission_denied")
+        raise AuthorityRefusal("permission_denied")
     return found
 
 
@@ -283,20 +290,19 @@ def _messaging_without_policy(authority: Any, ref: Any) -> bool:
     """True when the session's source is not LOCAL and it has no frozen local policy row: the state the store refuses
     compress, reset and branch on with ``runtime_coordination_required``. A history mount (no source) is not one."""
     from gateway.config import Platform
-    from hermes_state_local import POLICY_PREFIX
+    from gateway.session_persistence import authority_persistence
 
+    store = authority_persistence(authority)
     live = authority.sessions.get(ref.session_id)
     if live is not None:
         source = live.source
         if source is None or source.platform == Platform.LOCAL:
             return False
     else:
-        row = authority.db.get_session(ref.session_id)
-        if row is None or str(row.get("chat_id") or "").startswith("local-"):
+        row = store.sessions.get(ref.session_id)
+        if row is None or str(row.chat_id or "").startswith("local-"):
             return False
-    with authority.db._read_ctx() as conn:
-        saved = conn.execute("SELECT 1 FROM state_meta WHERE key=?", (POLICY_PREFIX + ref.session_id,)).fetchone()
-    return saved is None
+    return not store.bindings.binding_marks(ref.session_id).policy
 
 
 async def mutation_guard(authority: Any, actor: Any, ref: Any, params: Any) -> None:
@@ -308,8 +314,7 @@ async def mutation_guard(authority: Any, actor: Any, ref: Any, params: Any) -> N
     ``runtime_coordination_required``) and let rewind run; this closes rewind and makes the refusal the same for all four
     whether or not a plugin is loaded, healthy, skipped by drift or faulted. A plugin that cannot answer (no plugin, a
     skipped wrap, a raising callback, an unexpected answer) leaves the refusal in place. A deliberate refusal from a plugin
-    (a ``RuntimeStoreError`` instance) is raised as given. Returns None when the write may proceed."""
-    from hermes_state_runtime import RuntimeStoreError
+    (an ``AuthorityRefusal`` instance) is raised as given. Returns None when the write may proceed."""
 
     operation = params.get("operation") if isinstance(params, dict) else None
     if operation not in LANE_MUTATIONS:
@@ -317,13 +322,13 @@ async def mutation_guard(authority: Any, actor: Any, ref: Any, params: Any) -> N
     try:
         candidate = _messaging_without_policy(authority, ref)
     except Exception:  # health: allow BLE001 -- fail closed: a session that cannot be classified is refused
-        raise RuntimeStoreError("permission_denied") from None
+        raise AuthorityRefusal("permission_denied") from None
     if not candidate:
         return None
     found = await route("mutation_guard", authority=authority, ref=ref, operation=operation)
     if found == RUN_HERE:
         return None
-    raise RuntimeStoreError("permission_denied")
+    raise AuthorityRefusal("permission_denied")
 
 
 def list_params(params: Any) -> Any:

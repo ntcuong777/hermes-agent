@@ -1,7 +1,7 @@
 """A cron job deleted between the tick and the submit fails with main's refusal text.
 
 The in-process owner refuses the submit with the store's ``not_found`` refusal, ``recover`` finds no
-admission, and the run's stored failure names the refusal as ``RuntimeStoreError``, as on main, not as
+admission, and the run's stored failure names the refusal as ``AuthorityRefusal``, as on main, not as
 the interface's ``AuthorityRefusal`` class. Real SessionAuthority over SQLite.
 """
 import asyncio

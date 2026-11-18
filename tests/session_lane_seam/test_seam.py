@@ -2,7 +2,7 @@
 
 Two layers: the dispatchers against a stubbed plugin API (every failure mode), and the three hooks through
 a real ``PluginManager`` (registered names, argument narrowing, async callbacks, a refusal carried as a
-returned ``RuntimeStoreError``).
+returned ``AuthorityRefusal``).
 """
 
 import asyncio
@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from gateway import session_lane_seam as seam
-from hermes_state_runtime import RuntimeStoreError
+from persistence.core.errors import AuthorityRefusal
 
 
 @pytest.fixture(autouse=True)
@@ -54,17 +54,17 @@ async def test_with_no_plugin_every_dispatcher_returns_upstreams_answer(monkeypa
     _stub(monkeypatch, wanted=False)
     seam.observe_check("s", "session:read")
     assert await seam.guard(object(), object(), "m", _call_value) == "upstream"
-    assert await seam.submit_refused(object(), object(), {}, RuntimeStoreError("permission_denied")) is None
+    assert await seam.submit_refused(object(), object(), {}, AuthorityRefusal("permission_denied")) is None
     assert await seam.command_refused(object(), object(), "n", "", "refused", object()) is None
     assert await seam.attach_info(object(), object()) == {}
     info = {"model": None}
     seam.complete_info(object(), object(), info, "s", None)
     seam.record_handoff(object(), "target", {})
     assert info == {"model": None}
-    with pytest.raises(RuntimeStoreError) as refused:
+    with pytest.raises(AuthorityRefusal) as refused:
         await seam.nonlocal_command(object(), object(), "n", "", None, "session:read", "read")
     assert refused.value.reason == "permission_denied"
-    with pytest.raises(RuntimeStoreError) as refused:
+    with pytest.raises(AuthorityRefusal) as refused:
         await seam.rollback_policy(object(), object(), "list")
     assert refused.value.reason == "permission_denied"
 
@@ -87,10 +87,10 @@ async def test_a_broken_plugin_api_is_upstreams_behaviour(monkeypatch):
 
     seam.observe_check("s", "session:read")
     assert await seam.guard(object(), object(), "m", _call_value) == "upstream"
-    assert await seam.submit_refused(object(), object(), {}, RuntimeStoreError("x")) is None
+    assert await seam.submit_refused(object(), object(), {}, AuthorityRefusal("x")) is None
     assert await seam.attach_info(object(), object()) == {}
     seam.complete_info(object(), object(), {}, "s", None)
-    with pytest.raises(RuntimeStoreError) as refused:
+    with pytest.raises(AuthorityRefusal) as refused:
         await seam.nonlocal_command(object(), object(), "n", "", None, "session:read", "read")
     assert refused.value.reason == "permission_denied"
 
@@ -135,17 +135,17 @@ async def test_a_wrapper_can_rerun_the_call_and_a_deliberate_refusal_is_honoured
 
     async def call():
         runs.append(1)
-        raise RuntimeStoreError("permission_denied")
+        raise AuthorityRefusal("permission_denied")
 
     def wrapper(inner):
         async def wrapped():
             try:
                 return await inner()
-            except RuntimeStoreError as exc:
-                raise RuntimeStoreError("lane_owned") from exc
+            except AuthorityRefusal as exc:
+                raise AuthorityRefusal("lane_owned") from exc
         return wrapped
     _stub(monkeypatch, sync=lambda hook, **kw: [wrapper])
-    with pytest.raises(RuntimeStoreError) as refused:
+    with pytest.raises(AuthorityRefusal) as refused:
         await seam.guard(object(), object(), "m", call)
     assert refused.value.reason == "lane_owned" and runs == [1]
 
@@ -229,12 +229,12 @@ async def test_a_dict_answer_reaches_the_call_site_and_a_malformed_one_does_not(
     async def answer(hook, **kw):
         return [{"queued": True}]
     _stub(monkeypatch, asyn=answer)
-    assert await seam.submit_refused(object(), object(), {}, RuntimeStoreError("x")) == {"queued": True}
+    assert await seam.submit_refused(object(), object(), {}, AuthorityRefusal("x")) == {"queued": True}
 
     async def malformed(hook, **kw):
         return ["not a dict", 7]
     _stub(monkeypatch, asyn=malformed)
-    assert await seam.submit_refused(object(), object(), {}, RuntimeStoreError("x")) is None
+    assert await seam.submit_refused(object(), object(), {}, AuthorityRefusal("x")) is None
 
 
 @pytest.mark.asyncio
@@ -251,16 +251,16 @@ async def test_nonlocal_command_answers(monkeypatch):
         "type": "exec", "output": "sent"}
 
     async def refusing(hook, **kw):
-        return [RuntimeStoreError("lane_owned")]
+        return [AuthorityRefusal("lane_owned")]
     _stub(monkeypatch, asyn=refusing)
-    with pytest.raises(RuntimeStoreError) as refused:
+    with pytest.raises(AuthorityRefusal) as refused:
         await seam.nonlocal_command(object(), object(), "n", "", None, "session:read", "read")
     assert refused.value.reason == "lane_owned"
 
     async def malformed(hook, **kw):
         return [42]
     _stub(monkeypatch, asyn=malformed)
-    with pytest.raises(RuntimeStoreError) as refused:
+    with pytest.raises(AuthorityRefusal) as refused:
         await seam.nonlocal_command(object(), object(), "n", "", None, "session:read", "read")
     assert refused.value.reason == "permission_denied"
 
@@ -302,7 +302,7 @@ async def test_the_real_manager_runs_sync_and_async_callbacks_with_narrowed_kwar
 
     seam.observe_check("s1", "session:submit")
     assert seen == [("s1", "session:submit")]
-    found = await seam.submit_refused("conn", "ref", {"text": "x"}, RuntimeStoreError("permission_denied"))
+    found = await seam.submit_refused("conn", "ref", {"text": "x"}, AuthorityRefusal("permission_denied"))
     assert found["kind"] == "submit"
     assert {"connection", "ref", "params", "error"} <= set(found["got"])
     assert await seam.attach_info("authority", "ref") == {}  # a kind the callback has no opinion on
@@ -318,9 +318,9 @@ async def test_the_real_manager_isolates_a_raising_callback_and_carries_refusals
     assert await seam.attach_info("authority", "ref") == {}  # isolated: upstream's default
 
     def refusing(kind, **kw):
-        return RuntimeStoreError("lane_owned") if kind == "rollback_policy" else None
+        return AuthorityRefusal("lane_owned") if kind == "rollback_policy" else None
     ctx.register_hook("route_lane_operation", refusing)
-    with pytest.raises(RuntimeStoreError) as refused:
+    with pytest.raises(AuthorityRefusal) as refused:
         await seam.rollback_policy("authority", "ref", "restore")
     assert refused.value.reason == "lane_owned"
 
@@ -362,24 +362,19 @@ def test_record_handoff_reaches_a_sync_callback_and_a_failing_one_is_isolated(mo
 # ── mutation_guard: fail closed for a lane's transcript write, whatever the plugin state ─────────────────────
 
 
-class _Rows:
+class _Bindings:
+    """The creation-receipt mark the guard reads (the persistence layer's binding_marks, policy row only)."""
+
     def __init__(self, policy):
         self.policy = policy
 
-    def execute(self, sql, params):
-        return SimpleNamespace(fetchone=lambda: (1,) if self.policy else None)
+    def binding_marks(self, session_id):
+        return SimpleNamespace(policy=self.policy, legacy=False, lineage_owner=None)
 
 
-class _Db:
-    def __init__(self, policy=False):
-        self.policy = policy
-
-    @contextmanager
-    def _read_ctx(self):
-        yield _Rows(self.policy)
-
-    def get_session(self, sid):
-        return {"id": sid, "chat_id": "157999"}
+class _Sessions:
+    def get(self, sid):
+        return SimpleNamespace(id=sid, chat_id="157999")
 
 
 def _authority(platform="discord", policy=False):
@@ -387,7 +382,8 @@ def _authority(platform="discord", policy=False):
 
     source = None if platform is None else SimpleNamespace(
         platform=Platform.LOCAL if platform == "local" else Platform.DISCORD)
-    return SimpleNamespace(sessions={"s": SimpleNamespace(source=source)}, db=_Db(policy))
+    store = SimpleNamespace(bindings=_Bindings(policy), sessions=_Sessions())
+    return SimpleNamespace(sessions={"s": SimpleNamespace(source=source)}, persistence=store)
 
 
 _REF = SimpleNamespace(session_id="s")
@@ -397,7 +393,7 @@ _REF = SimpleNamespace(session_id="s")
 @pytest.mark.parametrize("operation", ["rewind", "compress", "reset", "branch"])
 async def test_mutation_guard_refuses_a_lane_write_with_no_plugin(monkeypatch, operation):
     _stub(monkeypatch, wanted=False)
-    with pytest.raises(RuntimeStoreError) as refused:
+    with pytest.raises(AuthorityRefusal) as refused:
         await seam.mutation_guard(_authority(), "actor", _REF, {"operation": operation})
     assert refused.value.reason == "permission_denied"
 
@@ -407,7 +403,7 @@ async def test_mutation_guard_refuses_when_a_plugin_callback_raises(monkeypatch)
     async def raising(hook, **kw):
         raise RuntimeError("plugin bug")
     _stub(monkeypatch, asyn=raising)
-    with pytest.raises(RuntimeStoreError) as refused:
+    with pytest.raises(AuthorityRefusal) as refused:
         await seam.mutation_guard(_authority(), "actor", _REF, {"operation": "rewind"})
     assert refused.value.reason == "permission_denied"
 
@@ -424,9 +420,9 @@ async def test_mutation_guard_lets_a_session_no_lane_binds_run(monkeypatch):
 @pytest.mark.asyncio
 async def test_mutation_guard_honours_a_plugins_own_refusal(monkeypatch):
     async def refusing(hook, **kw):
-        return [RuntimeStoreError("lane_owned")]
+        return [AuthorityRefusal("lane_owned")]
     _stub(monkeypatch, asyn=refusing)
-    with pytest.raises(RuntimeStoreError) as refused:
+    with pytest.raises(AuthorityRefusal) as refused:
         await seam.mutation_guard(_authority(), "actor", _REF, {"operation": "rewind"})
     assert refused.value.reason == "lane_owned"
 

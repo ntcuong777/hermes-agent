@@ -1,4 +1,4 @@
-"""Error text that names an exception's class names a store refusal ``RuntimeStoreError`` and any other storage
+"""Error text that names an exception's class names a store refusal ``AuthorityRefusal`` and any other storage
 error by the SQLite error it chains: the turn-failure notice, the control socket's error, the viewer automation wire
 and a local client's turn error. A gateway refusal subclass and any other error keep their own class name."""
 import contextlib

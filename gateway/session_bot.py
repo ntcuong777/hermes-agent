@@ -401,7 +401,7 @@ def _bot_chat_creation_id(authority, actor):
     chain = LocalGenerations(profile_id=authority.profile_id, principal_id=actor.subject, base_request_id=base)
     pick = store.runtime.first_generation(chain)
     # Handed off (``/handoff``), it is a messaging lane's conversation: its receipt went with it,
-    # and a reset's head carried its name there (``hermes_state_local.hand_off_conversations``).
+    # and a reset's head carried its name there (``persistence.sqlite.gateway._local_lineage.hand_off_conversations``).
     while pick.row is not None and (bool(pick.row.title) or pick.row.archived or _messaging_platform(pick.row.source) is not None):
         pick = store.runtime.first_generation(chain, start=pick.generation + 1)
     return generation_request_id(base, pick.generation)

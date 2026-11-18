@@ -9,6 +9,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from persistence.conversation.messages import NewMessage
+
 from tests.gateway.test_authority_cold_route_recovery import _Runner
 from tests.gateway.test_handoff_local_receipt import _handoff
 
@@ -84,6 +86,18 @@ async def _local_session(tmp_path, lane):
     ref = create_local_session(warm, tui.actor, {'request_id': 'tui', 'source': 'tui', 'cwd': str(tmp_path),
                                                   'model': 'frozen', 'toolsets': []})
     return runner, warm, tui, ref.session_id
+
+
+def _store(authority):
+    """The persistence handle the authority was built with (the store's messages and bindings live behind it)."""
+    from gateway.session_persistence import authority_persistence
+    return authority_persistence(authority)
+
+
+def _contents(store, session_id):
+    """The display transcript of *session_id*, oldest first, as its message contents."""
+    return [paged.message.content for paged in store.messages.transcript_segment_page(
+        session_id, latest=True, after=None, count=500).messages]
 
 
 async def _bound(tmp_path):
@@ -179,15 +193,14 @@ async def test_without_the_plugin_a_transcript_write_is_refused_by_core_not_lane
 async def test_without_the_plugin_a_rewind_on_a_bound_session_is_refused_and_the_transcript_stays(tmp_path):
     """Upstream ran rewind here (the store has no policy check for it): the fail-closed guard refuses it now."""
     world = await _bound(tmp_path)
-    db = world.authority.db
-    db.append_message(world.sid, role='user', content='keep this turn')
+    store = _store(world.authority)
+    kept = store.messages.append(world.sid, NewMessage(role='user', content='keep this turn'))
     snap = await _open(world)
-    target = next(m['id'] for m in db.get_messages(world.sid) if m['content'] == 'keep this turn')
     reply = await _call(world, 'session.mutate', request_id='req-rewind', expected_revision=snap['revision'],
-                        operation='rewind', payload={'target_message_id': target},
+                        operation='rewind', payload={'target_message_id': kept},
                         expected_generation=snap['execution_generation'] or 0)
     assert _reason(reply) == 'permission_denied', reply
-    assert [m['content'] for m in db.get_messages(world.sid)] == ['keep this turn']
+    assert [m for m in _contents(store, world.sid)] == ['keep this turn']
     assert world.lane.forwarded == []
 
 
@@ -226,7 +239,7 @@ async def test_without_the_plugin_a_typed_command_is_refused_not_forwarded(tmp_p
 async def test_without_the_plugin_a_hand_off_records_no_carried_route(tmp_path):
     """The lane move itself is core (`hand_off_conversations`); remembering the released route for the lane is the plugin's."""
     world = await _bound(tmp_path)
-    with world.authority.db._read_ctx() as conn:
+    with _store(world.authority)._store.holder()._read_ctx() as conn:
         keys = [row[0] for row in conn.execute("SELECT key FROM state_meta WHERE key GLOB 'gateway.lane_model.v1:*'")]
     assert keys == []
 

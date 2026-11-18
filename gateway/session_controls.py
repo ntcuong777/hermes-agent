@@ -581,7 +581,7 @@ class AuthorityConnection:
 
     async def list_sessions(self, ref, params):
         if 'session:read' not in self.actor.capabilities:
-            raise RuntimeStoreError('permission_denied')
+            raise AuthorityRefusal('permission_denied')
         params = __import__("gateway.session_lane_seam").session_lane_seam.list_params(params)
         limit, workspace, picker = params.get('limit', 200), params.get('workspace'), params.get('picker', False)
         if (set(params) - {'limit', 'title', 'include_hidden', 'scope', 'workspace', 'picker', 'query', 'cursor'}

@@ -8,7 +8,7 @@ only at its own stamp, and leaves the generation fence of every ordinary prompt 
 import pytest
 from gateway.session_events import SessionEvents
 from gateway.session_pending_controls import PendingControls
-from hermes_state_runtime import RuntimeStoreError
+from persistence.core.errors import AuthorityRefusal
 from tools import approval
 
 KEY = "agent:main:local:dm:idle-controls"
@@ -75,7 +75,7 @@ def test_an_older_generation_never_restamps_the_card_backwards(controls):
 
 def test_an_idle_card_answers_only_at_its_own_stamp(controls):
     _ask(controls, "idle1", idle=True, generation=3)
-    with pytest.raises(RuntimeStoreError) as refused:
+    with pytest.raises(AuthorityRefusal) as refused:
         controls.respond(SID, 2, "idle1", {"choice": "once"})
     assert refused.value.reason == "stale_generation"
     assert controls.resolved == []

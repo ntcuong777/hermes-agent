@@ -43,7 +43,7 @@ async def _pick_model(authority, owner, live, payload, row):
     if _model_switch_skew_guard():
         # The full refusal is far longer than a refusal's 160-character detail (it was cut mid-word, to
         # "...restart the g"), so the wire carries the short form. Nothing is recorded.
-        raise RuntimeStoreError('model_resolution_failed', detail=t('gateway.model.err_skew_short'))
+        raise AuthorityRefusal('model_resolution_failed', detail=t('gateway.model.err_skew_short'))
     runner = authority.runner
     ctx = _ModelSwitchContext(session_key=live.route, source=live.source,
                               config_path=get_hermes_home() / 'config.yaml', persist_global=False)

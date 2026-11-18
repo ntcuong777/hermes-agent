@@ -23,7 +23,7 @@ def _core_python_files():
 
 def test_nothing_in_core_imports_the_old_lane_modules():
     files = _core_python_files()
-    assert len(files) > 100 and ROOT / "hermes_state_local.py" in files  # the scan really covers the core
+    assert len(files) > 100 and ROOT / "hermes_state.py" in files  # the scan really covers the core (the old store module is gone)
     for path in files:
         text = path.read_text(encoding="utf-8")
         assert "gateway.session_lane import" not in text and "gateway.session_lane_model" not in text, path.name

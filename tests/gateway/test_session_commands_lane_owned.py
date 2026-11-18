@@ -9,7 +9,7 @@ import time
 import pytest
 
 from gateway import session_commands, session_controls
-from hermes_state_runtime import RuntimeStoreError
+from persistence.core.errors import AuthorityRefusal
 
 
 def _run(coro):

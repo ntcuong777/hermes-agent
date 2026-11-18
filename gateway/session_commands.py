@@ -151,7 +151,7 @@ def _parse(params, dispatch):
     # ``composer_text`` is ``str | None`` in the contract: null means the client had no text to send (an image).
     if (set(params) - allowed
             or any(not isinstance(v, str) for k, v in params.items() if not (k == 'composer_text' and v is None))):
-        raise RuntimeStoreError('invalid_params')
+        raise AuthorityRefusal('invalid_params')
     text = params.get('name', '') if dispatch else params.get('command', '')
     parts = text.strip().lstrip('/').split(None, 1)
     if not parts or (dispatch and len(parts) != 1):

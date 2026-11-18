@@ -75,10 +75,10 @@ def test_composer_text_may_be_null_on_the_wire():
 def test_only_composer_text_may_be_null_and_nothing_else_may_be_other_than_text():
     import pytest
     from gateway.session_commands import _parse
-    from hermes_state_runtime import RuntimeStoreError
+    from persistence.core.errors import AuthorityRefusal
     for bad in ({"session_id": "s", "command": None}, {"session_id": "s", "command": "x", "composer_text": 5},
                 {"session_id": "s", "command": "x", "profile": None}):
-        with pytest.raises(RuntimeStoreError):
+        with pytest.raises(AuthorityRefusal):
             _parse(bad, False)
 
 

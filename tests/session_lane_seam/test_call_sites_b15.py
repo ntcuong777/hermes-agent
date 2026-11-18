@@ -24,7 +24,7 @@ def test_stage_local_session_reads_the_profile_config_plainly():
 def test_session_controls_has_no_permission_denied_diagnostics_any_more():
     text = _text("session_controls.py")
     assert "_log_denied_once" not in text and "_raise_site" not in text and "_DENIED_LOGGED" not in text
-    assert "def _log_refusal(profile, method, exc: RuntimeStoreError) -> None:" in text
+    assert "def _log_refusal(profile, method, exc: AuthorityRefusal) -> None:" in text
 
 
 def test_route_config_stays_in_core_because_core_reads_it():
