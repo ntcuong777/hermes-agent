@@ -774,10 +774,7 @@ class AuthorityConnection:
                     opening.fire(policy, live.route)
                 info = await snapshot_info(self.authority, snapshot.handle.ref)
             else:
-                # A lane's thread or a history mount has no policy to project, but the viewer still paints its
-                # model and effort pills from the route its next turn resolves.
-                from gateway.session_local_inventory import lane_route_info
-                info = {**info, **await lane_route_info(self.authority, snapshot.handle.ref)}
+                info = {**info, **await __import__("gateway.session_lane_seam").session_lane_seam.attach_info(self.authority, snapshot.handle.ref)}
         finally:
             if opening is not None:  # not fired (a refusal, a messaging lane, a history mount): nothing waits
                 opening.release()
