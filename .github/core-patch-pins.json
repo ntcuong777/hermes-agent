@@ -45,10 +45,10 @@
       "kind": "wrap",
       "plugin": "core-fixes",
       "reason": "A checkpoint git killed past its timeout left a store index lock behind and every later checkpoint of that workspace failed; clear a stale lock inside the store (older than 600 s) and retry once (fork 565d63a2ee3).",
-      "target": "tools.checkpoint_manager:_run_git",
-      "target_file": "tools/checkpoint_manager.py",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
-      "upstream_release": "0.23.0"
+      "target": "agent.checkpoints.manager:_run_git",
+      "target_file": "agent/checkpoints/manager.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
     },
     "core-fixes/cron-external-interpreter": {
       "ast_sha": "78ee4345821471d9864f0969bce7af7ed644c140cf384cb913a82d48e6f6dc88",
@@ -61,14 +61,14 @@
       "upstream_release": "0.23.0"
     },
     "core-fixes/deferred-tool-hint-scope": {
-      "ast_sha": "c5e2440b9ed9d597c988eaf325256fd40fec11e4ac0958aed40fefc161fcda62",
+      "ast_sha": "25e261a40ce4fe6946d160045d82b65bffd539e2e6598dce443d42e1aba2859c",
       "kind": "wrap",
       "plugin": "core-fixes",
       "reason": "Remember the agent of the running tool round in a ContextVar so the unknown-name error can tell which deferred tools are reachable through tool_call (fork 5e94a2c2fd1, P16).",
       "target": "agent.turn_tool_round:run_tool_round",
       "target_file": "agent/turn_tool_round.py",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
-      "upstream_release": "0.23.0"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
     },
     "core-fixes/deferred-tool-hint-text": {
       "ast_sha": "207bbdd9b49c1d67a4771f6fd75599dc061a96944b8e2f8353d898d7b73d9760",
@@ -111,14 +111,14 @@
       "upstream_release": "0.23.0"
     },
     "core-fixes/sandbox-deferred-tools": {
-      "ast_sha": "09d37562d36670267e9f6d5c38eb492ec8f1bf6417313c59b5104dcbf431b8c0",
+      "ast_sha": "97207370ba83ac1aabba63d292bdbcb69b24e05796ed74a64a6931240a3e8793",
       "kind": "wrap",
       "plugin": "core-fixes",
       "reason": "execute_code hermes_tools offers the deferred tools the session can reach through tool_call, so from hermes_tools import web_extract works (fork a2ac9e421c8, P9).",
       "target": "model_tools:handle_function_call",
       "target_file": "model_tools.py",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
-      "upstream_release": "0.23.0"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
     },
     "core-fixes/tmux-notify-passthrough": {
       "ast_sha": "2e7938bce95211493252d66e02289bba0dc3039f0e515e50024cb2e94b5604e6",
@@ -131,14 +131,14 @@
       "upstream_release": "0.23.0"
     },
     "lane-mirror/forward-list-titled": {
-      "ast_sha": "61649497a4fbb903a2cb98c45460cf7d51a06e9cc472f3b3848db0d05ba1a9ca",
+      "ast_sha": "3a407cd28c63c8e755d77b58c728215db8b4cb34662803b3358c81bd875d33db",
       "kind": "replace",
       "plugin": "lane-mirror",
       "reason": "An admin's /resume <id> --all lists titled sessions without the platform filter, so the mirror can bind a machine-local session (lane forward)",
       "target": "gateway.slash_commands_session:GatewaySessionCommandsMixin._list_titled_sessions",
       "target_file": "gateway/slash_commands_session.py",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
-      "upstream_release": "0.23.0"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
     },
     "lane-mirror/forward-submit": {
       "ast_sha": "791efbaec2840917db1021f692b2f055b1cf7d896d2dcbaa067b1edf918d18c9",
@@ -151,14 +151,14 @@
       "upstream_release": "0.23.0"
     },
     "lane-mirror/gates-attach": {
-      "ast_sha": "13c8bcd98f7682864cba4f432aa2dc6c9897cb0e397c460b1769398af0f65bf6",
+      "ast_sha": "64799edcc6148d0d541b2fca67c5490570853f283bf1154720c33a0d9445e941",
       "kind": "wrap",
       "plugin": "lane-mirror",
       "reason": "A file dropped in the TUI on a lane-bound session is staged in the folder the session recorded, under its viewer policy (lane takeover, gates)",
       "target": "gateway.session_ancillary:attach_file",
       "target_file": "gateway/session_ancillary.py",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
-      "upstream_release": "0.23.0"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
     },
     "lane-mirror/gates-local-source": {
       "ast_sha": "ffb861abf42680adee48fdac8774d3591cb628286285ce44d60a23d35ae60d35",
@@ -181,24 +181,24 @@
       "upstream_release": "0.23.0"
     },
     "lane-mirror/gates-shell": {
-      "ast_sha": "701cb5257dcc24eed78d3ba3c1a0495e8a686a2c9d9d5c93c23fe8c039bae0d8",
+      "ast_sha": "ee5cd8dbf8f95d9a917f7a9fa665087c7b608adc2285c98d6b5a345a77d0ca9e",
       "kind": "wrap",
       "plugin": "lane-mirror",
       "reason": "A !cmd typed in the TUI on a lane-bound session runs in the folder the session recorded, for the subscribed operator only (lane takeover, gates)",
       "target": "gateway.session_shell:shell_exec",
       "target_file": "gateway/session_shell.py",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
-      "upstream_release": "0.23.0"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
     },
     "lane-mirror/gates-side": {
-      "ast_sha": "bf777e9b0ab56ecc97398f94af4ca88568c05163b68b4e4f60bfbc66ea6b4c3c",
+      "ast_sha": "9e2d0e5aab862590d6cd281fe6f883f4d3388cd339ae5cd7db0c70d1530a8de3",
       "kind": "wrap",
       "plugin": "lane-mirror",
       "reason": "/bg and /btw on a lane-bound session are lane_owned: the thread runs the side agent, never a second writer here (lane takeover, gates)",
       "target": "gateway.session_tui_side:_admit",
       "target_file": "gateway/session_tui_side.py",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
-      "upstream_release": "0.23.0"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
     },
     "lane-mirror/model-adopt-rehydrate": {
       "ast_sha": "5d40b8b2bb2eaf6fe6978f5ef24f3d486c6bd59cd5ff910244c158115cee2e14",
@@ -225,10 +225,10 @@
       "kind": "wrap",
       "plugin": "lane-mirror",
       "reason": "Deleting a session also deletes its hand-off route record, in the same connection (lane model carry)",
-      "target": "hermes_state_local:retire_local_receipts",
-      "target_file": "hermes_state_local.py",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
-      "upstream_release": "0.23.0"
+      "target": "persistence.sqlite.conversation._store.local:retire_local_receipts",
+      "target_file": "persistence/sqlite/conversation/_store/local.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
     },
     "lane-mirror/model-route-info": {
       "ast_sha": "9a9cbdf25392157c50e739d46a6c49d5413be072eb3e78496ed75c7dd248ef64",
@@ -321,24 +321,24 @@
       "upstream_release": "0.23.0"
     },
     "lane-mirror/rescue-policy": {
-      "ast_sha": "dddc4dee3f4e0d040767289a8cc91cd86c63aaeeaaffc49ae1910aef4d4ec7ff",
+      "ast_sha": "a19fde9680085c200c75a4894d738a61cc5ec38f0370595c49a14efd63d40bec",
       "kind": "wrap",
       "plugin": "lane-mirror",
       "reason": "A non-LOCAL source has no launch policy except while a read of a lane-bound session is re-run under its viewer policy (lane takeover, rescue)",
       "target": "gateway.session_policy:policy_for_source",
       "target_file": "gateway/session_policy.py",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
-      "upstream_release": "0.23.0"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
     },
     "lane-mirror/residue-lane-reasoning": {
-      "ast_sha": "b5225ec975eb9d09af7149b80f00785f5e2d358ef14b58090c12f377a0153c68",
+      "ast_sha": "d01de9f17026ed86c7dd800ccea1ecd5e444778c330f145f07f0f6d1eda9da5a",
       "kind": "wrap",
       "plugin": "lane-mirror",
       "reason": "A lane's own effort pick follows a non-boundary repoint (a compression tip) onto the new routing entry, like terminal_cwd (lane residue)",
       "target": "gateway.session:SessionStore.switch_session",
       "target_file": "gateway/session.py",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
-      "upstream_release": "0.23.0"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
     },
     "lane-mirror/residue-pick-stamp": {
       "ast_sha": "d6b32cb384994d4615c15c3952894be5ba61069e28fc03919742c0533b9d38c5",
@@ -381,24 +381,24 @@
       "upstream_release": "0.23.0"
     },
     "lane-mirror/wake-retarget-inject": {
-      "ast_sha": "698454b9892b2cc8ebb431f519b0058d2845e707281135b8e22bfeae60787240",
+      "ast_sha": "56132761776db500b46e1cfda2ed17b9dba1d36330952cbeb770041300cab4aa",
       "kind": "wrap",
       "plugin": "lane-mirror",
       "reason": "A frozen watch notice follows the conversation to its route (spec 08b B13)",
       "target": "gateway.run_notifications:GatewayNotificationsMixin._inject_watch_notification",
       "target_file": "gateway/run_notifications.py",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
-      "upstream_release": "0.23.0"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
     },
     "lane-mirror/wake-snapshot": {
-      "ast_sha": "8bfeb5e62c9b9826101a5c4be0846593993bd747dc7bb1347e51c723c2828fd6",
+      "ast_sha": "5f7c77138e89f370c07a02ac3fe799a722fe7cd085a4514dac9f78eeba94be4f",
       "kind": "wrap",
       "plugin": "lane-mirror",
       "reason": "A route woken as its stored origin when upstream refuses not_found (spec 08b B13)",
       "target": "gateway.session_automation:snapshot_automation",
       "target_file": "gateway/session_automation.py",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
-      "upstream_release": "0.23.0"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
     }
   },
   "version": 2
