@@ -48,11 +48,6 @@ def _admit(connection, ref, params, prefix, required='text', optional=()):
     live = authority.sessions[ref.session_id]
     policy = policy_for_source(authority.runner, live.source)
     if policy is None:
-        from gateway.session_lane import bound_lane, lane_owned_refusal
-        if prefix in ('bg', 'btw') and bound_lane(authority, ref.session_id) is not None:
-            # A side agent runs the session's agent: on a mirror-bound session the thread runs it
-            # (the client relays the typed /bg or /btw), never a second writer here.
-            raise lane_owned_refusal(f'/{prefix}')
         raise RuntimeStoreError('permission_denied')
     return live, policy, text, f'{prefix}_{uuid.uuid4().hex[:6]}'
 

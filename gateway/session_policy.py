@@ -1105,16 +1105,8 @@ def _serving_local_desktop_within(scope):
 def policy_for_source(runner, source):
     from gateway.session_local import LocalSessionAdapter
     from gateway.config import Platform
-    if source is None:  # a history mount, which runs nothing
+    if source is None or source.platform != Platform.LOCAL:  # None: a history mount, which runs nothing
         return None
-    if source.platform != Platform.LOCAL:
-        # None, except while a read of a mirror-bound session is re-run (gateway/session_lane.py);
-        # a None is noted so a read that quietly degraded on it (an empty `@` completion) is re-run.
-        from gateway.session_lane import note_missing_policy, viewer_policy_override
-        override = viewer_policy_override()
-        if override is None:
-            note_missing_policy()
-        return override
     adapter = runner._adapter_for_source(source)
     if isinstance(adapter, LocalSessionAdapter) and adapter.authorize_source(source):
         policy = adapter.policies.get(source.chat_id)

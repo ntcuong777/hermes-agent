@@ -414,9 +414,8 @@ class AuthorityConnection:
                 if method in GROUP_METHODS or method == 'profiles.list':
                     result = await dispatch_group_control(self, method, params)
                 elif method not in handlers and (plugin := await resolve_plugin_rpc(self, method)) is not None:
-                    from gateway.session_lane import call_with_rescue
-                    return {'jsonrpc': '2.0', 'id': rid, 'result': await call_with_rescue(
-                        self, ref, partial(call_plugin_rpc, self, ref, method, plugin, params))}
+                    return {'jsonrpc': '2.0', 'id': rid, 'result': await __import__("gateway.session_lane_seam").session_lane_seam.guard(
+                        self, ref, method, partial(call_plugin_rpc, self, ref, method, plugin, params))}
                 elif method not in handlers or (method in CONNECTION_METHODS and not session_owned(params)):
                     # JSON-RPC's own verdict: clients key compat fallbacks on -32601, and a
                     # 4001 'invalid_params' would read as a bad argument on a method that exists.
@@ -425,11 +424,7 @@ class AuthorityConnection:
                         'code': -32601, 'message': unknown_method_message(method),
                         'data': {'reason': 'unknown_method'}}}
                 else:
-                    # A refusal a handler written for local sessions raises on a session the Discord
-                    # mirror bound is answered by the call's class, never as permission_denied
-                    # (gateway/session_lane.py): every method, including one added later.
-                    from gateway.session_lane import call_with_rescue
-                    result = await call_with_rescue(self, ref, partial(handlers[method], ref, params))
+                    result = await __import__("gateway.session_lane_seam").session_lane_seam.guard(self, ref, method, partial(handlers[method], ref, params))
                     if isinstance(result, DeferredReply):  # answered off the serial dispatch
                         check_params_accepted(contract, original_params)
                         return result.start(self, rid, partial(check_result, contract))
