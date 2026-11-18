@@ -31,6 +31,13 @@ def test_dispatch_runs_both_handler_calls_through_the_guard():
     assert _function("session_controls.py", "AuthorityConnection.dispatch").count(".guard(") == 2
 
 
+def test_mutate_asks_the_fail_closed_guard_before_the_admission_gate():
+    segment = _function("session_mutations.py", "mutate_session")
+    call = 'session_lane_seam").session_lane_seam.mutation_guard(authority, actor, ref, params)'
+    assert segment.count(call) == 1
+    assert segment.index(call) < segment.index("authority._require_admission_open()")
+
+
 def test_rollback_asks_the_seam_for_a_policy():
     assert _function("session_tui_ops.py", "rollback").count(".rollback_policy(authority, ref, kind)") == 1
 

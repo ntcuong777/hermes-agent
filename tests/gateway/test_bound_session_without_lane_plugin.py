@@ -136,9 +136,10 @@ async def _open(world):
 
 # ── the lane-mirror plugin is NOT loaded: core behaves as upstream (spec 08 stage B3) ─────────────────────────
 # Stage B3 moved the lane takeover into the `lane-mirror` plugin. This file is the fork's own proof of what core does
-# when that plugin is absent, disabled or its patches are skipped: every refusal is upstream's bare
-# `permission_denied` (fail-closed). The one exception is a transcript-writing mutation, which upstream never refused:
-# it is NOT answered `lane_owned` any more (it runs here), which is why the plugin registers that wrap `critical`.
+# when that plugin is absent, disabled or its patches are skipped: every refusal is `permission_denied` (fail-closed).
+# The transcript writes (rewind, compress, reset, branch) are refused by core's own guard (`mutation_guard` in
+# gateway/session_lane_seam.py) before admission, so none of them runs on a session a lane writes, and none is
+# answered `lane_owned` (that answer is the plugin's, when it is loaded and healthy).
 
 _REFUSED_WITHOUT_THE_PLUGIN = {
     '!shell': ('shell.exec', lambda s: {'command': 'echo hi'}),
@@ -164,12 +165,29 @@ async def test_without_the_plugin_a_bound_session_refuses_with_upstreams_permiss
 
 
 @pytest.mark.asyncio
-async def test_without_the_plugin_a_transcript_write_is_not_turned_into_lane_owned(tmp_path):
+@pytest.mark.parametrize('operation,payload', [('compress', {}), ('reset', {}), ('branch', {})])
+async def test_without_the_plugin_a_transcript_write_is_refused_by_core_not_lane_owned(tmp_path, operation, payload):
     world = await _bound(tmp_path)
     snap = await _open(world)
-    reply = await _call(world, 'session.mutate', request_id='req-compress', expected_revision=snap['revision'],
-                        operation='compress', payload={}, expected_generation=snap['execution_generation'] or 0)
-    assert _reason(reply) != 'lane_owned', reply
+    reply = await _call(world, 'session.mutate', request_id=f'req-{operation}', expected_revision=snap['revision'],
+                        operation=operation, payload=payload, expected_generation=snap['execution_generation'] or 0)
+    assert _reason(reply) == 'permission_denied', (operation, reply)
+    assert world.lane.forwarded == []
+
+
+@pytest.mark.asyncio
+async def test_without_the_plugin_a_rewind_on_a_bound_session_is_refused_and_the_transcript_stays(tmp_path):
+    """Upstream ran rewind here (the store has no policy check for it): the fail-closed guard refuses it now."""
+    world = await _bound(tmp_path)
+    db = world.authority.db
+    db.append_message(world.sid, role='user', content='keep this turn')
+    snap = await _open(world)
+    target = next(m['id'] for m in db.get_messages(world.sid) if m['content'] == 'keep this turn')
+    reply = await _call(world, 'session.mutate', request_id='req-rewind', expected_revision=snap['revision'],
+                        operation='rewind', payload={'target_message_id': target},
+                        expected_generation=snap['execution_generation'] or 0)
+    assert _reason(reply) == 'permission_denied', reply
+    assert [m['content'] for m in db.get_messages(world.sid)] == ['keep this turn']
     assert world.lane.forwarded == []
 
 

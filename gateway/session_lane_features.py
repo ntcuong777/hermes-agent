@@ -13,3 +13,14 @@ Spec 08b (the personal features that are not lanes): "workspaces" (B9), "workspa
 """
 
 REMOVED_FROM_CORE: frozenset = frozenset({"diagnostics", "forward", "gates", "model", "p27", "pills", "repaint", "rescue", "residue", "settle", "wake", "workspace-seed", "workspace-slash", "workspaces"})
+
+#: The plugin that serves each id in REMOVED_FROM_CORE (the plugin's manifest name). With the plugin absent, disabled or
+#: ungranted the core runs without the feature and says so once at startup (hermes_cli/core_patches_missing.py).
+#: Checked by tests: every removed id has an entry, and the plugin's sources serve the id (lane-mirror tests).
+SERVED_BY: dict = {
+    "diagnostics": "lane-mirror", "forward": "lane-mirror", "gates": "lane-mirror", "model": "lane-mirror",
+    "pills": "lane-mirror", "repaint": "lane-mirror", "rescue": "lane-mirror", "residue": "lane-mirror",
+    "settle": "lane-mirror", "wake": "lane-mirror",
+    "workspaces": "chat-workspaces", "workspace-seed": "chat-workspaces", "workspace-slash": "chat-workspaces",
+    "p27": "config-seams",
+}

@@ -105,6 +105,7 @@ def _owner_ref(authority, ref, params):
 
 async def mutate_session(authority, actor, ref, params):
     from gateway.session_runtime_workers import track_mutation
+    await __import__("gateway.session_lane_seam").session_lane_seam.mutation_guard(authority, actor, ref, params)
     authority._require_admission_open()
     # A request socket can disappear while its writer is inside to_thread. The owner task keeps
     # the session gate until commit AND publication finish, and retirement joins that same task.

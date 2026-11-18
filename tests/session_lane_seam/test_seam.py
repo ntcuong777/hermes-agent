@@ -6,6 +6,8 @@ returned ``RuntimeStoreError``).
 """
 
 import asyncio
+from contextlib import contextmanager
+from types import SimpleNamespace
 
 import pytest
 
@@ -355,3 +357,87 @@ def test_record_handoff_reaches_a_sync_callback_and_a_failing_one_is_isolated(mo
     seam.record_handoff("conn", "row-1", {"config_json": "{}"})  # must not raise
 
     assert seen == [("conn", "row-1")]
+
+
+# ── mutation_guard: fail closed for a lane's transcript write, whatever the plugin state ─────────────────────
+
+
+class _Rows:
+    def __init__(self, policy):
+        self.policy = policy
+
+    def execute(self, sql, params):
+        return SimpleNamespace(fetchone=lambda: (1,) if self.policy else None)
+
+
+class _Db:
+    def __init__(self, policy=False):
+        self.policy = policy
+
+    @contextmanager
+    def _read_ctx(self):
+        yield _Rows(self.policy)
+
+    def get_session(self, sid):
+        return {"id": sid, "chat_id": "157999"}
+
+
+def _authority(platform="discord", policy=False):
+    from gateway.config import Platform
+
+    source = None if platform is None else SimpleNamespace(
+        platform=Platform.LOCAL if platform == "local" else Platform.DISCORD)
+    return SimpleNamespace(sessions={"s": SimpleNamespace(source=source)}, db=_Db(policy))
+
+
+_REF = SimpleNamespace(session_id="s")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["rewind", "compress", "reset", "branch"])
+async def test_mutation_guard_refuses_a_lane_write_with_no_plugin(monkeypatch, operation):
+    _stub(monkeypatch, wanted=False)
+    with pytest.raises(RuntimeStoreError) as refused:
+        await seam.mutation_guard(_authority(), "actor", _REF, {"operation": operation})
+    assert refused.value.reason == "permission_denied"
+
+
+@pytest.mark.asyncio
+async def test_mutation_guard_refuses_when_a_plugin_callback_raises(monkeypatch):
+    async def raising(hook, **kw):
+        raise RuntimeError("plugin bug")
+    _stub(monkeypatch, asyn=raising)
+    with pytest.raises(RuntimeStoreError) as refused:
+        await seam.mutation_guard(_authority(), "actor", _REF, {"operation": "rewind"})
+    assert refused.value.reason == "permission_denied"
+
+
+@pytest.mark.asyncio
+async def test_mutation_guard_lets_a_session_no_lane_binds_run(monkeypatch):
+    async def run_here(hook, **kw):
+        assert kw["operation"] == "rewind"
+        return [seam.RUN_HERE]
+    _stub(monkeypatch, asyn=run_here)
+    assert await seam.mutation_guard(_authority(), "actor", _REF, {"operation": "rewind"}) is None
+
+
+@pytest.mark.asyncio
+async def test_mutation_guard_honours_a_plugins_own_refusal(monkeypatch):
+    async def refusing(hook, **kw):
+        return [RuntimeStoreError("lane_owned")]
+    _stub(monkeypatch, asyn=refusing)
+    with pytest.raises(RuntimeStoreError) as refused:
+        await seam.mutation_guard(_authority(), "actor", _REF, {"operation": "rewind"})
+    assert refused.value.reason == "lane_owned"
+
+
+@pytest.mark.asyncio
+async def test_mutation_guard_does_not_consult_the_plugin_for_other_writes_or_local_sessions(monkeypatch):
+    async def never(hook, **kw):  # a raise here would be swallowed by route(): the refusal would show instead
+        raise AssertionError("the plugin must not be asked")
+    _stub(monkeypatch, asyn=never)
+    assert await seam.mutation_guard(_authority(), "actor", _REF, {"operation": "rename"}) is None
+    assert await seam.mutation_guard(_authority("local"), "actor", _REF, {"operation": "rewind"}) is None
+    assert await seam.mutation_guard(_authority(None), "actor", _REF, {"operation": "rewind"}) is None
+    assert await seam.mutation_guard(_authority(policy=True), "actor", _REF, {"operation": "rewind"}) is None
+    assert await seam.mutation_guard(_authority(), "actor", _REF, "not a dict") is None
