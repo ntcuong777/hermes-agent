@@ -456,16 +456,24 @@ def critical_alert(problems: list[str], notice_lines: list[str]) -> None:
         logger.debug("core patches: critical alert failed", exc_info=True)
 
 
-def _notify_critical(notice_lines: list[str]) -> None:
+_CRITICAL_HEADER = "Core patches: a CRITICAL patch is not installed; Hermes started without it."
+
+
+def _notify_critical(notice_lines: list[str], *, kind: str = "critical", header: str = _CRITICAL_HEADER) -> None:
     settings = policy.load_settings()
     directory = policy.safe_state_dir()
     if not settings.notify or directory is None or (_STATE["surface"] != "gateway" and not _runner_bound()):
         return
-    if not _claim_many(directory, ["critical|" + "|".join(sorted(notice_lines))]):
+    if not _claim_many(directory, [kind + "|" + "|".join(sorted(notice_lines))]):  # one notice per new state
         return
-    text = "Core patches: a CRITICAL patch is not installed; Hermes started without it.\n" + "\n".join(
-        f"- {line}" for line in notice_lines)
+    text = header + "\n" + "\n".join(f"- {line}" for line in notice_lines)
     threading.Thread(target=_send_when_possible, args=(text,), daemon=True, name="core-patches-notify").start()
+
+
+def notify_missing_plugins(notice_lines: list[str]) -> None:
+    """The home-channel notice for lane features whose plugin is not loaded (same notifier and de-dup as the critical alert)."""
+    _notify_critical(notice_lines, kind="missing-plugin", header=(
+        "Core patches: some lane features are OFF because their plugin is not loaded or enabled; Hermes started anyway."))
 
 
 def after_startup_alert(problems: list[str]) -> None:

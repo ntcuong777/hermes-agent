@@ -963,6 +963,17 @@ def _snapshot_or_busy(wait_s: float) -> tuple[PatchRecord, ...]:
         return ()
 
 
+def _missing_plugins_check(current: Iterable[PatchRecord], timed_out: bool) -> None:
+    """A removed lane feature whose plugin is not loaded: one ERROR and one notice (hermes_cli/core_patches_missing.py).
+    Never raises; the check is skipped while discovery is still running (its answer is not known yet)."""
+    try:
+        from hermes_cli import core_patches_missing
+
+        core_patches_missing.report_missing_plugins(current, _known_managers(), timed_out=timed_out)
+    except Exception:  # health: allow BLE001 -- a startup check never breaks startup
+        logger.debug("core patches: the missing-plugin check could not run", exc_info=True)
+
+
 def apply_core_patches(surface: str = "") -> tuple[PatchRecord, ...]:
     """Discover plugins now (installing their patches), within ``core_patches.apply_timeout_s``, and
     report what happened. Idempotent: safe to call from every entry point and more than once.
@@ -1003,6 +1014,7 @@ def apply_core_patches(surface: str = "") -> tuple[PatchRecord, ...]:
             report.critical_alert(problems, critical_notice_lines(current))
     except Exception:  # health: allow BLE001 -- reporting is best effort
         logger.debug("core patches: reporting failed (%s)", surface or "?", exc_info=True)
+    _missing_plugins_check(current, timed_out)
     if refusals and settings.refuse_on_critical:
         message = "refusing to start: critical core patch " + "; ".join(refusals)
         logger.error("core patches: %s", message)

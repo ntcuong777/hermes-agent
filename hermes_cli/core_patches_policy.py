@@ -17,6 +17,7 @@ Config (top-level ``core_patches:`` in config.yaml; unknown top-level keys are n
       apply_timeout_s: 5          # startup budget of apply_core_patches; it never blocks start longer
       notify: true                # one notice per new state to the home channel (gateway only)
       events_max_bytes: 262144    # events.jsonl rotates past this size
+      warn_missing_plugin: true   # a lane feature the core removed whose plugin is not loaded: one ERROR and one notice
 """
 
 from __future__ import annotations
@@ -41,6 +42,7 @@ class Settings:
     apply_timeout_s: float = 5.0
     notify: bool = True
     events_max_bytes: int = 262144
+    warn_missing_plugin: bool = True
 
 
 def _int_in(value: Any, low: int, high: int, default: int) -> int:
@@ -70,6 +72,7 @@ def parse_settings(section: Any) -> Settings:
         apply_timeout_s=_number_in(data.get("apply_timeout_s"), 0.05, 120.0, default.apply_timeout_s),
         notify=data.get("notify") is not False,
         events_max_bytes=_int_in(data.get("events_max_bytes"), 4096, 16 * 1024 * 1024, default.events_max_bytes),
+        warn_missing_plugin=data.get("warn_missing_plugin") is not False,
     )
 
 
