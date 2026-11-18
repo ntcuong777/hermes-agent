@@ -211,8 +211,7 @@ class SessionAuthority:
         require_serving(self)
         if actor.profile_id != self.profile_id or ref.profile_id != self.profile_id:
             raise RuntimeStoreError('profile_mismatch')
-        from gateway.session_lane import note_authorize
-        note_authorize(ref.session_id, capability)  # what this call needs (gateway/session_lane.py seam)
+        __import__("gateway.session_lane_seam").session_lane_seam.observe_check(ref.session_id, capability)
         if capability not in actor.capabilities:
             raise RuntimeStoreError('permission_denied')
         if ref.session_id not in self.sessions:

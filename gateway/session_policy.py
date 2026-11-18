@@ -57,13 +57,9 @@ def pin_reasoning_effort(config, effort, *, session=False):
 
 
 def profile_config(authority):
-    """The owning profile's current ``config.yaml`` (its present sections), read fresh. A local session
-    follows the CLI model: ``host.yaml`` laid over it, never the phone's ``gateway.model`` (C150)."""
-    from gateway.route_config import local_session_config
+    """The owning profile's current ``config.yaml`` (its present sections), read fresh."""
     from gateway.run import _load_gateway_config
-    from hermes_cli.host_overlay import read_host_file
-    home = Path(authority.db.db_path).resolve().parent
-    return present_sections(local_session_config(_load_gateway_config(home / 'config.yaml'), read_host_file(home)))
+    return present_sections(_load_gateway_config(Path(authority.db.db_path).resolve().parent / 'config.yaml'))
 
 
 def unpin_reasoning(config, profile):
@@ -1105,16 +1101,8 @@ def _serving_local_desktop_within(scope):
 def policy_for_source(runner, source):
     from gateway.session_local import LocalSessionAdapter
     from gateway.config import Platform
-    if source is None:  # a history mount, which runs nothing
+    if source is None or source.platform != Platform.LOCAL:  # None: a history mount, which runs nothing
         return None
-    if source.platform != Platform.LOCAL:
-        # None, except while a read of a mirror-bound session is re-run (gateway/session_lane.py);
-        # a None is noted so a read that quietly degraded on it (an empty `@` completion) is re-run.
-        from gateway.session_lane import note_missing_policy, viewer_policy_override
-        override = viewer_policy_override()
-        if override is None:
-            note_missing_policy()
-        return override
     adapter = runner._adapter_for_source(source)
     if isinstance(adapter, LocalSessionAdapter) and adapter.authorize_source(source):
         policy = adapter.policies.get(source.chat_id)

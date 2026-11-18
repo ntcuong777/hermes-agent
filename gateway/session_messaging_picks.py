@@ -107,13 +107,8 @@ async def apply_chat_pick(authority, ref, owner, live, params, *, principal_id):
               'execution_generation': row['runtime_generation'], **fields}
     result = await asyncio.to_thread(commit_chat_pick, authority.db, **fenced, result=result)
     from gateway.session_local import local_session_info
-    # Every viewer repaints its model and reasoning pill, as after a LOCAL pick. The frame carries the owner
-    # stamp in its payload, as an idle ``_publish_pending`` frame does: a viewer that holds a generation
-    # drops a ``session.info`` without one (the TUI's lifecycle fence), and its pill stayed on the old
-    # level until the next resume.
-    info = {**local_session_info(authority, owner), 'authority_epoch': authority.epoch,
-            'execution_generation': result['execution_generation']}
-    live.event_stream.publish(owner.session_id, info, event_type='session.info')
+    # Every viewer repaints its model and reasoning pill, as after a LOCAL pick.
+    live.event_stream.publish(owner.session_id, local_session_info(authority, owner), event_type='session.info')
     return result
 
 
@@ -130,8 +125,6 @@ def messaging_route_info(runner, live):
     channel = runner._channel_override_for(live.source)
     if channel is not None:
         model, provider = channel.model or model, channel.provider or provider
-    from gateway.session_lane_model import adopt_carried_model
-    adopt_carried_model(runner, live.route)  # a handed-off local chat shows the route it keeps
     override = runner._session_model_override(live.route) or runner.session_store.get_model_override(live.route) or {}
     model = override.get('model') or model
     provider, base_url = override.get('provider') or provider, override.get('base_url') or base_url

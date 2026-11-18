@@ -224,14 +224,7 @@ async def rollback(connection, ref, params, *, kind):
     from gateway.session_policy import policy_for_source
     policy = policy_for_source(authority.runner, live.source)
     if policy is None:
-        # A mirror-bound session (gateway/session_lane.py): its checkpoint reads answer here, from the
-        # folder it recorded; a restore rewrites files and the transcript, so the thread runs it.
-        from gateway.session_lane import bound_lane, lane_owned_refusal, viewer_policy
-        if kind == 'restore' and await asyncio.to_thread(bound_lane, authority, ref.session_id) is not None:
-            raise lane_owned_refusal('/rollback')
-        policy = await asyncio.to_thread(viewer_policy, authority, ref) if kind != 'restore' else None
-        if policy is None:
-            raise RuntimeStoreError('permission_denied')
+        policy = await __import__("gateway.session_lane_seam").session_lane_seam.rollback_policy(authority, ref, kind)
     file_path = params.get('file_path') or ''
     if kind == 'restore' and not file_path and authority._handle(ref).execution_state != 'idle':
         # Main refuses a full-history rollback mid-turn; a file-scoped restore only touches disk.

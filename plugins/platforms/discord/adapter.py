@@ -4810,7 +4810,6 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
             channel_prompt=self._resolve_channel_prompt(channel_id, parent_id or None),
             # Bound skills load only when a session starts, and "/skill x" or "/queue" can start one.
             auto_skill=self._resolve_channel_skills(channel_id, parent_id or None),
-            auto_workspace=self._resolve_channel_workspace(channel_id, parent_id or None),
         )
 
     # --- Thread creation helpers ---
@@ -4864,7 +4863,6 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
         event = MessageEvent(
             text=text, message_type=MessageType.TEXT, source=source, raw_message=interaction,
             auto_skill=_skills, channel_prompt=_channel_prompt,
-            auto_workspace=self._resolve_channel_workspace(thread_id, _parent_id or None),
         )
         await self.handle_message(event)
 
@@ -4878,19 +4876,6 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
         """
         from gateway.platforms.base import resolve_channel_skills
         return resolve_channel_skills(self.config.extra, channel_id, parent_id)
-
-    def _resolve_channel_workspace(self, channel_id: str, parent_id: str | None = None) -> str | None:
-        """Workspace a NEW session in this channel/thread starts in (parent inherits like skills):
-        ``platforms.discord.extra.thread_workspaces``, exact id first. Applied by the gateway only
-        when the session is fresh; an ongoing session keeps its own directory."""
-        raw = self.config.extra.get("thread_workspaces") if isinstance(self.config.extra, dict) else None
-        if not isinstance(raw, dict):
-            return None
-        mappings = {str(k): str(v).strip() for k, v in raw.items() if isinstance(v, str) and v.strip()}
-        for key in (channel_id, parent_id):
-            if key and key in mappings:
-                return mappings[key]
-        return None
 
     def _resolve_channel_prompt(self, channel_id: str, parent_id: str | None = None) -> str | None:
         """Resolve a Discord per-channel prompt, preferring the exact channel over its parent."""
@@ -6333,7 +6318,6 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
         _chan_id = str(getattr(_chan, "id", ""))
         _skills = self._resolve_channel_skills(_chan_id, _parent_id or None)
         _channel_prompt = self._resolve_channel_prompt(_chan_id, _parent_id or None)
-        _workspace = self._resolve_channel_workspace(_chan_id, _parent_id or None)
         reply_to_id = None
         reply_to_text = None
         if message.reference:
@@ -6346,7 +6330,7 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
             media_text_inlined=media_text_inlined,
             reply_to_message_id=reply_to_id, reply_to_text=reply_to_text,
             timestamp=message.created_at, auto_skill=_skills, channel_prompt=_channel_prompt,
-            channel_context=_channel_context, auto_workspace=_workspace,
+            channel_context=_channel_context,
         )
         if is_automated_message(message) and self._is_bot_tag_debounce_continuation(message):
             event._bot_tag_debounce = True  # type: ignore[attr-defined]
