@@ -491,62 +491,6 @@ def _reset_predecessor(db, session_id, seen):
     return parent
 
 
-def _shared_route(authority, entry):
-    """True when *entry*'s route is shared across participants (its key names no sender)."""
-    from gateway.session import is_shared_multi_user_session
-    config = getattr(getattr(authority.runner, 'session_store', None), 'config', None)
-    origin = getattr(entry, 'origin', None)
-    return bool(origin is not None and is_shared_multi_user_session(
-        origin,
-        group_sessions_per_user=getattr(config, 'group_sessions_per_user', True),
-        thread_sessions_per_user=getattr(config, 'thread_sessions_per_user', False),
-    ))
-
-
-# A local operator's committed turn (``SessionAuthority.submit``): the classic CLI's, or one an
-# operator admitted on a session another principal owns (a session mirror's lane).
-_LOCAL_TURN_FIELDS = frozenset({'cli_turn_v1', 'local_operator_v1'})
-
-
-def _route_inputs(authority, entry):
-    """Every committed admission payload of *entry*'s conversation (its logical root's)."""
-    from hermes_state_runtime import list_session_admissions
-    return [row['payload'] for row in list_session_admissions(
-        authority.db, session_id=authority.logical_owner(entry.session_id), pending_only=False)]
-
-
-def _route_is_locally_driven(inputs):
-    """True when a local operator's turn was committed among *inputs*: such input arrives through
-    ``session.submit``, never a platform message, so it leaves no native envelope to borrow."""
-    return any(_LOCAL_TURN_FIELDS & set(payload) for payload in inputs)
-
-
-def origin_wake_source(authority, adapter, entry, requester_user_id=None):
-    """The route's stored origin as a wake's source when the conversation is locally driven and no
-    committed envelope can be borrowed (``wake_route_envelope`` found none), else ``None``.
-
-    A conversation a messaging lane took over from a local session (the session mirror's
-    ``/resume <id> --all``) only ever receives local-operator turns, so a background result for it
-    had nothing to wake as and was refused ``not_found`` for good. Its route's origin is who bound
-    the lane. On a shared multi-user route that origin is a first contact, not an identity a wake
-    may speak for on behalf of somebody else: a route any platform participant spoke on, or a wake
-    naming another requester, still refuses (no sender laundering). A route with no committed input
-    at all still refuses, so a producer cannot wake a chat out of nowhere."""
-    inputs = _route_inputs(authority, entry)
-    if not _route_is_locally_driven(inputs):
-        return None
-    source = authority.runner._restored_source(entry)
-    if source is None or source.delivered_via_upstream_relay or source.platform != adapter.platform:
-        return None
-    if _shared_route(authority, entry):
-        human_spoke = any('native_text_v1' in payload and 'automation' not in payload['native_text_v1']
-                          for payload in inputs)
-        other_requester = bool(requester_user_id) and str(requester_user_id) != str(source.user_id or '')
-        if human_spoke or other_requester:
-            return None
-    return source
-
-
 def wake_route_envelope(authority, entry, requester_user_id=None):
     """The current conversation's committed envelope, or its predecessor's.
 
@@ -560,7 +504,14 @@ def wake_route_envelope(authority, entry, requester_user_id=None):
     its session key. There a predecessor's envelope is borrowed only for the producer's authenticated
     user, or a result could be addressed to the predecessor's last speaker.
     """
-    shared = _shared_route(authority, entry)
+    from gateway.session import is_shared_multi_user_session
+    config = getattr(getattr(authority.runner, 'session_store', None), 'config', None)
+    origin = getattr(entry, 'origin', None)
+    shared = bool(origin is not None and is_shared_multi_user_session(
+        origin,
+        group_sessions_per_user=getattr(config, 'group_sessions_per_user', True),
+        thread_sessions_per_user=getattr(config, 'thread_sessions_per_user', False),
+    ))
     requester = str(requester_user_id) if requester_user_id else None
     prefer_human = requester is not None
     envelope = committed_route_envelope(authority, entry, human_only=prefer_human, user_id=requester)
@@ -608,7 +559,7 @@ def snapshot_automation(authority, adapter, event, identity):
     owner = authority.logical_owner(entry.session_id)
     envelope = wake_route_envelope(authority, entry, event.metadata.get('requester_user_id'))
     if envelope is None:
-        return _snapshot_origin_wake(authority, adapter, event, identity, entry, owner, notification)
+        raise RuntimeStoreError('not_found')
     # Persisted origins deliberately omit relay trust. Borrow only an exact
     # committed source's private proof, revalidated against the live connector.
     # Recheck only the source/provenance: a completed input's retained media is already released.
@@ -628,10 +579,6 @@ def snapshot_automation(authority, adapter, event, identity):
         # The relay seal binds the source; restore_native verified it over the anchored source.
         from gateway.session_ingress_context import reseal_relay
         provenance = reseal_relay(adapter, source, provenance)
-    return _wake_payload(event, identity, entry, owner, notification, source, provenance)
-
-
-def _wake_payload(event, identity, entry, owner, notification, source, provenance):
     # Producer timestamps and platform reply IDs change on retry. Neither belongs
     # in the identity/fingerprint of the same immutable completion.
     envelope = {'source': source, 'route': entry.session_key,
@@ -645,24 +592,6 @@ def _wake_payload(event, identity, entry, owner, notification, source, provenanc
     if identities:
         envelope['automation']['identities'] = sorted(set(identities))
     return {'text': event.text, 'native_text_v1': envelope}, entry
-
-
-def _snapshot_origin_wake(authority, adapter, event, identity, entry, owner, notification):
-    """The wake of a locally driven route, as its stored origin (``origin_wake_source``); refused
-    ``not_found`` as before when the route has no such origin to wake as."""
-    runner = authority.runner
-    source = origin_wake_source(authority, adapter, entry, event.metadata.get('requester_user_id'))
-    if source is None:
-        raise RuntimeStoreError('not_found')
-    if (runner.session_store._generate_session_key(source) != entry.session_key
-            or runner._adapter_for_source(source) is not adapter):
-        raise RuntimeStoreError('admission_conflict')
-    from gateway.session_ingress_context import route_provenance
-    provenance = route_provenance(runner, source, adapter)
-    stored = source.to_dict()
-    stored['is_bot'] = source.is_bot
-    stored.pop('message_id', None)  # never anchored to the message that started the lane
-    return _wake_payload(event, identity, entry, owner, notification, stored, provenance)
 
 
 def check_automation_route(runner, payload, session_id, available_source, adapter):
