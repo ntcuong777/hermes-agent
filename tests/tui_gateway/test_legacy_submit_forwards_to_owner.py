@@ -215,13 +215,13 @@ def test_an_unconfirmed_forward_is_never_reported_as_not_sent(monkeypatch, tmp_p
 
 def _gateway_turn_running(monkeypatch, tmp_path):
     """A legacy session whose stored chat has a gateway turn running (the ledger refuses a legacy turn)."""
-    db = SessionDB(db_path=tmp_path / "state.db")
+    db = open_persistence(profile_scope(home=tmp_path))
     sid, key, turns, _emitted = _legacy(monkeypatch, db)
-    db.create_session(key, "test")
-    epoch = begin_runtime_epoch(db, instance_id="gateway")
-    admit_session_input(db, epoch=epoch, principal_id="bot", session_id=key, request_id="dm-1",
+    seed_session(db, key, "test")
+    epoch = db.runtime.begin_epoch(instance_id="gateway")
+    db.admissions.admit(epoch=epoch, principal_id="bot", session_id=key, request_id="dm-1",
                         payload={"text": "a DM"})
-    claim_session_input(db, epoch=epoch, session_id=key)
+    db.admissions.claim(epoch=epoch, session_id=key)
     _owner(monkeypatch, db, key, epoch)
     return db, sid, turns
 
