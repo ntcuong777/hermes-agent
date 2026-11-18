@@ -204,6 +204,8 @@ def _doctor_rows(should_fix: bool, f: Any) -> None:
         return
     _section("Core Patches")
     counts = ", ".join(f"{status}={n}" for status, n in report._counts(report.row_of(r) for r in current).items())
+    drifted = sum(1 for r in current if r.drifted)
+    counts += f", drifted={drifted}" if drifted else ""  # spec 09: same rule as the registry summary line
     problems = core_patches_prov.lock_problems(current)
     summary = f"{len(current)} patch(es): {counts or 'none'}" + (f"; {len(problems)} provenance problem(s)" if problems else "")
     note = "(see: hermes plugins patches; hermes plugins patches --agent-brief NAME)"

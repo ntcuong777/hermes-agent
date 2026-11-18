@@ -84,6 +84,19 @@ def test_status_events_listing_and_strict_report_the_drift(target, no_discovery,
     assert exited.value.code == 1
 
 
+def test_the_doctor_summary_counts_a_drifted_applied_patch(target, no_discovery, capsys):
+    _install(target)
+    cmd._check_core_patches(False)
+    assert "1 patch(es): active=1, drifted=1" in capsys.readouterr().out
+
+
+def test_the_doctor_summary_has_no_drifted_count_without_drift(target, no_discovery, capsys):
+    _install(target, sha=GREET_SHA)
+    cmd._check_core_patches(False)
+    out = capsys.readouterr().out
+    assert "1 patch(es): active=1" in out and "drifted=" not in out
+
+
 def test_a_drifted_critical_patch_that_runs_does_not_refuse_and_logs_at_error(target, no_discovery, refusing, caplog):
     caplog.set_level(logging.WARNING, logger="hermes_cli.core_patches")
     _install(target, critical=True, name="must")
