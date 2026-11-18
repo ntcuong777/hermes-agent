@@ -48,40 +48,7 @@ def _profile_label(profile_id) -> str:
     return profile_name_for_home(text) or 'default'
 
 
-#: ``(method, session_id) -> monotonic time`` of the last ``permission_denied`` logged at info.
-_DENIED_LOGGED: dict = {}
-_DENIED_LOG_SECONDS = 60.0
-
-
-def _log_denied_once(method, session_id, exc) -> None:
-    """A bare ``permission_denied`` names neither the RPC nor the session to the user (the TUI
-    shows only "permission denied"), so the first one per (method, session) a minute is logged
-    at info with both: enough to find which call a lane-owned or read-only session refuses,
-    bounded so a polling client cannot flood the log."""
-    import time
-    now = time.monotonic()
-    key = (method, session_id)
-    if now - _DENIED_LOGGED.get(key, -_DENIED_LOG_SECONDS) < _DENIED_LOG_SECONDS:
-        return
-    if len(_DENIED_LOGGED) > 512:
-        _DENIED_LOGGED.clear()
-    _DENIED_LOGGED[key] = now
-    logger.info('%s refused permission_denied for session %s at %s%s', method, session_id or '-',
-                _raise_site(exc), f' detail={exc.detail}' if getattr(exc, 'detail', None) else '')
-
-
-def _raise_site(exc) -> str:
-    """``module.py:line`` of the frame that raised *exc*: a bare reason code says nothing about
-    which of the many ``permission_denied`` checks fired."""
-    tb, last = exc.__traceback__, None
-    while tb is not None:
-        last, tb = tb, tb.tb_next
-    if last is None:
-        return '?'
-    return f'{last.tb_frame.f_code.co_filename.rsplit("/", 1)[-1]}:{last.tb_lineno}'
-
-
-def _log_refusal(profile, method, exc: RuntimeStoreError, session_id=None) -> None:
+def _log_refusal(profile, method, exc: RuntimeStoreError) -> None:
     """One line per refusal, at the level its audience deserves.
 
     A refusal that names the check that fired is a launch diagnostic (warning). A bare reason code is
@@ -97,8 +64,6 @@ def _log_refusal(profile, method, exc: RuntimeStoreError, session_id=None) -> No
             f' field={exc.field}' if getattr(exc, 'field', None) else '',
             f' detail={exc.detail}' if getattr(exc, 'detail', None) else '')
     field = getattr(exc, 'field', None)
-    if exc.reason == 'permission_denied':
-        _log_denied_once(method, session_id, exc)
     if exc.reason == 'session_busy' or not (field or getattr(exc, 'detail', None)):
         logger.debug(line, *args)
     elif field == 'request_id' and exc.reason == 'admission_conflict':
@@ -346,8 +311,7 @@ class AuthorityConnection:
             # An interactive socket reaches a draining owner only in a restart's after-turn wait:
             # it may answer the parked turn and queue input, never change this owner's state.
             exc = RuntimeStoreError('runtime_draining')
-            _log_refusal(getattr(self.actor, 'profile_id', None), method, exc,
-                         session_id=params.get('session_id'))
+            _log_refusal(getattr(self.actor, 'profile_id', None), method, exc)
             return {'jsonrpc': '2.0', 'id': rid, 'error': {
                 'code': 4001, 'message': exc.reason, 'data': _refusal_data(exc)}}
         profile = params.get('profile')
@@ -355,8 +319,7 @@ class AuthorityConnection:
             try:
                 routed = self._sibling_for(profile)
             except RuntimeStoreError as exc:
-                _log_refusal(getattr(self.actor, 'profile_id', None), method, exc,
-                         session_id=params.get('session_id'))
+                _log_refusal(getattr(self.actor, 'profile_id', None), method, exc)
                 return {'jsonrpc': '2.0', 'id': rid, 'error': {
                     'code': 4001, 'message': exc.reason, 'data': _refusal_data(exc)}}
             if routed is not None:
@@ -418,8 +381,7 @@ class AuthorityConnection:
             check_result(contract, result)
             return {'jsonrpc': '2.0', 'id': rid, 'result': result}
         except RuntimeStoreError as exc:
-            _log_refusal(getattr(self.actor, 'profile_id', None), method, exc,
-                         session_id=params.get('session_id'))
+            _log_refusal(getattr(self.actor, 'profile_id', None), method, exc)
             # A connector refusal keeps the legacy handlers' code and message (gateway/session_connections.py).
             return {'jsonrpc': '2.0', 'id': rid, 'error': {
                 'code': getattr(exc, 'wire_code', 4001), 'message': getattr(exc, 'wire_message', exc.reason),

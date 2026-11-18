@@ -45,33 +45,6 @@ def test_register_command_records_its_default_keybinds(monkeypatch):
     assert commands['prx']['keybinds'] == {}
 
 
-def test_permission_denied_is_logged_once_per_method_and_session(monkeypatch, caplog):
-    session_controls._DENIED_LOGGED.clear()
-    exc = RuntimeStoreError('permission_denied')
-    with caplog.at_level('INFO', logger='gateway.session_controls'):
-        for _ in range(5):
-            session_controls._log_refusal('/home/p', 'slash.exec', exc, session_id='s1')
-        session_controls._log_refusal('/home/p', 'process.list', exc, session_id='s1')
-    lines = [r.getMessage() for r in caplog.records if 'refused permission_denied' in r.getMessage()]
-    assert lines == ['slash.exec refused permission_denied for session s1 at ?',
-                     'process.list refused permission_denied for session s1 at ?']
-
-
-def test_permission_denied_log_names_the_raising_check(caplog):
-    session_controls._DENIED_LOGGED.clear()
-
-    def guarded_check():
-        raise RuntimeStoreError('permission_denied')
-    try:
-        guarded_check()
-    except RuntimeStoreError as exc:
-        with caplog.at_level('INFO', logger='gateway.session_controls'):
-            session_controls._log_refusal('/home/p', 'session.resume', exc, session_id='s9')
-    line = next(r.getMessage() for r in caplog.records if 'refused permission_denied' in r.getMessage())
-    assert line.startswith('session.resume refused permission_denied for session s9 at ')
-    assert 'test_session_commands_lane_owned.py:' in line
-
-
 def test_memory_pending_is_a_read_and_memory_approve_is_not():
     assert session_commands.command_verdict('memory', 'pending') == 'read'
     assert session_commands.command_verdict('memory', 'approve 1') != 'read'

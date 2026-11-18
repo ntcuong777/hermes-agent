@@ -57,13 +57,9 @@ def pin_reasoning_effort(config, effort, *, session=False):
 
 
 def profile_config(authority):
-    """The owning profile's current ``config.yaml`` (its present sections), read fresh. A local session
-    follows the CLI model: ``host.yaml`` laid over it, never the phone's ``gateway.model`` (C150)."""
-    from gateway.route_config import local_session_config
+    """The owning profile's current ``config.yaml`` (its present sections), read fresh."""
     from gateway.run import _load_gateway_config
-    from hermes_cli.host_overlay import read_host_file
-    home = Path(authority.db.db_path).resolve().parent
-    return present_sections(local_session_config(_load_gateway_config(home / 'config.yaml'), read_host_file(home)))
+    return present_sections(_load_gateway_config(Path(authority.db.db_path).resolve().parent / 'config.yaml'))
 
 
 def unpin_reasoning(config, profile):

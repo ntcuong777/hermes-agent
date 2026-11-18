@@ -59,19 +59,14 @@ async def _authority(tmp_path, monkeypatch, host_yaml):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(('host_yaml', 'expected'), [
-    ('model:\n  provider: anthropic\n  default: claude-sonnet-5-5\n', 'claude-sonnet-5-5'),
-    ('model:\n  provider: zai\n  default: glm-5.3-flash\n', 'glm-5.3-flash'),
-    (None, 'claude-sonnet-5-5'),
-])
-async def test_a_tui_session_created_without_a_model_runs_the_cli_model_not_the_phone_model(
-        tmp_path, monkeypatch, host_yaml, expected):
-    authority = await _authority(tmp_path, monkeypatch, host_yaml)
+async def test_without_the_plugin_a_tui_session_ignores_host_yaml(tmp_path, monkeypatch):
+    """The CLI-model overlay is the `config-seams` plugin's (stage B15): core alone launches from the shared config (upstream)."""
+    authority = await _authority(tmp_path, monkeypatch, 'model:\n  provider: zai\n  default: glm-5.3-flash\n')
     conn = AuthorityConnection(authority, SimpleNamespace(write=lambda frame: None), {'user_id': 'owner'})
     cwd = str(Path(authority.db.db_path).parent)
     created = await conn.dispatch({'id': 1, 'method': 'session.create',
                                    'params': {'request_id': 'tui', 'source': 'tui', 'cwd': cwd}})
     assert 'result' in created, created
-    assert authority.db.get_session(created['result']['stored_session_id'])['model'] == expected
+    assert authority.db.get_session(created['result']['stored_session_id'])['model'] != 'glm-5.3-flash'
     await conn.close()
     authority.db.close()
