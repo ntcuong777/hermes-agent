@@ -311,7 +311,7 @@ def test_the_fork_owned_modules_compile_and_the_early_ones_are_stdlib_only():
 
     root = Path(cp.__file__).resolve().parent
     paths = [*root.glob("core_patches*.py"), root / "plugin_validate_core_patches.py"]
-    assert len(paths) == 11
+    assert len(paths) == 12  # + core_patches_missing.py (A6: the startup check for removed lane features)
     for path in paths:
         compile(path.read_text(encoding="utf-8"), str(path), "exec")
     for name in ("core_patches_safe", "core_patches_policy", "core_patches_shell", "core_patches_ctx",
