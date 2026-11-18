@@ -10,6 +10,16 @@
       "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
       "upstream_release": "0.23.0"
     },
+    "chat-workspaces/workspace-slash": {
+      "ast_sha": "b6e48dcacb5f131e37c9ab9c3a6710d9d5822769a75de43c01f4fabd1d372966",
+      "kind": "wrap",
+      "plugin": "chat-workspaces",
+      "reason": "The Discord /cwd autocomplete registration on the core that removed /cwd (spec 08b B11)",
+      "target": "plugins.platforms.discord.adapter:DiscordAdapter._register_slash_commands",
+      "target_file": "plugins/platforms/discord/adapter.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
     "config-seams/p27-load-config": {
       "ast_sha": "203c096032b996c4f69b75f9f10a4dbf6cd1d38cfb99e442c32f6d1500357919",
       "kind": "wrap",
