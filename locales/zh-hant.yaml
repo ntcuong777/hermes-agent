@@ -984,35 +984,6 @@ gateway:
     hint: "請在瀏覽器中儲值並管理帳務 — 完成後你的餘額會在此更新。"
   login:
     free_tier_remaining: "\n部分聊天仍在使用免費方案；請在那些聊天中使用 /model 切換。"
-  cwd:
-    current: "📁 工作目錄：`{cwd}`"
-    set: "📁 工作目錄已設定為 `{cwd}`\n本對話中的命令現在會在該目錄執行（`/new` 會恢復預設）。"
-    invalid: "❌ 目錄不存在：`{path}`"
-    backend: "❌ 僅在終端後端為 `local` 時才能使用工作區。"
-    unauthorized: "你沒有在此機器人上使用 /cwd 的權限。"
-    failed: "❌ 無法設定工作目錄。請查看閘道日誌。"
-    list_header: "📁 候選工作區 — 用 `/cwd <number>` 選擇，或輸入更多路徑："
-    list_item: "{index}. `{path}`"
-    list_footer: "也可以用 `/cwd <path>` 設定任意目錄。"
-    list_empty: "還沒有已知的工作區 — 用 `/cwd <path>` 設定一個（專案與最近使用的儲存庫會列在這裡）。"
-    list_ambiguous: "❓ 符合的工作區有多個：\n{matches}\n\n請輸入更多路徑。"
-    no_chat_id: "無法判斷聊天 ID。"
-    mode_not_enabled: "本聊天目前未啟用多會話話題模式。"
-    disable_failed: "停用話題模式失敗：{error}"
-    mode_disabled: "本聊天的多會話話題模式已關閉。\n\nTelegram 既有話題不會被刪除 — 只是不再作為獨立工作階段隔離。根私訊恢復為一般 Hermes 聊天。之後可執行 /topic 重新啟用。"
-    status_enabled: "Telegram 多會話話題已啟用。"
-    status_how_to: "若要建立新的 Hermes 聊天，請在此機器人介面頂部的「All Messages」中傳送任意訊息，Telegram 會為它建立新話題。"
-    previous_unlinked: "先前未連結的工作階段："
-    restore_one: "要還原其中一個："
-    restore_example: "範例：在話題內傳送 /topic {session_id}。"
-    no_unlinked: "找不到先前未連結的 Telegram 工作階段。"
-    restore_later: "之後要還原先前的工作階段："
-    session_not_found: "找不到工作階段：{session_id}"
-    not_telegram_session: "該工作階段不是 Telegram 工作階段，無法還原到此話題。"
-    not_your_session: "該工作階段不屬於這個 Telegram 使用者。"
-    already_linked: "該工作階段已連結到另一個 Telegram 話題。"
-    restored: "工作階段已還原：{title}"
-    restored_last_message: "\n\nHermes 最後一則訊息：\n{text}"
 platform:
   whatsapp:
     clarify_other_title: "✏️ 其他"
@@ -1126,8 +1097,6 @@ platform:
       choice_error: "套用選擇時發生錯誤：{error}"
       choice_expired: "⏱ 選擇已逾期 — 未做任何變更。"
     command:
-      cwd:
-        arg_path: "本對話的工作區目錄（例如 ~/code/foo）。留空顯示目前目錄。"
       new:
         description: "開始新對話"
         followup: "已開始新對話～"
@@ -1550,8 +1519,6 @@ platform:
     prompt_other: "✏️ 其他（輸入答案）"
     prompt_expired: ⌛ 該提示已不再等待回答。請以一般訊息傳送您的回覆。
 slash:
-  cwd:
-    description: "顯示或設定本對話的終端工作區（直到 /new）"
   rewind:
     description: "回溯至先前的提示以編輯並重新傳送,或從該處分支 (Esc Esc)"
   approve:

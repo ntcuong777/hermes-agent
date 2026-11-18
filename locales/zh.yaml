@@ -984,35 +984,6 @@ gateway:
     hint: "在浏览器中充值并管理账单——之后余额会在此处更新。"
   login:
     free_tier_remaining: "\n部分聊天仍在使用免费套餐；请在那些聊天中用 /model 切换。"
-  cwd:
-    current: "📁 工作目录：`{cwd}`"
-    set: "📁 工作目录已设置为 `{cwd}`\n本对话中的命令现在将在该目录运行（`/new` 会恢复默认）。"
-    invalid: "❌ 目录不存在：`{path}`"
-    backend: "❌ 仅当终端后端为 `local` 时才可用工作区。"
-    unauthorized: "你没有在此机器人上使用 /cwd 的权限。"
-    failed: "❌ 无法设置工作目录。请查看网关日志。"
-    list_header: "📁 候选工作区 — 用 `/cwd <number>` 选择，或输入更多路径内容："
-    list_item: "{index}. `{path}`"
-    list_footer: "也可以用 `/cwd <path>` 设置任意目录。"
-    list_empty: "还没有已知的工作区 — 用 `/cwd <path>` 设置一个（项目和最近使用的仓库会显示在这里）。"
-    list_ambiguous: "❓ 匹配到多个工作区：\n{matches}\n\n请输入更多路径内容。"
-    no_chat_id: "无法确定聊天 ID。"
-    mode_not_enabled: "本聊天当前未开启多会话话题模式。"
-    disable_failed: "关闭话题模式失败：{error}"
-    mode_disabled: "本聊天的多会话话题模式已关闭。\n\nTelegram 中已有的话题不会被删除 — 它们只是不再作为独立会话进行隔离。根私聊恢复为普通的 Hermes 聊天。之后可运行 /topic 重新开启。"
-    status_enabled: "Telegram 多会话话题已启用。"
-    status_how_to: "要创建新的 Hermes 聊天，请在此机器人界面顶部的“All Messages”中发送任意消息，Telegram 会为其创建新话题。"
-    previous_unlinked: "之前未链接的会话："
-    restore_one: "要恢复某一个："
-    restore_example: "示例：在话题内发送 /topic {session_id}。"
-    no_unlinked: "没有找到之前未链接的 Telegram 会话。"
-    restore_later: "之后要恢复之前的会话："
-    session_not_found: "未找到会话：{session_id}"
-    not_telegram_session: "该会话不是 Telegram 会话，无法恢复到此话题。"
-    not_your_session: "该会话不属于这个 Telegram 用户。"
-    already_linked: "该会话已链接到另一个 Telegram 话题。"
-    restored: "会话已恢复：{title}"
-    restored_last_message: "\n\nHermes 最后一条消息：\n{text}"
 platform:
   whatsapp:
     clarify_other_title: "✏️ 其他"
@@ -1126,8 +1097,6 @@ platform:
       choice_error: "应用所选项时出错：{error}"
       choice_expired: "⏱ 选择已过期 — 未做任何更改。"
     command:
-      cwd:
-        arg_path: "本对话的工作区目录（例如 ~/code/foo）。留空显示当前目录。"
       new:
         description: "开始新对话"
         followup: "已开始新对话~"
@@ -1550,8 +1519,6 @@ platform:
     prompt_other: "✏️ 其他（输入回答）"
     prompt_expired: ⌛ 该提示已不再等待回答。请以普通消息发送您的回复。
 slash:
-  cwd:
-    description: "显示或设置本对话的终端工作区（直到 /new）"
   rewind:
     description: "回溯到之前的提示以编辑并重新发送,或从该处分叉 (Esc Esc)"
   approve:

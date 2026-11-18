@@ -582,8 +582,9 @@ class AuthorityConnection:
     async def list_sessions(self, ref, params):
         if 'session:read' not in self.actor.capabilities:
             raise RuntimeStoreError('permission_denied')
+        params = __import__("gateway.session_lane_seam").session_lane_seam.list_params(params)
         limit, workspace, picker = params.get('limit', 200), params.get('workspace'), params.get('picker', False)
-        if (set(params) - {'limit', 'title', 'include_hidden', 'scope', 'workspace', 'picker', 'cwd', 'query', 'cursor'}
+        if (set(params) - {'limit', 'title', 'include_hidden', 'scope', 'workspace', 'picker', 'query', 'cursor'}
                 or type(limit) is not int or not 1 <= limit <= 200
                 or (workspace is not None and not (isinstance(workspace, str) and workspace))
                 or type(picker) is not bool):
@@ -591,14 +592,6 @@ class AuthorityConnection:
         if (params.get('scope', 'live') not in {'live', 'stored'}
                 or ('title' in params and ('scope' in params or workspace is not None or picker))):
             raise RuntimeStoreError('invalid_params')
-        # ``cwd`` narrows the list to the caller's workspace; it is a listing filter, not a title lookup.
-        if 'cwd' in params and ('title' in params or not isinstance(params['cwd'], str) or not params['cwd'].strip()):
-            raise RuntimeStoreError('invalid_params')
-        from hermes_state_sessions import workspace_for_dir
-        # The caller's directory (the personal TUI's form) narrows to that workspace's key; main's
-        # ``workspace`` param already arrives as a key. Only a present ``cwd`` replaces it.
-        if 'cwd' in params:
-            workspace = workspace_for_dir(params['cwd'].strip())
         from gateway.session_listing import check_page_params, stored_picker_sessions
         check_page_params(params)
         if params.get('scope') == 'stored':
@@ -625,7 +618,7 @@ class AuthorityConnection:
                                   'message_count': row.get('message_count', 0),
                                   'running': found.session_id in self.authority.sessions}],
                     'scope': 'stored'}
-        from hermes_state_sessions import INTERNAL_LISTING_SOURCES, workspace_key
+        from hermes_state_sessions import INTERNAL_LISTING_SOURCES
         from gateway.session_live_listing import live_entries
         sessions = []
         for entry in await live_entries(self.authority, self.actor):
@@ -636,7 +629,7 @@ class AuthorityConnection:
             if row.get('source') in INTERNAL_LISTING_SOURCES or entry.closed or (
                     not params.get('include_hidden') and (row.get('hidden') or row.get('archived'))):
                 continue
-            if workspace is not None and (workspace_key(row) or '').rstrip('/') != workspace.rstrip('/'):
+            if not __import__("gateway.session_lane_seam").session_lane_seam.list_row(row, workspace):
                 continue
             sessions.append({'session_id': entry.session_id, 'id': entry.session_id, 'title': row.get('title') or '',
                              'source': row.get('source'), 'started_at': row.get('started_at'),

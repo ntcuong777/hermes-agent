@@ -12,4 +12,4 @@ Spec 08b (the personal features that are not lanes): "workspaces" (B9), "workspa
 "settle" (B12), "wake" (B13, replaces the id of spec 08 B7), "residue" (B14), "p27" and "diagnostics" (B15).
 """
 
-REMOVED_FROM_CORE: frozenset = frozenset({"diagnostics", "forward", "gates", "model", "p27", "pills", "repaint", "rescue", "residue", "settle", "workspace-seed", "workspaces"})
+REMOVED_FROM_CORE: frozenset = frozenset({"diagnostics", "forward", "gates", "model", "p27", "pills", "repaint", "rescue", "residue", "settle", "workspace-seed", "workspace-slash", "workspaces"})

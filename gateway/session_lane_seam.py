@@ -58,6 +58,9 @@ KINDS = {
     "rollback_policy": "a launch policy for a checkpoint read; RuntimeStoreError: refuse "
                        "(ctx: authority, ref, op: 'list', 'diff', 'restore', ...)",
     "session_opened": "None (async; the callback binds a new session's workspace itself; ctx: runner, event, session_key, is_new)",
+    "list_params": "dict: the session.list params with a cwd translated to workspace (ctx: params); RuntimeStoreError: refuse",
+    "list_rows": "list: the rows session.list keeps (ctx: rows, params)",
+    "list_row": "bool: False drops a live-listing row (ctx: row, workspace)",
 }
 
 #: What a ``nonlocal_command`` callback returns to say "run this command here, as for a local session".
@@ -269,6 +272,24 @@ async def rollback_policy(authority: Any, ref: Any, op: str) -> Any:
     if found is None:
         raise RuntimeStoreError("permission_denied")
     return found
+
+
+def list_params(params: Any) -> Any:
+    """``session.list`` / ``list_sessions`` params before validation: a plugin may translate ``cwd`` into ``workspace``.
+    Upstream has no ``cwd``, so with no plugin the params pass through and a ``cwd`` is refused (``invalid_params``)."""
+    found = route_sync("list_params", params=params)
+    return found if isinstance(found, dict) else params
+
+
+def list_rows(rows: Any, params: Any) -> Any:
+    """``session.list``'s DB rows before the limit: a plugin may keep only some (``cwd``). No plugin: all of them."""
+    found = route_sync("list_rows", rows=rows, params=params)
+    return found if isinstance(found, list) else rows
+
+
+def list_row(row: Any, workspace: Any) -> bool:
+    """One live-listing row: False drops it (a plugin filters by ``workspace``). No plugin: kept."""
+    return route_sync("list_row", row=row, workspace=workspace) is not False
 
 
 async def session_opened(runner: Any, event: Any, session_key: Any, is_new: Any) -> None:

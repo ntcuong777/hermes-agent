@@ -984,35 +984,6 @@ gateway:
     hint: "Bakiye yükleme ve faturalandırma işlemlerini tarayıcıda yapın — bakiyeniz ardından burada güncellenir."
   login:
     free_tier_remaining: "\nBazı sohbetler hâlâ ücretsiz katmanda; o sohbetlerde geçiş yapmak için /model kullanın."
-  cwd:
-    current: "📁 Çalışma dizini: `{cwd}`"
-    set: "📁 Çalışma dizini `{cwd}` olarak ayarlandı\nBu sohbetteki komutlar artık orada çalışır (`/new` varsayılana döner)."
-    invalid: "❌ Dizin yok: `{path}`"
-    backend: "❌ Çalışma alanları yalnızca terminal arka ucu `local` olduğunda kullanılabilir."
-    unauthorized: "Bu botta /cwd kullanma yetkiniz yok."
-    failed: "❌ Çalışma dizini ayarlanamadı. Gateway günlüklerini kontrol et."
-    list_header: "📁 Aday çalışma alanları — `/cwd <number>` ile seçin ya da yolun daha fazlasını yazın:"
-    list_item: "{index}. `{path}`"
-    list_footer: "Ya da `/cwd <path>` ile herhangi bir dizin ayarla."
-    list_empty: "Henüz bilinen çalışma alanı yok — `/cwd <path>` ile bir tane ayarla (projeler ve son kullanılan depolar burada listelenecek)."
-    list_ambiguous: "❓ Birden fazla çalışma alanı eşleşiyor:\n{matches}\n\nYolun daha fazlasını yazın."
-    no_chat_id: "Sohbet kimliği belirlenemedi."
-    mode_not_enabled: "Çoklu oturum konu modu bu sohbet için şu anda etkin değil."
-    disable_failed: "Konu modu kapatılamadı: {error}"
-    mode_disabled: "Çoklu oturum konu modu bu sohbet için artık KAPALI.\n\nMevcut Telegram konuları silinmez — yalnızca bağımsız oturumlar olarak izole edilmeyi bırakır. Kök DM normal bir Hermes sohbeti gibi çalışır. Sonra /topic ile yeniden aç."
-    status_enabled: "Telegram çoklu oturum konuları etkin."
-    status_how_to: "Yeni bir Hermes sohbeti oluşturmak için bu bot arayüzünün üstündeki «All Messages» bölümünü açıp oraya bir mesaj gönderin. Telegram yeni bir konu oluşturur."
-    previous_unlinked: "Önceki bağlanmamış oturumlar:"
-    restore_one: "Birini geri yüklemek için:"
-    restore_example: "Örnek: bir konu içinde /topic {session_id} gönderin."
-    no_unlinked: "Önceki bağlanmamış Telegram oturumu bulunamadı."
-    restore_later: "Önceki bir oturumu sonra geri yüklemek için:"
-    session_not_found: "Oturum bulunamadı: {session_id}"
-    not_telegram_session: "Bu oturum bir Telegram oturumu değil ve bu konuya geri yüklenemez."
-    not_your_session: "Bu oturum bu Telegram kullanıcısına ait değil."
-    already_linked: "Bu oturum zaten başka bir Telegram konusuna bağlı."
-    restored: "Oturum geri yüklendi: {title}"
-    restored_last_message: "\n\nSon Hermes mesajı:\n{text}"
 platform:
   whatsapp:
     clarify_other_title: "✏️ Diğer"
@@ -1126,8 +1097,6 @@ platform:
       choice_error: "Seçim uygulanırken hata: {error}"
       choice_expired: "⏱ Seçim süresi doldu — değişiklik yapılmadı."
     command:
-      cwd:
-        arg_path: "Bu sohbet için çalışma alanı dizini (örn. ~/code/foo). Geçerli olanı göstermek için boş bırakın."
       new:
         description: "Yeni bir konuşma başlat"
         followup: "Yeni konuşma başlatıldı~"
@@ -1550,8 +1519,6 @@ platform:
     prompt_other: "✏️ Diğer (yanıt yazın)"
     prompt_expired: ⌛ Bu istem artık yanıt beklemiyor. Yanıtınızı normal bir mesaj olarak gönderin.
 slash:
-  cwd:
-    description: "Bu sohbetin terminal çalışma alanını gösterir veya ayarlar (/new'e kadar)"
   rewind:
     description: "Düzenleyip yeniden göndermek için önceki bir isteme geri sar veya oradan çatalla (Esc Esc)"
   approve:

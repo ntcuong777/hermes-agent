@@ -984,35 +984,6 @@ gateway:
     hint: "Recarga y gestiona la facturación en el navegador — tu saldo se actualizará aquí después."
   login:
     free_tier_remaining: "\nAlgunos chats siguen en el nivel gratuito; usa /model en esos chats para cambiar."
-  cwd:
-    current: "📁 Directorio de trabajo: `{cwd}`"
-    set: "📁 Directorio de trabajo establecido en `{cwd}`\nLos comandos de esta conversación ahora se ejecutan allí (un `/new` vuelve al valor predeterminado)."
-    invalid: "❌ El directorio no existe: `{path}`"
-    backend: "❌ Los espacios de trabajo solo están disponibles cuando el backend de terminal es `local`."
-    unauthorized: "No tienes autorización para usar /cwd en este bot."
-    failed: "❌ No se pudo establecer el directorio de trabajo. Consulta los registros del gateway."
-    list_header: "📁 Espacios de trabajo candidatos — elige con `/cwd <number>` o escribe más de la ruta:"
-    list_item: "{index}. `{path}`"
-    list_footer: "O establece cualquier directorio con `/cwd <path>`."
-    list_empty: "Aún no hay espacios de trabajo conocidos — crea uno con `/cwd <path>` (los proyectos y repos recientes aparecerán aquí)."
-    list_ambiguous: "❓ Varios espacios de trabajo coinciden:\n{matches}\n\nEscribe más de la ruta."
-    no_chat_id: "No se pudo determinar el ID del chat."
-    mode_not_enabled: "El modo de temas multisesión no está activado actualmente para este chat."
-    disable_failed: "No se pudo desactivar el modo de temas: {error}"
-    mode_disabled: "El modo de temas multisesión está ahora DESACTIVADO para este chat.\n\nLos temas existentes de Telegram no se eliminan — solo dejan de tratarse como sesiones independientes. El DM raíz vuelve a funcionar como un chat normal de Hermes. Ejecuta /topic para reactivarlo más tarde."
-    status_enabled: "Los temas multisesión de Telegram están activados."
-    status_how_to: "Para crear un nuevo chat de Hermes, abre «All Messages» en la parte superior de esta interfaz del bot y envía cualquier mensaje allí. Telegram creará un nuevo tema."
-    previous_unlinked: "Sesiones anteriores sin vincular:"
-    restore_one: "Para restaurar una:"
-    restore_example: "Ejemplo: envía /topic {session_id} dentro de un tema."
-    no_unlinked: "No se encontraron sesiones de Telegram previas sin vincular."
-    restore_later: "Para restaurar una sesión anterior más tarde:"
-    session_not_found: "Sesión no encontrada: {session_id}"
-    not_telegram_session: "Esa sesión no es una sesión de Telegram y no puede restaurarse en este tema."
-    not_your_session: "Esa sesión no pertenece a este usuario de Telegram."
-    already_linked: "Esa sesión ya está vinculada a otro tema de Telegram."
-    restored: "Sesión restaurada: {title}"
-    restored_last_message: "\n\nÚltimo mensaje de Hermes:\n{text}"
 platform:
   whatsapp:
     clarify_other_title: "✏️ Otra"
@@ -1126,8 +1097,6 @@ platform:
       choice_error: "Error al aplicar la selección: {error}"
       choice_expired: "⏱ La selección expiró — no se hizo ningún cambio."
     command:
-      cwd:
-        arg_path: "Directorio del espacio de trabajo para esta conversación (p. ej. ~/code/foo). Déjalo vacío para mostrar el actual."
       new:
         description: "Iniciar una conversación nueva"
         followup: "Nueva conversación iniciada~"
@@ -1550,8 +1519,6 @@ platform:
     prompt_other: "✏️ Otra (escribir respuesta)"
     prompt_expired: ⌛ Esa solicitud ya no espera respuesta. Envía tu respuesta como un mensaje normal.
 slash:
-  cwd:
-    description: "Muestra o establece el espacio de trabajo de terminal de esta conversación (hasta /new)"
   rewind:
     description: "Rebobinar a un prompt anterior para editarlo y reenviarlo, o bifurcar desde ahí (Esc Esc)"
   approve:

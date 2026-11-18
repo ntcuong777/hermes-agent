@@ -984,35 +984,6 @@ gateway:
     hint: "Laai op en bestuur fakturering in die blaaier — jou saldo word daarna hier opgedateer."
   login:
     free_tier_remaining: "\nSommige geselsies is nog op die gratis vlak; gebruik /model in daardie geselsies om oor te skakel."
-  cwd:
-    current: "📁 Werkgids: `{cwd}`"
-    set: "📁 Werkgids gestel na `{cwd}`\nOpdragte in hierdie gesprek loop nou daar ('n `/new` keer terug na die verstek)."
-    invalid: "❌ Gids bestaan nie: `{path}`"
-    backend: "❌ Werkruimtes is slegs beskikbaar wanneer die terminaal-agterste is `local`."
-    unauthorized: "Jy mag nie /cwd op hierdie bot gebruik nie."
-    failed: "❌ Kon die werkgids nie stel nie. Kyk na die gateway-loglêers."
-    list_header: "📁 Moontlike werkruimtes — kies met `/cwd <number>`, of tik meer van die pad:"
-    list_item: "{index}. `{path}`"
-    list_footer: "Of stel enige gids met `/cwd <path>`."
-    list_empty: "Nog geen bekende werkruimtes nie — stel een met `/cwd <path>` (projekte en onlangs gebruikte repo's verskyn hier)."
-    list_ambiguous: "❓ Verskeie werkruimtes pas:\n{matches}\n\nTik meer van die pad."
-    no_chat_id: "Kon die klets-ID nie bepaal nie."
-    mode_not_enabled: "Multi-sessie-onderwerpmodus is tans nie geaktiveer vir hierdie klets nie."
-    disable_failed: "Kon onderwerpmodus nie deaktiveer nie: {error}"
-    mode_disabled: "Multi-sessie-onderwerpmodus is nou AF vir hierdie klets.\n\nBestaande Telegram-onderwerpe word nie verwyder nie — hulle word net nie meer as onafhanklike sessies afgesonder nie. Die wortel-DM werk weer soos 'n gewone Hermes-klets. Loop /topic om dit later weer te aktiveer."
-    status_enabled: "Telegram multi-sessie-onderwerpe is geaktiveer."
-    status_how_to: "Om 'n nuwe Hermes-klets te skep, maak «All Messages» bo-aan hierdie bot-koppelvlak oop en stuur enige boodskap daarheen. Telegram skep 'n nuwe onderwerp."
-    previous_unlinked: "Vorige ongekoppelde sessies:"
-    restore_one: "Om een te herstel:"
-    restore_example: "Voorbeeld: stuur /topic {session_id} binne 'n onderwerp."
-    no_unlinked: "Geen vorige ongekoppelde Telegram-sessies gevind nie."
-    restore_later: "Om 'n vorige sessie later te herstel:"
-    session_not_found: "Sessie nie gevind nie: {session_id}"
-    not_telegram_session: "Daardie sessie is nie 'n Telegram-sessie nie en kan nie in hierdie onderwerp herstel word nie."
-    not_your_session: "Daardie sessie behoort nie aan hierdie Telegram-gebruiker nie."
-    already_linked: "Daardie sessie is reeds aan 'n ander Telegram-onderwerp gekoppel."
-    restored: "Sessie herstel: {title}"
-    restored_last_message: "\n\nLaaste Hermes-boodskap:\n{text}"
 platform:
   whatsapp:
     clarify_other_title: "✏️ Ander"
@@ -1126,8 +1097,6 @@ platform:
       choice_error: "Fout met toepassing van keuse: {error}"
       choice_expired: "⏱ Keuse het verval — geen verandering gemaak nie."
     command:
-      cwd:
-        arg_path: "Werkruimgids vir hierdie gesprek (bv. ~/code/foo). Laat leeg om die huidige te wys."
       new:
         description: "Begin 'n nuwe gesprek"
         followup: "Nuwe gesprek begin~"
@@ -1550,8 +1519,6 @@ platform:
     prompt_other: "✏️ Ander (tik antwoord)"
     prompt_expired: ⌛ Daardie navraag wag nie meer op 'n antwoord nie. Stuur jou antwoord as 'n gewone boodskap.
 slash:
-  cwd:
-    description: "Wys of stel hierdie gesprek se terminaal-werkruimte (tot /new)"
   rewind:
     description: "Spoel terug na 'n vroeëre opdrag om dit te wysig & weer te stuur, of vurk van daar af (Esc Esc)"
   approve:

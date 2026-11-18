@@ -998,35 +998,6 @@ gateway:
     hint: "Feltöltés és számlázás a böngészőben — az egyenleged utána itt is frissül."
   login:
     free_tier_remaining: "\nNéhány csevegés még az ingyenes szinten van; ott a /model paranccsal válthatsz."
-  cwd:
-    current: "📁 Munkakönyvtár: `{cwd}`"
-    set: "📁 A munkakönyvtár beállítva: `{cwd}`\nA beszélgetés parancsai mostantól ott futnak (a `/new` visszaáll az alapértelmezettre)."
-    invalid: "❌ A könyvtár nem létezik: `{path}`"
-    backend: "❌ A munkaterületek csak akkor érhetők el, ha a terminál háttérrendszer `local`."
-    unauthorized: "Nincs jogosultságod a /cwd használatára ezen a boton."
-    failed: "❌ A munkakönyvtár beállítása nem sikerült. Nézd meg a gateway naplóit."
-    list_header: "📁 Lehetséges munkaterületek — válassz `/cwd <number>`-rel, vagy írj többet az útvonalból:"
-    list_item: "{index}. `{path}`"
-    list_footer: "Vagy állíts be tetszőleges könyvtárat `/cwd <path>`-tal."
-    list_empty: "Még nincs ismert munkaterület — hozz létre egyet `/cwd <path>`-tal (a projektek és a nemrég használt repók itt jelennek meg)."
-    list_ambiguous: "❓ Több munkaterület egyezik:\n{matches}\n\nÍrj többet az útvonalból."
-    no_chat_id: "A csevegés-azonosító nem megállapítható."
-    mode_not_enabled: "A többmunkamenetes témamód jelenleg nincs engedélyezve ehhez a csevegéshez."
-    disable_failed: "A témamód letiltása nem sikerült: {error}"
-    mode_disabled: "A többmunkamenetes témamód most KIKAPCSOLT ehhez a csevegéshez.\n\nA meglévő Telegram-témák nem törlődnek — csak nem kezelők többé önálló munkamenetekként. A gyökér DM újra normál Hermes-csevegésként működik. Később /topic-tal kapcsold vissza."
-    status_enabled: "A Telegram többmunkamenetes témái engedélyezve vannak."
-    status_how_to: "Új Hermes-csevegés létrehozásához nyisd meg az „All Messages“ elemet a bot felületének tetején, és küldj oda egy üzenetet. A Telegram új témát hoz létre."
-    previous_unlinked: "Korábbi kapcsolat nélküli munkamenetek:"
-    restore_one: "Egy visszaállításához:"
-    restore_example: "Példa: küldd el a /topic {session_id}-t egy témán belül."
-    no_unlinked: "Nincs korábbi kapcsolat nélküli Telegram-munkamenet."
-    restore_later: "Korábbi munkamenet későbbi visszaállításához:"
-    session_not_found: "A munkamenet nem található: {session_id}"
-    not_telegram_session: "Ez a munkamenet nem Telegram-munkamenet, ezért nem állítható helyre ebben a témában."
-    not_your_session: "Ez a munkamenet nem ehhez a Telegram-felhasználóhoz tartozik."
-    already_linked: "Ez a munkamenet már egy másik Telegram-témához van kapcsolva."
-    restored: "Munkamenet visszaállítva: {title}"
-    restored_last_message: "\n\nUtolsó Hermes-üzenet:\n{text}"
 platform:
   whatsapp:
     clarify_other_title: "✏️ Egyéb"
@@ -1143,8 +1114,6 @@ platform:
       choice_error: "Hiba a választás alkalmazásakor: {error}"
       choice_expired: "⏱ A választás lejárt — nem történt változás."
     command:
-      cwd:
-        arg_path: "A beszélgetés munkaterület-könyvtára (pl. ~/code/foo). Üresen hagyva az aktuálisat mutatja."
       new:
         description: "Új beszélgetés indítása"
         followup: "Új beszélgetés indítva~"
@@ -1567,8 +1536,6 @@ platform:
     prompt_other: "✏️ Egyéb (írd be a választ)"
     prompt_expired: ⌛ Ez a kérdés már nem vár válaszra. Küldd el a válaszodat normál üzenetként.
 slash:
-  cwd:
-    description: "Megjeleníti vagy beállítja a beszélgetés terminál-munkaterületét (/new-ig)"
   rewind:
     description: "Visszatekerés egy korábbi prompthoz a szerkesztéshez és újraküldéshez, vagy elágazás onnan (Esc Esc)"
   approve:

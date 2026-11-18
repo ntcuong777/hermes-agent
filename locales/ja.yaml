@@ -984,35 +984,6 @@ gateway:
     hint: "チャージと請求の管理はブラウザで行ってください — 完了後、ここの残高が更新されます。"
   login:
     free_tier_remaining: "\n一部のチャットはまだ無料プランのままです。それらのチャットでは /model で切り替えてください。"
-  cwd:
-    current: "📁 作業ディレクトリ: `{cwd}`"
-    set: "📁 作業ディレクトリを `{cwd}` に設定しました\nこの会話でのコマンドはここで実行されます（`/new` でデフォルトに戻ります）。"
-    invalid: "❌ ディレクトリが存在しません: `{path}`"
-    backend: "❌ ワークスペースはターミナルバックエンドが `local` の場合のみ利用できます。"
-    unauthorized: "このボットで /cwd を使用する権限がありません。"
-    failed: "❌ 作業ディレクトリを設定できませんでした。ゲートウェイのログを確認してください。"
-    list_header: "📁 候補ワークスペース — `/cwd <number>` で選択するか、パスをもう少し入力してください:"
-    list_item: "{index}. `{path}`"
-    list_footer: "`/cwd <path>` で任意のディレクトリを設定することもできます。"
-    list_empty: "既知のワークスペースはまだありません — `/cwd <path>` で設定してください（プロジェクトや最近使ったリポジトリがここに表示されます）。"
-    list_ambiguous: "❓ 一致するワークスペースが複数あります:\n{matches}\n\nパスをもう少し入力してください。"
-    no_chat_id: "チャットIDを特定できませんでした。"
-    mode_not_enabled: "このチャットでマルチセッション トピックモードは現在有効ではありません。"
-    disable_failed: "トピックモードを無効にできませんでした: {error}"
-    mode_disabled: "このチャットのマルチセッション トピックモードはオフになりました。\n\nTelegramの既存トピックは削除されません — 独立したセッションとしての扱いがなくなるだけです。ルートDMは通常のHermesチャットに戻ります。後で /topic で再度有効化できます。"
-    status_enabled: "Telegramマルチセッション トピックが有効です。"
-    status_how_to: "新しいHermesチャットを作成するには、このボット画面上部の「All Messages」を開いて任意のメッセージを送信してください。Telegramが新しいトピックを作成します。"
-    previous_unlinked: "以前の未リンクセッション:"
-    restore_one: "1つを復元するには:"
-    restore_example: "例: トピック内で /topic {session_id} を送信します。"
-    no_unlinked: "以前の未リンクのTelegramセッションは見つかりませんでした。"
-    restore_later: "後で以前のセッションを復元するには:"
-    session_not_found: "セッションが見つかりません: {session_id}"
-    not_telegram_session: "そのセッションはTelegramセッションではないため、このトピックに復元できません。"
-    not_your_session: "そのセッションはこのTelegramユーザーのものではありません。"
-    already_linked: "そのセッションは別のTelegramトピックに既にリンクされています。"
-    restored: "セッションを復元しました: {title}"
-    restored_last_message: "\n\nHermesの最後のメッセージ:\n{text}"
 platform:
   whatsapp:
     clarify_other_title: "✏️ その他"
@@ -1126,8 +1097,6 @@ platform:
       choice_error: "選択の適用エラー: {error}"
       choice_expired: "⏱ 選択の有効期限が切れました — 変更は行われていません。"
     command:
-      cwd:
-        arg_path: "この会話のワークスペースディレクトリ（例: ~/code/foo）。空欄で現在のディレクトリを表示。"
       new:
         description: "新しい会話を開始します"
         followup: "新しい会話を開始しました~"
@@ -1550,8 +1519,6 @@ platform:
     prompt_other: "✏️ その他（回答を入力）"
     prompt_expired: ⌛ このプロンプトはもう回答を待っていません。通常のメッセージとして返信を送ってください。
 slash:
-  cwd:
-    description: "この会話のターミナルワークスペースを表示または設定します（/new まで有効）"
   rewind:
     description: "以前のプロンプトまで巻き戻して編集・再送信、またはそこから分岐 (Esc Esc)"
   approve:

@@ -131,8 +131,6 @@ _NATIVE_SLASH_COMMAND_SPECS: tuple = (
     ("title", "platform.discord.command.title.description",
      (("name", str, "", "platform.discord.command.title.arg_name", None),),
      "/title {name}", None),
-    # /cwd: template None -> registered by _register_cwd_slash (dynamic path autocomplete).
-    ("cwd", "slash.cwd.description", (), None, None),
     ("resume", "slash.resume.description",
      (("name", str, "", "platform.discord.command.resume.arg_name", None),),
      "/resume {name}", None),
@@ -4454,71 +4452,6 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
                 _handler = discord.app_commands.choices(**choices)(_handler)
         return _handler
 
-    _CWD_CANDIDATES_TTL_SECONDS = 30.0
-    _cwd_candidates_cache: tuple | None = None  # (monotonic stamp, candidate paths)
-
-    def _build_cwd_choices(self, current: str) -> list:
-        """Workspace candidates for the /cwd type-ahead. Cached briefly: a candidates build walks
-        projects.db and git probes — too slow per keystroke. Session-derived roots need a real chat
-        key, which a keystroke has none of — this list is projects + the discovered-repo cache only;
-        ``/cwd list`` (which runs inside a turn) is the fuller list."""
-        now = time.monotonic()
-        cached = self._cwd_candidates_cache
-        if cached is not None and now - cached[0] < self._CWD_CANDIDATES_TTL_SECONDS:
-            candidates = cached[1]
-        else:
-            from gateway.workspace_candidates import candidate_workspaces
-            candidates = candidate_workspaces(None)
-            self._cwd_candidates_cache = (now, candidates)
-        q = (current or "").strip().lower()
-        choices: list = []
-        # "list" is a subcommand riding the path argument (Discord has no separate enum slot):
-        # offer it whenever the typed text can still become it, so the dropdown isn't just dirs.
-        if not q or "list".startswith(q) or "ls".startswith(q):
-            choices.append(discord.app_commands.Choice(
-                name="list — show numbered workspaces", value="list"))
-        if not q:
-            matches = candidates
-        else:
-            from gateway.workspace_candidates import match_workspace_prefix
-            matches, _note = match_workspace_prefix(candidates, q)
-        # Discord's Choice.name is capped at 100 chars; autocomplete at 25 choices.
-        room = 25 - len(choices)
-        choices.extend(discord.app_commands.Choice(name=m[:100], value=m) for m in matches[:room])
-        return choices
-
-    def _register_cwd_slash(self, tree, name: str, description: str) -> None:
-        """/cwd with dynamic path autocomplete over the profile's candidate workspaces
-        (the _register_skill_group shape). Unauthorized users get []: no path leak."""
-        async def _autocomplete_path(interaction: discord.Interaction, current: str) -> list:
-            try:
-                allowed, _reason = self._evaluate_slash_authorization(interaction)
-            except Exception:  # health: allow BLE001 -- never raise from autocomplete; fail closed
-                return []
-            if not allowed:
-                return []
-            profile = getattr(self, "_owner_profile", None)
-            if profile:  # a keystroke runs outside any turn: bind the owning profile explicitly
-                from gateway.run import _async_profile_runtime_scope
-                from hermes_cli.profiles import get_profile_dir
-                async with _async_profile_runtime_scope(get_profile_dir(profile)):
-                    return await asyncio.to_thread(self._build_cwd_choices, current)
-            return await asyncio.to_thread(self._build_cwd_choices, current)
-
-        @discord.app_commands.describe(
-            path=_t_discord("platform.discord.command.cwd.arg_path", _DISCORD_APP_COMMAND_TEXT_LIMIT),
-        )
-        @discord.app_commands.autocomplete(path=_autocomplete_path)
-        async def _cwd_handler(interaction: discord.Interaction, path: str = ""):
-            if not await self._check_slash_authorization(interaction, "/cwd"):
-                return
-            await self._run_simple_slash(interaction, f"/cwd {path}".strip())
-
-        tree.command(name="cwd", description=description)(_cwd_handler)
-
-    # Template-None spec entries route here by name (all take ``(tree, name, description)``).
-    _TEMPLATE_NONE_REGISTRARS = {"cwd": _register_cwd_slash}
-
     def _register_thread_slash(self, tree, name: str, description: str) -> None:
         @tree.command(name=name, description=description)
         @discord.app_commands.describe(
@@ -4540,10 +4473,7 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
         tree = self._client.tree
         for name, description, args, template, followup in _native_slash_commands():
             if template is None:
-                # Spec-driven dispatch: each template-None entry names its registrar
-                # (everything unknown defaults to the /thread registrar).
-                registrar = self._TEMPLATE_NONE_REGISTRARS.get(name, type(self)._register_thread_slash)
-                registrar(self, tree, name, description)
+                self._register_thread_slash(tree, name, description)
                 continue
             tree.command(name=name, description=description)(
                 self._slash_proxy(name, args, template, followup, strip=name != "insights")
