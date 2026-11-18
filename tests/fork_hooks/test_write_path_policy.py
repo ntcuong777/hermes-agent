@@ -23,8 +23,8 @@ def world(tmp_path, monkeypatch):
     for d in (repo / "scripts", other):
         d.mkdir(parents=True)
     monkeypatch.setattr(guards, "_SENSITIVE_PATH_PREFIXES", (deny_key(str(system)) + "/",))  # casefolded on macOS
-    monkeypatch.setattr(guards, "_hermes_config_resolved", str(tmp_path / "elsewhere" / "config.yaml"))
-    monkeypatch.setattr(guards, "_hermes_config_resolved_loaded", True)
+    # Upstream resolves the config path per call (_get_hermes_config_resolved); pin that getter.
+    monkeypatch.setattr(guards, "_get_hermes_config_resolved", lambda: str(tmp_path / "elsewhere" / "config.yaml"))
     return type("W", (), {"system": system, "repo": repo, "other": other, "tmp": tmp_path})
 
 
@@ -72,10 +72,10 @@ def test_dotdot_and_symlinks_out_of_an_allowed_root_are_denied(register, world):
 
 def test_exact_paths_and_the_config_guard_are_never_lifted(register, world, monkeypatch):
     register(wpp.HOOK, _as_config_seams(_allow))
-    monkeypatch.setattr(guards, "_SENSITIVE_EXACT_PATHS", {str(world.repo / "docker.sock")})
+    monkeypatch.setattr(guards, "_SENSITIVE_EXACT_PATHS", {deny_key(str(world.repo / "docker.sock"))})  # keys are casefolded on macOS
     assert "sensitive system path" in guards._check_sensitive_path(str(world.repo / "docker.sock"))
     config = world.repo / "config.yaml"
-    monkeypatch.setattr(guards, "_hermes_config_resolved", str(config))
+    monkeypatch.setattr(guards, "_get_hermes_config_resolved", lambda: str(config))
     assert "Hermes config" in guards._check_sensitive_path(str(config))
 
 

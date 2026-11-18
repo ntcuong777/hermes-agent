@@ -25,7 +25,8 @@ TOOL_EXECUTOR_HOOK_LINE = (
     "  # fork: resolve_tool_result_limits hook"
 )
 TOOL_EXECUTOR_UPSTREAM_LINE = "        return budget_for_context_window(int(ctx) if ctx else None)"
-TOOL_EXECUTOR_UPSTREAM_BLOB = "20f057249ce3c28af48f4da6298f62d500fa9f38"  # git rev-parse BASE:agent/tool_executor.py
+# 2026-11-18 upstream sync to 0.22.5 (reason: upstream sync to 0.22.5); was 20f057249ce3c28af48f4da6298f62d500fa9f38.
+TOOL_EXECUTOR_UPSTREAM_BLOB = "55cbaae263b4297a8b3676b546f35919155fcb5f"  # git rev-parse refs/heads/main:agent/tool_executor.py
 
 
 def _module(name: str):
@@ -33,7 +34,8 @@ def _module(name: str):
 
 
 def test_checkpoint_stale_lock_is_not_in_core():
-    assert not hasattr(_module("tools.checkpoint_manager"), "_clear_stale_store_lock")
+    # 2026-11-18 upstream sync to 0.22.5: tools/checkpoint_manager.py moved to agent/checkpoints/manager.py.
+    assert not hasattr(_module("agent.checkpoints.manager"), "_clear_stale_store_lock")
 
 
 def test_tmux_passthrough_is_not_in_core():
@@ -74,17 +76,20 @@ def test_tool_executor_is_upstream_except_the_spec_04_hook():
     assert blob == TOOL_EXECUTOR_UPSTREAM_BLOB
 
 
-# Upstream blob ids (git rev-parse e96221fa73d:<path>) of the files the core-fixes wrappers patch
+# Upstream blob ids (git rev-parse <upstream>:<path>) of the files the core-fixes wrappers patch
 # back: the reverted fork edits must leave these byte-identical to upstream.
+# 2026-11-18 upstream sync to 0.22.5 (reason: upstream sync to 0.22.5): the four changed files
+# and the checkpoint module (now agent/checkpoints/manager.py) carry the 0.22.5 blobs; the other
+# three are unchanged upstream. The fork's merged files were checked byte-identical to upstream.
 REVERTED_FILES_UPSTREAM_BLOBS = (
-    ("tools/checkpoint_manager.py", "99d5296a0e56c4ca1b292cb2e767788c0348c29a"),
+    ("agent/checkpoints/manager.py", "f39334cc679ae901f75b940b2303f2a544f4a2ff"),
     ("hermes_cli/terminal_notify.py", "db57eae7c8ad847616e814f0470cde984d09914a"),
-    ("agent/turn_tool_round.py", "7440ffc2ec73b75a7e4507e1b49f91deefbdebf1"),
-    ("agent/turn_tool_validation.py", "55fc7fd0e0642efebb4c0bd0421f06af721f2af2"),
+    ("agent/turn_tool_round.py", "7f3b7b108152f3c92ce419642eb792b9eea03a5f"),
+    ("agent/turn_tool_validation.py", "17644e898e52aba27bb63b6c2394b2992d74e3cd"),
     ("cron/scheduler_script.py", "82ca6447ae718fc96ec47b4e867906f070577a21"),
     ("agent/display.py", "0a129b056c2da0bc42a189dad1ce4e5e2505a3ce"),
-    ("agent/tool_dispatch_helpers.py", "2812259cbad4c30056d89240243661339e84b077"),
-    ("agent/agent_runtime_helpers.py", "634c46fa21b1990c1df4e037638f0d6619b54fb1"),
+    ("agent/tool_dispatch_helpers.py", "9d774b4e0ddc2c757a7217190ad8771fc4f7b199"),
+    ("agent/agent_runtime_helpers.py", "9da502a2dc9c250cb38d47db0e5de688895c6beb"),
 )
 
 
