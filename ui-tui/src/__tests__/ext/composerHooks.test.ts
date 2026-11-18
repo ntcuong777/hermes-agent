@@ -54,8 +54,12 @@ const rig = async (sources: Record<string, string>): Promise<Host> => {
 const ext = (body: string) => `export default { sdkVersion: 1, activate(api) { ${body} } }\n`
 
 describe('the hook table', () => {
-  it('defines exactly the two composer hooks of stage 1', () => {
-    expect(HOOKS).toEqual({ 'composer.clipboardImage': { mode: 'first' }, 'composer.paste': { mode: 'transform' } })
+  it('defines the composer hooks and the gateway.event hook', () => {
+    expect(HOOKS).toEqual({
+      'composer.clipboardImage': { mode: 'first' },
+      'composer.paste': { mode: 'transform' },
+      'gateway.event': { mode: 'all' }
+    })
   })
 })
 
