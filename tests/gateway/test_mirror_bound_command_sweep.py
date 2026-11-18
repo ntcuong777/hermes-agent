@@ -314,9 +314,18 @@ def ran_here(monkeypatch):
     from gateway import session_commands as sc
     ran = []
 
-    async def in_band(connection, ref, live, home, canonical, arg, definition, before):
-        ran.append(('/' + canonical, arg))
-        return {'type': 'exec', 'output': 'ran here'}
+    def command_handler_table(self, names):
+        async def handler(event):
+            command, _, arg = event.text.partition(' ')
+            ran.append((command, arg))
+            return 'ran here'
+        return {name: handler for name in names}
+
+    def prompt_command(name):
+        async def run(self, event, source, route):
+            ran.append(('/' + name, event.text.partition(' ')[2]))
+            return True, 'ran here'
+        return run
 
     async def runner_command(runner, live, name, arg, kind, shell):
         ran.append(('/' + name, arg))
@@ -341,7 +350,9 @@ def ran_here(monkeypatch):
 
     async def no_pre_command(*_args):
         return None
-    monkeypatch.setattr(sc, '_run_in_band', in_band)
+    monkeypatch.setattr(_MirrorRunner, '_command_handler_table', command_handler_table, raising=False)
+    for name in sc._PROMPT_COMMANDS:
+        monkeypatch.setattr(_MirrorRunner, '_hm_cmd_' + name.replace('-', '_'), prompt_command(name), raising=False)
     monkeypatch.setattr(sc, '_run_runner_command', runner_command)
     monkeypatch.setattr(sc, '_skill_directive', skill)
     monkeypatch.setattr(sc, '_tui_read', no_tui_read)
