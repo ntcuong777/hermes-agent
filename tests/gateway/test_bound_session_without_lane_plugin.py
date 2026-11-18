@@ -211,3 +211,17 @@ async def test_without_the_plugin_a_hand_off_records_no_carried_route(tmp_path):
     with world.authority.db._read_ctx() as conn:
         keys = [row[0] for row in conn.execute("SELECT key FROM state_meta WHERE key GLOB 'gateway.lane_model.v1:*'")]
     assert keys == []
+
+
+# ── stage B14: the residue is plugin-owned ───────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_without_the_plugin_a_messaging_source_publishes_no_goal_card():
+    """Core alone is upstream: `_publish_local_control` repaints a LOCAL session only (the plugin's wrap adds the lane's)."""
+    from gateway.config import Platform
+    from gateway.run_goals import GatewayGoalsMixin
+    from gateway.session import SessionSource
+    runner = object.__new__(GatewayGoalsMixin)
+    source = SessionSource(platform=Platform.DISCORD, chat_id='thread-1', chat_type='thread', user_id='u')
+    assert await runner._publish_local_control(source, only_if_present=True) is None
