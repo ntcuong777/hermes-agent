@@ -10,6 +10,26 @@
       "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
       "upstream_release": "0.23.0"
     },
+    "config-seams/p27-load-config": {
+      "ast_sha": "203c096032b996c4f69b75f9f10a4dbf6cd1d38cfb99e442c32f6d1500357919",
+      "kind": "wrap",
+      "plugin": "config-seams",
+      "reason": "A new TUI or Desktop session created through the gateway launches from host.yaml laid over the shared config, never from the phone's gateway.model (local sessions run the CLI model)",
+      "target": "gateway.session_local:load_profile_config",
+      "target_file": "gateway/session_local.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "config-seams/p27-profile-config": {
+      "ast_sha": "26cf67e356a4310de830c565b629ab9df472a0440e7454b8b0d16c493fd0da76",
+      "kind": "replace",
+      "plugin": "config-seams",
+      "reason": "A local session's frozen profile config follows the CLI model: host.yaml laid over the profile config (local sessions run the CLI model; 7-line copy of a 4-line function)",
+      "target": "gateway.session_policy:profile_config",
+      "target_file": "gateway/session_policy.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
     "core-fixes/checkpoint-stale-lock": {
       "ast_sha": "36df092499e414dc1b775e0b55b8e6f922ffae427e69bac085c6711cef00a887",
       "kind": "wrap",
@@ -100,6 +120,126 @@
       "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
       "upstream_release": "0.23.0"
     },
+    "lane-mirror/forward-list-titled": {
+      "ast_sha": "61649497a4fbb903a2cb98c45460cf7d51a06e9cc472f3b3848db0d05ba1a9ca",
+      "kind": "replace",
+      "plugin": "lane-mirror",
+      "reason": "An admin's /resume <id> --all lists titled sessions without the platform filter, so the mirror can bind a machine-local session (lane forward)",
+      "target": "gateway.slash_commands_session:GatewaySessionCommandsMixin._list_titled_sessions",
+      "target_file": "gateway/slash_commands_session.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/forward-submit": {
+      "ast_sha": "791efbaec2840917db1021f692b2f055b1cf7d896d2dcbaa067b1edf918d18c9",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "An un-attached prompt.submit to a session a Discord thread owns is relayed into the thread as the mirror admin instead of refused (lane forward)",
+      "target": "gateway.session_controls:AuthorityConnection.submit",
+      "target_file": "gateway/session_controls.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/gates-attach": {
+      "ast_sha": "13c8bcd98f7682864cba4f432aa2dc6c9897cb0e397c460b1769398af0f65bf6",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A file dropped in the TUI on a lane-bound session is staged in the folder the session recorded, under its viewer policy (lane takeover, gates)",
+      "target": "gateway.session_ancillary:attach_file",
+      "target_file": "gateway/session_ancillary.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/gates-local-source": {
+      "ast_sha": "ffb861abf42680adee48fdac8774d3591cb628286285ce44d60a23d35ae60d35",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "The subscribed operator's own client may run a shell command in a lane-bound session: the local-source gate is open for that one call (lane takeover, gates)",
+      "target": "gateway.session_local:authorize_local_source",
+      "target_file": "gateway/session_local.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/gates-mutate": {
+      "ast_sha": "af0dac372e2eae7a53d4c9b5dcdf619253e630b407c7de473ebaa27069cc829c",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "Compress, rewind, reset and branch never commit on a session a Discord thread writes: lane_owned, the TUI relays the typed command (lane takeover, gates)",
+      "target": "gateway.session_mutations:mutate_session",
+      "target_file": "gateway/session_mutations.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/gates-shell": {
+      "ast_sha": "701cb5257dcc24eed78d3ba3c1a0495e8a686a2c9d9d5c93c23fe8c039bae0d8",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A !cmd typed in the TUI on a lane-bound session runs in the folder the session recorded, for the subscribed operator only (lane takeover, gates)",
+      "target": "gateway.session_shell:shell_exec",
+      "target_file": "gateway/session_shell.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/gates-side": {
+      "ast_sha": "bf777e9b0ab56ecc97398f94af4ca88568c05163b68b4e4f60bfbc66ea6b4c3c",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "/bg and /btw on a lane-bound session are lane_owned: the thread runs the side agent, never a second writer here (lane takeover, gates)",
+      "target": "gateway.session_tui_side:_admit",
+      "target_file": "gateway/session_tui_side.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/model-adopt-rehydrate": {
+      "ast_sha": "5d40b8b2bb2eaf6fe6978f5ef24f3d486c6bd59cd5ff910244c158115cee2e14",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A local conversation a messaging lane took over adopts the route it ran as the lane chat's /model pick, once (lane model carry)",
+      "target": "gateway.run_agent_cache:GatewayAgentCacheMixin._rehydrate_session_model_override",
+      "target_file": "gateway/run_agent_cache.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/model-resolve-reasoning": {
+      "ast_sha": "c8d57e4858503f95ad069d43c534ac316d56dd8f08ba6580cae44aeb27b2493c",
+      "kind": "replace",
+      "plugin": "lane-mirror",
+      "reason": "A lane chat's effort is its own durable pick, else the level its local session ran, before the profile default (lane model carry; 20-line copy)",
+      "target": "gateway.run_config_loaders:GatewayConfigLoadersMixin._resolve_session_reasoning_config",
+      "target_file": "gateway/run_config_loaders.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/model-retire": {
+      "ast_sha": "b3cc610a23f5f8f4259f3b8bb013f0d50105f3a72ffd74dc9801481f7df4c3c9",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "Deleting a session also deletes its hand-off route record, in the same connection (lane model carry)",
+      "target": "hermes_state_local:retire_local_receipts",
+      "target_file": "hermes_state_local.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/model-route-info": {
+      "ast_sha": "9a9cbdf25392157c50e739d46a6c49d5413be072eb3e78496ed75c7dd248ef64",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A handed-off local chat shows the route it keeps in the model and effort pills (lane model carry)",
+      "target": "gateway.session_messaging_picks:messaging_route_info",
+      "target_file": "gateway/session_messaging_picks.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/model-set-reasoning": {
+      "ast_sha": "71eba9c65dafed38593bdb2a4aa059093ee456d95ba8db938c425d9e31e45afd",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A typed /reasoning or a viewer's effort pick replaces the carried level and is persisted for the lane so it survives a restart (lane model carry)",
+      "target": "gateway.run_config_loaders:GatewayConfigLoadersMixin._set_session_reasoning_override",
+      "target_file": "gateway/run_config_loaders.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
     "lane-mirror/repaint-goal": {
       "ast_sha": "723da958f25a2bae72f869d32486d37153905d6a42432d0aab293f00e2dc7fd2",
       "kind": "wrap",
@@ -167,6 +307,56 @@
       "reason": "A /subgoal command run in a Discord thread bound to a TUI session repaints the viewer's goal and loop bars (lane viewer repaint)",
       "target": "gateway.slash_commands_goals:GatewayGoalCommandsMixin._handle_subgoal_command",
       "target_file": "gateway/slash_commands_goals.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/rescue-policy": {
+      "ast_sha": "dddc4dee3f4e0d040767289a8cc91cd86c63aaeeaaffc49ae1910aef4d4ec7ff",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A non-LOCAL source has no launch policy except while a read of a lane-bound session is re-run under its viewer policy (lane takeover, rescue)",
+      "target": "gateway.session_policy:policy_for_source",
+      "target_file": "gateway/session_policy.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/residue-lane-reasoning": {
+      "ast_sha": "b5225ec975eb9d09af7149b80f00785f5e2d358ef14b58090c12f377a0153c68",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A lane's own effort pick follows a non-boundary repoint (a compression tip) onto the new routing entry, like terminal_cwd (lane residue)",
+      "target": "gateway.session:SessionStore.switch_session",
+      "target_file": "gateway/session.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/residue-pick-stamp": {
+      "ast_sha": "d6b32cb384994d4615c15c3952894be5ba61069e28fc03919742c0533b9d38c5",
+      "kind": "replace",
+      "plugin": "lane-mirror",
+      "reason": "A model or effort pick on a messaging chat repaints the bound viewer's pills with the owner stamp (authority_epoch, execution_generation) its lifecycle fence needs (lane residue; 38-line copy)",
+      "target": "gateway.session_messaging_picks:apply_chat_pick",
+      "target_file": "gateway/session_messaging_picks.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/residue-publish-control": {
+      "ast_sha": "49eed5949be6d2d24662cce72e7bd8b36ec5e2ce6d87922076df04343bc07c54",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A goal or loop command a messaging lane ran repaints the goal and loop cards of the TUI bound to it, from the session the lane is bound to (lane residue)",
+      "target": "gateway.run_goals:GatewayGoalsMixin._publish_local_control",
+      "target_file": "gateway/run_goals.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/settle-register": {
+      "ast_sha": "679b32defaac5579bbf8f0e7dc9e48d2abf59c486f7acc34b30fa81ff978ca70",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "An approval answered anywhere (a platform card tap, /approve in the thread, a timeout) is withdrawn from every attached viewer at once (approval settle)",
+      "target": "gateway.session_pending_controls:PendingControls.register",
+      "target_file": "gateway/session_pending_controls.py",
       "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
       "upstream_release": "0.23.0"
     }
