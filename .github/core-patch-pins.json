@@ -290,6 +290,36 @@
       "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
       "upstream_release": "0.23.0"
     },
+    "lane-mirror/residue-lane-reasoning": {
+      "ast_sha": "b5225ec975eb9d09af7149b80f00785f5e2d358ef14b58090c12f377a0153c68",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A lane's own effort pick follows a non-boundary repoint (a compression tip) onto the new routing entry, like terminal_cwd (lane residue)",
+      "target": "gateway.session:SessionStore.switch_session",
+      "target_file": "gateway/session.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/residue-pick-stamp": {
+      "ast_sha": "d6b32cb384994d4615c15c3952894be5ba61069e28fc03919742c0533b9d38c5",
+      "kind": "replace",
+      "plugin": "lane-mirror",
+      "reason": "A model or effort pick on a messaging chat repaints the bound viewer's pills with the owner stamp (authority_epoch, execution_generation) its lifecycle fence needs (lane residue; 38-line copy)",
+      "target": "gateway.session_messaging_picks:apply_chat_pick",
+      "target_file": "gateway/session_messaging_picks.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/residue-publish-control": {
+      "ast_sha": "49eed5949be6d2d24662cce72e7bd8b36ec5e2ce6d87922076df04343bc07c54",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A goal or loop command a messaging lane ran repaints the goal and loop cards of the TUI bound to it, from the session the lane is bound to (lane residue)",
+      "target": "gateway.run_goals:GatewayGoalsMixin._publish_local_control",
+      "target_file": "gateway/run_goals.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
     "lane-mirror/settle-register": {
       "ast_sha": "679b32defaac5579bbf8f0e7dc9e48d2abf59c486f7acc34b30fa81ff978ca70",
       "kind": "wrap",
