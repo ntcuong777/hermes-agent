@@ -90,6 +90,26 @@
       "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
       "upstream_release": "0.23.0"
     },
+    "lane-mirror/forward-list-titled": {
+      "ast_sha": "61649497a4fbb903a2cb98c45460cf7d51a06e9cc472f3b3848db0d05ba1a9ca",
+      "kind": "replace",
+      "plugin": "lane-mirror",
+      "reason": "An admin's /resume <id> --all lists titled sessions without the platform filter, so the mirror can bind a machine-local session (lane forward)",
+      "target": "gateway.slash_commands_session:GatewaySessionCommandsMixin._list_titled_sessions",
+      "target_file": "gateway/slash_commands_session.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
+    "lane-mirror/forward-submit": {
+      "ast_sha": "791efbaec2840917db1021f692b2f055b1cf7d896d2dcbaa067b1edf918d18c9",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "An un-attached prompt.submit to a session a Discord thread owns is relayed into the thread as the mirror admin instead of refused (lane forward)",
+      "target": "gateway.session_controls:AuthorityConnection.submit",
+      "target_file": "gateway/session_controls.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
     "lane-mirror/gates-attach": {
       "ast_sha": "13c8bcd98f7682864cba4f432aa2dc6c9897cb0e397c460b1769398af0f65bf6",
       "kind": "wrap",
