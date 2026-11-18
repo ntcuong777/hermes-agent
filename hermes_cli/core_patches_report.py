@@ -161,6 +161,7 @@ def row_of(record: Any, failures: Optional[Mapping[str, tuple]] = None) -> dict:
         "upstream_commit": str(upstream.get("commit") or "unknown"),
         "upstream_release": str(upstream.get("release") or "unknown"),
         "failures": stats[0], "last_error": stats[2],
+        "drifted": bool(getattr(record, "drifted", False)),  # active although the target changed (on_drift apply)
     }
 
 
@@ -189,12 +190,19 @@ def _counts(rows: Iterable[Mapping[str, Any]]) -> dict:
 
 def _log_states(rows: list[dict], surface: str, summary: bool) -> None:
     for row in rows:
-        if row["status"] in ("active", "pending"):
+        if row["status"] == "pending" or (row["status"] == "active" and not row["drifted"]):
             continue
         marker = (f"{row['plugin']}:{row['name']}", row["status"], row["detail"])
         if marker in _LOGGED:
             continue
         _LOGGED.add(marker)
+        if row["drifted"]:  # spec 09: the patch RUNS against a target that changed; one line per patch and state
+            (logger.error if row["critical"] else logger.warning)(
+                "core patch %s drifted but applied (on_drift apply): plugin=%s target=%s recorded-upstream=%s (%s) "
+                "expected-sha=%s current-sha=%s: %s (hermes plugins patches --upstream-diff %s; --agent-brief %s)",
+                marker[0], row["plugin"], row["target"], _short(row["upstream_commit"]), row["upstream_release"],
+                _short(row["expect_ast_sha"]), _short(row["current_sha"]), row["detail"], row["name"], row["name"])
+            continue
         logger.warning(
             "core patch %s %s: plugin=%s target=%s recorded-upstream=%s (%s) expected-sha=%s current-sha=%s: %s "
             "(hermes plugins patches --agent-brief %s)",
@@ -203,6 +211,7 @@ def _log_states(rows: list[dict], surface: str, summary: bool) -> None:
             row["name"])
     if summary and rows:
         counts = ", ".join(f"{status}={n}" for status, n in _counts(rows).items())
+        counts += f", drifted={sum(1 for row in rows if row['drifted'])}" if any(row["drifted"] for row in rows) else ""
         logger.info("core patches (%s): %d patch(es): %s", surface or "?", len(rows), counts)
 
 
@@ -229,10 +238,13 @@ def _events_for(previous: Mapping[str, Mapping[str, Any]], rows: list[dict]) -> 
     for row in rows:
         key = f"{row['plugin']}:{row['name']}"
         before = previous.get(key) or {}
-        if before.get("status") == row["status"] or row["status"] == "pending":
+        drifted = bool(row.get("drifted"))
+        if (before.get("status"), bool(before.get("drifted"))) == (row["status"], drifted) or row["status"] == "pending":
             continue
         kind = kinds.get(row["status"])
-        if kind == "applied" and before.get("status") == "skipped-drift":
+        if kind == "applied" and drifted:
+            kind = "drift-first-seen"  # it runs, but upstream changed under it
+        elif kind == "applied" and (before.get("status") == "skipped-drift" or before.get("drifted")):
             kind = "drift-recovered"
         if kind is None:
             continue

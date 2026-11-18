@@ -12,6 +12,8 @@ Config (top-level ``core_patches:`` in config.yaml; unknown top-level keys are n
       refuse_on_critical: false   # true: a critical patch that is not installed refuses startup (exit 78)
       max_failures: 3             # consecutive call-time failures before a patch is switched off
       replace_fallback: bug-class # replace patches: "bug-class" (default), "always" or "never" (see core_patches_shell)
+      on_drift: apply             # the target changed upstream: "apply" (default, plugin-first: the patch is installed and the
+                                  # drift is reported) or "skip" (the old behaviour: skipped-drift, upstream's code runs)
       apply_timeout_s: 5          # startup budget of apply_core_patches; it never blocks start longer
       notify: true                # one notice per new state to the home channel (gateway only)
       events_max_bytes: 262144    # events.jsonl rotates past this size
@@ -35,6 +37,7 @@ class Settings:
     refuse_on_critical: bool = False
     max_failures: int = 3
     replace_fallback: str = "bug-class"
+    on_drift: str = "apply"
     apply_timeout_s: float = 5.0
     notify: bool = True
     events_max_bytes: int = 262144
@@ -63,6 +66,7 @@ def parse_settings(section: Any) -> Settings:
         max_failures=_int_in(data.get("max_failures"), 1, 1000, default.max_failures),
         replace_fallback=_choice_in(data.get("replace_fallback"), ("always", "never", "bug-class"),
                                     default.replace_fallback),
+        on_drift=_choice_in(data.get("on_drift"), ("apply", "skip"), default.on_drift),
         apply_timeout_s=_number_in(data.get("apply_timeout_s"), 0.05, 120.0, default.apply_timeout_s),
         notify=data.get("notify") is not False,
         events_max_bytes=_int_in(data.get("events_max_bytes"), 4096, 16 * 1024 * 1024, default.events_max_bytes),

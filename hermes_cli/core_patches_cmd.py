@@ -68,6 +68,8 @@ def _print_table(rows: list[dict[str, Any]]) -> None:
     for row in rows:
         flag = " critical" if row["critical"] else ""
         detail = f"  {row['detail']}" if row["detail"] else ""
+        if row["drifted"]:
+            flag += " DRIFTED"
         print(f"{row['status']:<22} {row['plugin']}:{row['name']}  {row['kind']}{flag} order={row['order']}  "
               f"{row['target']}{detail}")
     print(FOOTER)
@@ -75,7 +77,7 @@ def _print_table(rows: list[dict[str, Any]]) -> None:
 
 def _strict_code(rows: list[dict[str, Any]], strict: bool) -> int:
     bad = ("skipped-drift", "skipped-error", "disabled-after-errors")
-    return 1 if strict and any(row["status"] in bad for row in rows) else 0
+    return 1 if strict and any(row["status"] in bad or row.get("drifted") for row in rows) else 0
 
 
 def _diff(name: str) -> int:
@@ -205,14 +207,20 @@ def _doctor_rows(should_fix: bool, f: Any) -> None:
     problems = core_patches_prov.lock_problems(current)
     summary = f"{len(current)} patch(es): {counts or 'none'}" + (f"; {len(problems)} provenance problem(s)" if problems else "")
     note = "(see: hermes plugins patches; hermes plugins patches --agent-brief NAME)"
-    (check_ok if all(r.status == core_patches.ACTIVE for r in current) and not problems and not missing
+    (check_ok if all(r.status == core_patches.ACTIVE and not r.drifted for r in current) and not problems and not missing
      else check_warn)("core patches", f"{summary} {note}")
     for record in current:
         label = f"{record.spec.key} -> {record.spec.target}"
-        if record.status == core_patches.ACTIVE:
+        if record.status == core_patches.ACTIVE and not record.drifted:
             check_ok(label, "(active)")
             continue
         check_warn(label, f"({record.status}: {record.detail})")
+        if record.drifted:
+            f.manual_issues.append(
+                f"{'CRITICAL core patch' if record.critical else 'Core patch'} {record.spec.key} on {record.spec.target} "
+                f"drifted: {record.detail}. Hermes runs the plugin's patch anyway. Run `hermes plugins patches "
+                f"--agent-brief {record.spec.name}`.")
+            continue
         loud = "CRITICAL core patch" if record.critical else "Core patch"
         f.manual_issues.append(
             f"{loud} {record.spec.key} on {record.spec.target} is {record.status}: {record.detail}. "

@@ -115,6 +115,7 @@ class CorePatchSpec:
     plugin_dir: Optional[str]
     seq: int
     propagates: tuple = ()  # exception types the patch raises on purpose: the safety shell lets them through
+    on_drift: Optional[str] = None  # "apply" | "skip" for THIS patch; None = core_patches.on_drift (default apply)
 
     @property
     def key(self) -> str:
@@ -138,6 +139,11 @@ class PatchRecord:
     detail: str = ""
     gens: tuple = ()     # () = a tombstone (a critical patch whose plugin failed to load)
     current_sha: str = ""  # fingerprint of the target as last resolved ("" = never resolved)
+
+    @property
+    def drifted(self) -> bool:
+        """``active`` although the target changed since ``expect_ast_sha`` (``on_drift: apply``): ``detail`` says how."""
+        return self.status == ACTIVE and bool(self.detail)
 
     @property
     def owners(self) -> frozenset:
@@ -197,7 +203,8 @@ _SETTINGS = policy.Settings()              # refreshed outside the lock by activ
 
 def make_spec(*, plugin_id: str, name: str, target: str, kind: str, fn: Callable[..., Any],
               expect_ast_sha: str, order: int = 0, critical: bool = False,
-              plugin_dir: Optional[str] = None, propagates: Iterable[type] = ()) -> CorePatchSpec:
+              plugin_dir: Optional[str] = None, propagates: Iterable[type] = (),
+              on_drift: Optional[str] = None) -> CorePatchSpec:
     """Validate the arguments of ``ctx.register_core_patch``; a programming error raises."""
     if not isinstance(name, str) or not NAME_RE.match(name):
         raise ValueError(f"core patch name {name!r} must match {NAME_RE.pattern}")
@@ -216,10 +223,12 @@ def make_spec(*, plugin_id: str, name: str, target: str, kind: str, fn: Callable
     declared = tuple(propagates)
     if not all(isinstance(t, type) and issubclass(t, Exception) for t in declared):
         raise TypeError("propagates must be a tuple of Exception subclasses")
+    if on_drift not in (None, "apply", "skip"):
+        raise ValueError(f"on_drift must be 'apply', 'skip' or None, not {on_drift!r}")
     return CorePatchSpec(plugin_id=plugin_id, name=name, target=target, kind=kind, fn=fn,
                          expect_ast_sha=expect_ast_sha, order=order, critical=critical,
                          plugin_dir=str(plugin_dir) if plugin_dir else None, seq=next(_SEQ),
-                         propagates=declared)
+                         propagates=declared, on_drift=on_drift)
 
 
 # ── grant and declaration ────────────────────────────────────────────────────────────────────
@@ -501,9 +510,20 @@ def _verdict(record: PatchRecord, probe: Optional[_Probe]) -> Optional[tuple[str
         return SKIPPED_DRIFT, f"{probe.drift}; see hermes plugins patches --diff {spec.name}"
     stale = next((g for g in live if g.spec.expect_ast_sha != probe.sha), None)
     if stale is not None:
-        return SKIPPED_DRIFT, (f"{spec.target} changed (expected {stale.spec.expect_ast_sha[:12]}, now "
-                               f"{probe.sha[:12]}); see hermes plugins patches --diff {spec.name}")
+        detail = (f"{spec.target} changed (expected {stale.spec.expect_ast_sha[:12]}, now "
+                  f"{probe.sha[:12]}); see hermes plugins patches --diff {spec.name}")
+        # spec 09: the hash differs but the target is located and is the code this process runs. With the default
+        # on_drift "apply" the patch is installed anyway (status active, detail = the drift) and reported; the safety
+        # shell is the net at call time. "skip" (per registration or core_patches.on_drift) is the old behaviour.
+        if any((g.spec.on_drift or _SETTINGS.on_drift) == "skip" for g in live):
+            return SKIPPED_DRIFT, detail
+        return ACTIVE, detail + "; the plugin's patch runs anyway (on_drift apply)"
     return None
+
+
+def _installable(verdict: Optional[tuple[str, str]]) -> bool:
+    """None (clean) or (ACTIVE, drift text) (a drifted patch that runs): the patch goes into the chain."""
+    return verdict is None or verdict[0] == ACTIVE
 
 
 def _effective(gens: tuple, current: Optional[CorePatchSpec] = None) -> CorePatchSpec:
@@ -522,18 +542,19 @@ def _commit(target: str, changed: Iterable[str], probe: Optional[_Probe]) -> Non
     on_target = [r for r in _RECORDS.values() if r.spec.target == target and r.gens]
     verdicts: dict[str, Optional[tuple[str, str]]] = {
         r.spec.key: (_verdict(r, probe) if r.spec.key in changed else
+                     (ACTIVE, r.detail) if r.status == ACTIVE and r.detail else
                      None if r.status == ACTIVE else (r.status, r.detail))
         for r in on_target
     }
     for r in on_target:  # a patch the safety shell switched off stays off until its plugin reloads
         link = _LINKS.get(r.spec.seq)
-        if verdicts[r.spec.key] is None and link is not None and link.guard is not None and link.guard.disabled:
+        if _installable(verdicts[r.spec.key]) and link is not None and link.guard is not None and link.guard.disabled:
             verdicts[r.spec.key] = (DISABLED, r.detail if r.status == DISABLED else link.guard.last_error)
-    replaces = sorted((r for r in on_target if verdicts[r.spec.key] is None and r.spec.kind == "replace"),
+    replaces = sorted((r for r in on_target if _installable(verdicts[r.spec.key]) and r.spec.kind == "replace"),
                       key=lambda r: (r.status != ACTIVE, r.spec.seq))
     verdicts.update({r.spec.key: (SKIPPED_ERROR, f"{target} is already replaced by {replaces[0].spec.key}")
                      for r in replaces[1:]})
-    members = sorted((r for r in on_target if verdicts[r.spec.key] is None),
+    members = sorted((r for r in on_target if _installable(verdicts[r.spec.key])),
                      key=lambda r: (r.spec.kind != "replace", r.spec.order, r.spec.seq))
     state = _target_state_or_error(target, members, verdicts)
     sha = probe.sha if probe is not None else ""
@@ -568,7 +589,7 @@ def _target_state_or_error(target: str, members: list, verdicts: dict) -> Option
 
 def _apply_statuses(verdicts: dict, sha: str = "") -> None:
     for key, verdict in verdicts.items():
-        status, detail = verdict if verdict is not None else (ACTIVE, "")
+        status, detail = verdict if verdict is not None else (ACTIVE, "")  # (ACTIVE, text) = installed, drifted
         _set_status(key, status, detail, sha)
 
 

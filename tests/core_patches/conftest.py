@@ -37,9 +37,24 @@ def _clean_registry():
 @pytest.fixture
 def refusing(monkeypatch):
     """`core_patches.refuse_on_critical: true` for the test (the default is false: nothing refuses)."""
+    import dataclasses
+
     from hermes_cli import core_patches_policy as policy
 
-    monkeypatch.setattr(policy, "load_settings", lambda: policy.Settings(refuse_on_critical=True))
+    base = policy.load_settings
+    monkeypatch.setattr(policy, "load_settings", lambda: dataclasses.replace(base(), refuse_on_critical=True))
+
+
+@pytest.fixture
+def skip_on_drift(monkeypatch):
+    """`core_patches.on_drift: skip` for the test: the behaviour before spec 09 (a drifted patch is skipped and
+    upstream's code runs). Tests that assert `skipped-drift` take this fixture; the default is `apply`."""
+    import dataclasses
+
+    from hermes_cli import core_patches_policy as policy
+
+    base = policy.load_settings
+    monkeypatch.setattr(policy, "load_settings", lambda: dataclasses.replace(base(), on_drift="skip"))
 
 
 @pytest.fixture

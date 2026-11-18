@@ -164,7 +164,10 @@ def agent_brief(record_: Any, source_root: Optional[Path] = None) -> str:
         "## What it is", "",
         f"- patch: `{spec.key}` ({spec.kind}{', critical' if record_.critical else ''}), plugin directory `{plugin_dir}`",
         f"- purpose (the bug or reason): {entry.get('reason') or '(none recorded: ask the user, then use --record --reason)'}",
-        f"- status in this process: `{record_.status}`" + (f" ({record_.detail})" if record_.detail else ""),
+        f"- status in this process: `{record_.status}`" + (f" ({record_.detail})" if record_.detail else "")
+        + (" DRIFTED: the plugin's patch is RUNNING against code that changed upstream (nothing failed); re-sync it "
+           "with the steps below, or set `on_drift: skip` (registration) / `core_patches.on_drift: skip` (config.yaml) "
+           "to run upstream's code instead" if record_.drifted else ""),
         f"- target: `{spec.target}` in `{rel}` (repo relative, in the fork checkout `{root}`)",
         f"- fingerprints: plugin expects `{spec.expect_ast_sha}`; lock recorded `{entry.get('ast_sha')}`; "
         f"current core `{current_sha or 'unknown'}`",
@@ -223,7 +226,7 @@ def report_markdown(records: Iterable[Any], source_root: Optional[Path] = None) 
         lines.append(f"| `{row['plugin']}:{row['name']}` | `{row['target']}` | {row['status']} | "
                      f"`{row['expect_ast_sha'][:12]}` | `{row['current_sha'][:12] or '-'}` | "
                      f"`{row['upstream_commit'][:12]}` | {(row['reason'] or '-').replace('|', '/')} |")
-        if item.status == "active":
+        if item.status == "active" and not item.drifted:
             continue
         body = f"{item.detail}\n"
         try:

@@ -69,7 +69,7 @@ def test_the_flag_is_read_from_the_config_of_the_home(plugin_homes, monkeypatch,
 # ── a critical patch is loud, and refuses only with the flag ───────────────────────────────
 
 
-def test_a_drifted_critical_patch_starts_normally_with_the_flag_off(target, no_discovery, caplog):
+def test_a_drifted_critical_patch_starts_normally_with_the_flag_off(target, no_discovery, caplog, skip_on_drift):
     caplog.set_level(logging.ERROR, logger="hermes_cli.core_patches")
     original = target.mod.greet
     _install_critical_drift(target)
@@ -80,7 +80,7 @@ def test_a_drifted_critical_patch_starts_normally_with_the_flag_off(target, no_d
     assert '"event": "critical-skipped"' in events
 
 
-def test_a_drifted_critical_patch_refuses_with_the_flag_on(target, no_discovery, refusing):
+def test_a_drifted_critical_patch_refuses_with_the_flag_on(target, no_discovery, refusing, skip_on_drift):
     _install_critical_drift(target)
     with pytest.raises(cp.CorePatchRefusal) as refused:
         cp.apply_core_patches("test")
@@ -280,7 +280,7 @@ def test_a_plugin_with_a_bad_core_patch_still_loads_its_other_registrations(tmp_
 # ── the doctor row ─────────────────────────────────────────────────────────────────────────
 
 
-def test_the_doctor_finding_for_a_critical_patch_says_so(target, no_discovery, capsys):
+def test_the_doctor_finding_for_a_critical_patch_says_so(target, no_discovery, capsys, skip_on_drift):
     from hermes_cli import core_patches_cmd as cmd
 
     _install_critical_drift(target)

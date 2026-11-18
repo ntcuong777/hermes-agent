@@ -108,7 +108,7 @@ def test_a_replace_is_innermost_and_wraps_run_over_it(target):
     assert target.mod.greet("x") == "obonjour x"
 
 
-def test_drift_is_skipped_and_logged_once(target, caplog):
+def test_drift_is_skipped_and_logged_once(target, caplog, skip_on_drift):
     caplog.set_level(logging.WARNING, logger="hermes_cli.core_patches")
     original = target.mod.greet
     key = _install(_spec(target, "old", up, sha="0" * 64))
@@ -133,7 +133,7 @@ def test_an_undeclared_patch_is_an_error(target):
     assert "core_patches:" in cp.records()[0].detail
 
 
-def test_critical_drift_refuses_startup_when_the_flag_is_on(target, no_discovery, refusing):
+def test_critical_drift_refuses_startup_when_the_flag_is_on(target, no_discovery, refusing, skip_on_drift):
     _install(_spec(target, "must", up, sha="1" * 64, critical=True))
     with pytest.raises(cp.CorePatchRefusal) as refused:
         cp.apply_core_patches("test")

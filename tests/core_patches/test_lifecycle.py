@@ -77,7 +77,8 @@ def test_a_declared_critical_name_of_a_disabled_plugin_is_not_required(plugin_ho
 def test_plugin_yaml_can_make_a_patch_critical(plugin_homes, monkeypatch, no_discovery, refusing):
     make, log = plugin_homes
     log.SHA = "3" * 64  # drifted
-    home = make("a", granted_config(), core_patches_yaml="[{name: shout, critical: true}]")
+    home = make("a", granted_config() + "core_patches:\n  on_drift: skip\n",
+                core_patches_yaml="[{name: shout, critical: true}]")
     _manager(home, monkeypatch).discover_and_load()
     assert _state() == [("shout:shout", cp.SKIPPED_DRIFT)] and cp.records()[0].critical
     with pytest.raises(cp.CorePatchRefusal):

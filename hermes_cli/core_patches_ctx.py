@@ -17,7 +17,7 @@ class CorePatchCtxMixin:
 
     def register_core_patch(
         self, name: str, *, target: str, kind: str, fn: Callable[..., Any], expect_ast_sha: str,
-        order: int = 0, critical: bool = False, propagates: Iterable[type] = (),
+        order: int = 0, critical: bool = False, propagates: Iterable[type] = (), on_drift: Optional[str] = None,
     ) -> Optional[Any]:
         """Wrap (``kind="wrap"``: ``fn(original) -> new callable``) or replace (``kind="replace"``:
         ``fn`` is the new callable) ``target`` (``"pkg.mod:function"`` or ``"pkg.mod:Class.method"``).
@@ -25,7 +25,12 @@ class CorePatchCtxMixin:
         Installed when this plugin's load succeeds, only if ``name`` is listed under
         ``core_patches:`` in plugin.yaml, ``plugins.entries.<id>.allow_core_patch`` is ``true``, and
         the target's AST fingerprint equals ``expect_ast_sha`` (``hermes plugins patches --sha``).
-        Otherwise it is recorded as skipped-* and the core stays untouched. A targeted unload undoes
+        Drift (spec 09): when the target's fingerprint differs from ``expect_ast_sha`` the patch is still
+        installed and reported (``on_drift="apply"``, the default; ``core_patches.on_drift`` in config.yaml sets
+        the default for every patch); ``on_drift="skip"`` restores the old behaviour for this patch
+        (``skipped-drift``). A target that is gone, a def that cannot be located and a source file rewritten
+        while the process runs are always skipped. Otherwise it is recorded as skipped-* and the core stays
+        untouched. A targeted unload undoes
         it; a forced reload keeps it installed until the reloaded plugin's registration replaces it.
         ``critical=True`` (or ``{name, critical: true}`` in plugin.yaml): a patch that is not active is
         reported loudly (ERROR log, notice, doctor finding); it refuses startup only with
@@ -39,18 +44,19 @@ class CorePatchCtxMixin:
         from hermes_cli import core_patches as cp
 
         try:
-            return self._register_core_patch(cp, name, target, kind, fn, expect_ast_sha, order, critical, propagates)
+            return self._register_core_patch(cp, name, target, kind, fn, expect_ast_sha, order, critical, propagates,
+                                             on_drift)
         except Exception as exc:  # health: allow BLE001 -- a bad patch registration must not fail the plugin
             logger.warning("core patch %s:%s was not registered: %s", self.plugin_id, name, exc)
             cp.record_error(self.plugin_id, name, target, kind, f"not registered: {exc}", critical=critical is True)
             return None
 
     def _register_core_patch(self, cp: Any, name: Any, target: Any, kind: Any, fn: Any, expect_ast_sha: Any,
-                             order: Any, critical: Any, propagates: Any) -> Optional[Any]:
+                             order: Any, critical: Any, propagates: Any, on_drift: Any = None) -> Optional[Any]:
         spec = cp.make_spec(
             plugin_id=self.plugin_id, name=name, target=target, kind=kind, fn=fn,
             expect_ast_sha=expect_ast_sha, order=order, critical=critical,
-            plugin_dir=getattr(self.manifest, "path", None), propagates=propagates,
+            plugin_dir=getattr(self.manifest, "path", None), propagates=propagates, on_drift=on_drift,
         )
         manager, plugin_key, owner, seq = self._manager, self.plugin_id, str(self._manager.scope_key), spec.seq
         key = cp.stage(

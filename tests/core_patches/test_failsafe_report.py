@@ -64,7 +64,7 @@ class _InlineThread:
         return False
 
 
-def test_apply_logs_one_summary_and_one_warning_per_skipped_patch(target, no_discovery, caplog, tmp_path):
+def test_apply_logs_one_summary_and_one_warning_per_skipped_patch(target, no_discovery, caplog, tmp_path, skip_on_drift):
     caplog.set_level(logging.INFO, logger="hermes_cli.core_patches")
     plugin = tmp_path / "plugin"
     plugin.mkdir()
@@ -125,7 +125,7 @@ def test_the_event_file_rotates_past_the_size_cap(tmp_path, monkeypatch):
     assert (directory / "events.jsonl").stat().st_size <= 4096 and (directory / "events.jsonl.1").stat().st_size <= 4096 + 300
 
 
-def test_a_new_problem_is_announced_once_to_the_home_channel(target, no_discovery, surfaces_gateway):
+def test_a_new_problem_is_announced_once_to_the_home_channel(target, no_discovery, surfaces_gateway, skip_on_drift):
     _install(target, sha="4" * 64)
     cp.apply_core_patches("gateway")
     cp.apply_core_patches("gateway")
@@ -144,7 +144,7 @@ def test_no_notice_with_notify_off_or_outside_the_gateway(target, no_discovery, 
     assert surfaces_gateway == []
 
 
-def test_a_notice_that_cannot_be_claimed_never_raises(target, no_discovery, surfaces_gateway, monkeypatch):
+def test_a_notice_that_cannot_be_claimed_never_raises(target, no_discovery, surfaces_gateway, monkeypatch, skip_on_drift):
     def broken(directory, fingerprints):
         raise OSError("disk full")
     monkeypatch.setattr(report, "_claim_many", broken)

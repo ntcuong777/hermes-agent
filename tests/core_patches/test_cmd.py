@@ -56,7 +56,7 @@ def test_the_listing_shows_each_status(target, no_discovery, capsys):
     assert row == {"plugin": "demo", "name": "up", "target": f"{target.name}:greet", "kind": "wrap",
                    "order": 0, "critical": False, "status": "active", "detail": "", "expect_ast_sha": GREET_SHA,
                    "current_sha": GREET_SHA, "reason": "", "upstream_commit": "unknown",
-                   "upstream_release": "unknown", "failures": 0, "last_error": ""}
+                   "upstream_release": "unknown", "failures": 0, "last_error": "", "drifted": False}
 
 
 def test_lock_writes_an_entry(target, tmp_path, capsys):
@@ -81,7 +81,7 @@ def test_diff_is_quiet_until_the_target_changes(target, tmp_path, no_discovery, 
     assert '+    return f"hi {name}"' in capsys.readouterr().out
 
 
-def test_the_doctor_row_reports_a_drifted_patch(target, no_discovery, capsys):
+def test_the_doctor_row_reports_a_drifted_patch(target, no_discovery, capsys, skip_on_drift):
     _stage(target, sha="2" * 64)
     finding = cmd._check_core_patches(False)
     assert len(finding.manual_issues) == 1 and "skipped-drift" in finding.manual_issues[0]
