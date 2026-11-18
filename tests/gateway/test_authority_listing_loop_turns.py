@@ -113,6 +113,26 @@ async def test_a_closed_unviewed_local_session_still_leaves_the_live_feed(owner)
 
 
 @pytest.mark.asyncio
+async def test_the_listing_facts_carry_the_receipt_targets_ended_at(owner):
+    """``target_ended_at`` is the stored receipt target's end stamp (what ``closed_and_unviewed`` reads):
+    an ended target reads its timestamp, an open target and a malformed receipt read None."""
+    import json
+    from gateway import session_live_listing
+    closed, open_, malformed = owner.sids[0], owner.sids[1], owner.sids[2]
+    seed_session(owner.db, 'target-closed', 'tui', end_reason='tui_close')
+    seed_session(owner.db, 'target-open', 'tui')
+    for sid, target in ((closed, 'target-closed'), (open_, 'target-open')):
+        owner.db.state_meta.set(policy_key(sid), json.dumps({'entry': {'session_id': target}}))
+    owner.db.state_meta.set(policy_key(malformed), '{not json')
+    rows, _pending = session_live_listing._store_facts(owner.db, [closed, open_, malformed])
+    ended_at = owner.db.sessions.get('target-closed').ended_at
+    assert ended_at is not None
+    assert rows[closed]['target_ended_at'] == ended_at
+    assert rows[open_]['target_ended_at'] is None
+    assert rows[malformed]['target_ended_at'] is None
+
+
+@pytest.mark.asyncio
 async def test_a_session_retired_during_the_read_is_not_listed_or_restored(owner, monkeypatch):
     from gateway import session_live_listing
     original = session_live_listing._store_facts

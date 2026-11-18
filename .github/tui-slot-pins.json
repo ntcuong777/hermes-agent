@@ -31,11 +31,11 @@
       "plugin": "tui-lane",
       "reason": "a command that ran on the session's bound thread echoes its output into the local transcript",
       "sha": "3907c1b1c415cd15bd2711fce5d7e1c8099d365e7ecad031ac95a288ed94d979",
-      "snapshot_commit": "c0c7be2df11bca50093a82bc843495d7933b2b6d",
+      "snapshot_commit": "921a2db03c476c2a6a1fa089836a6d4669464b8a",
       "snapshot_kind": "fork-core",
       "symbols": [],
       "target_file": "ui-tui/src/app/createGatewayEventHandler.ts",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
     },
     "inputHandlers": {
       "plugin": "tui-input",
@@ -57,11 +57,11 @@
       "plugin": "tui-lane",
       "reason": "a lane_owned refusal is resent as typed through slash.exec, which relays it to the session's bound thread",
       "sha": "09829b8051166b35e159d44ed0c0df7f742fc46952abd133f841857f7bebb03c",
-      "snapshot_commit": "c0c7be2df11bca50093a82bc843495d7933b2b6d",
+      "snapshot_commit": "921a2db03c476c2a6a1fa089836a6d4669464b8a",
       "snapshot_kind": "fork-core",
       "symbols": [],
       "target_file": "ui-tui/src/app/createSlashHandler.ts",
-      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
     },
     "statusRule": {
       "plugin": "tui-chrome",
