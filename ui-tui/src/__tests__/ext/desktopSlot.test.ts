@@ -30,6 +30,15 @@ describe('the Desktop build-time slot (spec 09)', () => {
     expect(String(warn.mock.calls[0]?.[0])).toContain('bbbbbbbbbb != recorded aaaaaaaaaa')
   })
 
+  it('an unknown on_drift argument is apply (like the env var), with the same warning; skip is only the exact word', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    setHashes({ card: 'b'.repeat(64) })
+    expect(forkSlot('card', STOCK, FORK, 'a'.repeat(64), 'sometimes' as never)).toBe(FORK)
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(forkSlot('card', STOCK, FORK, 'a'.repeat(64), null as never)).toBe(FORK)
+  })
+
   it('on_drift skip: upstream builds (the old behaviour); a missing build hash always builds upstream', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     setHashes({ card: 'b'.repeat(64) })

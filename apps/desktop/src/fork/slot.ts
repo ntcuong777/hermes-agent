@@ -15,6 +15,10 @@ const envPolicy = (): OnDrift | undefined => {
   return value === 'skip' || value === 'apply' ? value : undefined
 }
 
+// The argument is normalized like the env var: only 'skip' means skip; any other value means apply (spec 09).
+const argPolicy = (value: OnDrift | null | undefined): OnDrift | undefined =>
+  value === undefined || value === null ? undefined : value === 'skip' ? 'skip' : 'apply'
+
 export function forkSlot<P>(id: string, Stock: P, Fork: P, expectedHash: string, onDrift?: OnDrift): P {
   const hashes = (globalThis as { __HERMES_SLOT_HASHES__?: Record<string, string> }).__HERMES_SLOT_HASHES__
   const current = hashes?.[id]
@@ -23,7 +27,7 @@ export function forkSlot<P>(id: string, Stock: P, Fork: P, expectedHash: string,
     return Fork
   }
 
-  if (current !== undefined && (onDrift ?? envPolicy() ?? 'apply') === 'apply') {
+  if (current !== undefined && (argPolicy(onDrift) ?? envPolicy() ?? 'apply') === 'apply') {
     console.warn(
       `[fork slot] ${id}: upstream changed (build hash ${current.slice(0, 10)} != recorded ${expectedHash.slice(0, 10)}); the fork copy still builds (on_drift apply)`
     )

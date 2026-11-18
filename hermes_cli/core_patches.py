@@ -223,8 +223,10 @@ def make_spec(*, plugin_id: str, name: str, target: str, kind: str, fn: Callable
     declared = tuple(propagates)
     if not all(isinstance(t, type) and issubclass(t, Exception) for t in declared):
         raise TypeError("propagates must be a tuple of Exception subclasses")
-    if on_drift not in (None, "apply", "skip"):
-        raise ValueError(f"on_drift must be 'apply', 'skip' or None, not {on_drift!r}")
+    if on_drift not in (None, "apply", "skip"):  # spec 09: a bad argument is a warning, the config default applies
+        logger.warning("core patch %s:%s: on_drift=%r is not 'apply' or 'skip'; using the default (apply, or "
+                       "core_patches.on_drift from config.yaml)", plugin_id, name, on_drift)
+        on_drift = None
     return CorePatchSpec(plugin_id=plugin_id, name=name, target=target, kind=kind, fn=fn,
                          expect_ast_sha=expect_ast_sha, order=order, critical=critical,
                          plugin_dir=str(plugin_dir) if plugin_dir else None, seq=next(_SEQ),

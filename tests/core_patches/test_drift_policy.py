@@ -34,9 +34,15 @@ def test_the_default_is_apply_and_the_setting_parses_strictly():
     assert policy.parse_settings(None).on_drift == "apply"
     assert policy.parse_settings({"on_drift": "skip"}).on_drift == "skip"
     assert policy.parse_settings({"on_drift": "sometimes"}).on_drift == "apply"
-    with pytest.raises(ValueError):
-        cp.make_spec(plugin_id="d", name="x", target="a.b:c", kind="wrap", fn=up, expect_ast_sha=DRIFTED_SHA,
-                     on_drift="maybe")
+
+
+def test_a_garbage_on_drift_argument_warns_and_the_patch_is_applied(target, caplog):
+    caplog.set_level(logging.WARNING, logger="hermes_cli.core_patches")
+    record = _install(target, on_drift="maybe")
+    assert record.status == cp.ACTIVE and record.drifted and record.spec.on_drift is None
+    assert target.mod.greet("x") == "HELLO X"  # the config default (apply) decided, not an error
+    (line,) = [r.getMessage() for r in caplog.records if "on_drift='maybe'" in r.getMessage()]
+    assert "demo:up" in line and "not 'apply' or 'skip'" in line
 
 
 def test_apply_installs_a_drifted_patch_as_active_with_the_drift_in_its_detail(target, caplog):
