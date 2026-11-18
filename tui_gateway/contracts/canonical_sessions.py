@@ -193,6 +193,7 @@ class CanonicalListParams(ProfileParams):
     picker: bool = False
     # The caller's directory: list only sessions in its workspace (repo root, else the directory).
     # Resolved to the same ``workspace`` key server-side (``workspace_for_dir``).
+    # Served by the chat-workspaces plugin (B11): the workspace resolution is the plugin's list_params callback now.
     cwd: str | None = None
     # Stored scope only. ``query``: conversations whose title or id contains this text (1-200 characters).
     # ``cursor``: an earlier stored page's ``next_cursor``, valid only with that page's ``workspace``,

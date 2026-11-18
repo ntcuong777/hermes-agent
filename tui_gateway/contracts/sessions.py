@@ -223,6 +223,7 @@ class SessionListParams(ProfileParams):
     limit: int | None = None
     include_hidden: bool = False
     # The caller's directory: list only sessions in its workspace (repo root, else the directory).
+    # Served by the chat-workspaces plugin (B11): without it, a cwd on session.list is silently ignored.
     cwd: str | None = None
 
 
