@@ -567,6 +567,9 @@ def _commit(target: str, changed: Iterable[str], probe: Optional[_Probe]) -> Non
         if link.error:
             verdicts[record.spec.key] = (SKIPPED_ERROR, link.error)
             continue
+        verdict = verdicts[record.spec.key]
+        if link.guard is not None:  # a drifted copy runs: its replace answers every exception (core_patches_shell)
+            link.guard.drifted = verdict is not None and verdict[0] == ACTIVE and bool(verdict[1])
         if record.spec.kind == "wrap":
             link.inner = current  # inner to outer: every intermediate chain is a valid one
         current = link.wrapped

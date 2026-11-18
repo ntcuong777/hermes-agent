@@ -21,7 +21,7 @@ What counts as a patch-layer error (counted, logged, rate limited, answered by t
 
   - ``"bug-class"`` (default): a ``BUG_CLASS`` exception (TypeError, AttributeError, NameError,
     ImportError, AssertionError, NotImplementedError) is a patch fault: the recorded original answers
-    the call. Any other exception looks legitimate: it propagates, not counted, and the original is
+    the call. A drifted patch (``Guard.drifted``, spec 09) is answered for ANY ``Exception``. Any other exception looks legitimate: it propagates, not counted, and the original is
     NOT run (the replacement may already have had side effects).
   - ``"always"``: every exception is answered by the recorded original, as the rule below describes.
   - ``"never"``: every exception propagates, counted, and the original is NOT run.
@@ -112,6 +112,7 @@ class Guard:
         self.key, self.kind, self.max_failures, self.propagates = key, kind, max(1, int(max_failures)), tuple(propagates)
         self.on_failure = on_failure
         self.replace_fallback = replace_fallback if replace_fallback in ("always", "never") else "bug-class"
+        self.drifted = False  # set by core_patches._commit: a drifted replace answers every Exception (spec 09)
         self.consecutive = 0
         self.total = 0
         self.untracked_entries = 0
@@ -261,7 +262,7 @@ def _decide(guard: Guard, frame: Frame, exc: BaseException, *, delivered: bool, 
         if guard.replace_fallback == "never":
             guard.fail(exc, "the replacement body")
             return RAISE
-        if guard.replace_fallback == "bug-class" and not isinstance(exc, BUG_CLASS):
+        if guard.replace_fallback == "bug-class" and not guard.drifted and not isinstance(exc, BUG_CLASS):
             guard.ok()  # looks like a legitimate error: the upstream function is not run a second time
             return RAISE
         return CHECKED

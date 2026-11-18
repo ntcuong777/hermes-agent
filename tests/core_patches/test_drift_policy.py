@@ -101,6 +101,27 @@ def test_a_drifted_patch_that_raises_is_still_answered_by_the_original(target):
     assert target.mod.greet("x") == "hello x"  # the existing safety shell: the original answers, nothing fails
 
 
+def _guard(key):
+    return cp._LINKS[{r.spec.key: r for r in cp.records()}[key].spec.seq].guard
+
+
+def test_a_drifted_replace_that_raises_a_non_bug_class_error_is_answered_by_the_original_and_counted(target):
+    def broken(name):
+        raise ValueError("copy rejects the new argument shape")
+    _install(target, kind="replace", fn=broken, name="swap")
+    assert target.mod.greet("x") == "hello x"  # ValueError is not bug-class, but the drifted copy is answered
+    assert (_guard("demo:swap").total, _guard("demo:swap").consecutive) == (1, 1)
+
+
+def test_a_non_drifted_replace_that_raises_a_non_bug_class_error_still_propagates(target):
+    def broken(name):
+        raise ValueError("copy rejects the new argument shape")
+    record = _install(target, kind="replace", fn=broken, sha=GREET_SHA, name="swap")
+    assert record.status == cp.ACTIVE and not record.drifted
+    with pytest.raises(ValueError):  # unchanged: a clean replace's legitimate errors are not answered
+        target.mod.greet("x")
+
+
 def test_skip_in_the_registration_or_the_config_reproduces_the_old_behaviour(target, monkeypatch):
     original = target.mod.greet
     record = _install(target, on_drift="skip")
