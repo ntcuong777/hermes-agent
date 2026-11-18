@@ -7,6 +7,9 @@ lane-mirror project that removes a feature's core code adds its id in the SAME c
 
 Ids: "repaint" (stage B1), "rescue" and "gates" (B3), "forward" (B4), "pills" (B5), "model" (B6),
 "wake" (B7).
+
+Spec 08b (the personal features that are not lanes): "workspaces" (B9), "workspace-seed" (B10), "workspace-slash" (B11),
+"settle" (B12), "wake" (B13, replaces the id of spec 08 B7), "residue" (B14), "p27" and "diagnostics" (B15).
 """
 
-REMOVED_FROM_CORE: frozenset = frozenset({"repaint"})
+REMOVED_FROM_CORE: frozenset = frozenset({"repaint", "workspaces"})

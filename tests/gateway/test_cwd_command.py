@@ -12,7 +12,6 @@ import pytest
 
 from gateway.session import SessionEntry
 from gateway.session_terminal_cwd import get_chat_workspace, set_chat_workspace
-from gateway.slash_commands_session import GatewaySessionCommandsMixin
 
 KEY = 'agent:main:telegram:dm:202'
 
@@ -105,109 +104,6 @@ def test_the_binding_survives_a_fresh_restore_but_a_new_entry_has_none(tmp_path)
     fresh.metadata.pop('terminal_cwd', None)
     runner.session_store._entries[KEY] = fresh
     assert get_chat_workspace(runner, KEY) is None
-
-
-def test_cwd_is_a_registered_gateway_command():
-    """The registry entry is what puts /cwd in the Telegram command menu and Discord's auto-sync."""
-    from hermes_cli.commands import COMMAND_REGISTRY
-    (cmd,) = [c for c in COMMAND_REGISTRY if c.name == 'cwd']
-    assert cmd.gateway_only and cmd.category == 'Session'
-
-
-# ── list / <n> / prefix completion (handler level) ────────────────────────────
-
-
-class _Runner:
-    """Runner stand-in: session store + the mixin methods under test, bound the way the gateway
-    binds them (GatewaySessionCommandsMixin methods run against the GatewayRunner instance).
-    ``candidate_workspaces`` is stubbed so the tests drive the handler logic, not projects.db."""
-
-    def __init__(self, candidates, monkeypatch):
-        self.session_store = _Store()
-        self.session_store._entries[KEY] = _entry()
-        self._authorized = True
-        for name in ('_cwd_candidates', '_cwd_candidates_reply', '_cwd_pick_candidate', '_handle_cwd_command'):
-            setattr(self, name, getattr(GatewaySessionCommandsMixin, name).__get__(self))
-        fixed = list(candidates)
-        monkeypatch.setattr('gateway.workspace_candidates.candidate_workspaces',
-                            lambda db=None: fixed)
-
-    def _is_user_authorized_for_source(self, source):
-        return self._authorized
-
-    def _session_key_for_source(self, source):
-        return KEY
-
-    def _event(self, arg):
-        return SimpleNamespace(source=object(), get_command_args=lambda: arg)
-
-
-def test_list_numbers_the_candidates(tmp_path, monkeypatch):
-    runner = _Runner(['/a', '/b'], monkeypatch)
-    reply = runner._cwd_candidates_reply(KEY)
-    assert '1. `/a`' in reply and '2. `/b`' in reply and '`/cwd <number>`' in reply
-
-
-def test_list_empty_has_no_numbers(tmp_path, monkeypatch):
-    runner = _Runner([], monkeypatch)
-    reply = runner._cwd_candidates_reply(KEY)
-    assert '/cwd list' not in reply and '1.' not in reply
-
-
-def test_numeric_pick_sets_the_nth_candidate(tmp_path, monkeypatch):
-    work = tmp_path / 'repo-b'
-    work.mkdir()
-    runner = _Runner([str(tmp_path / 'nope'), str(work)], monkeypatch)
-    reply = runner._cwd_pick_candidate(KEY, 2)
-    assert str(work) in reply
-    from tools.terminal_tool import get_session_cwd
-    assert get_session_cwd(KEY) == str(work)
-
-
-def test_numeric_pick_out_of_range_gets_the_list_again(tmp_path, monkeypatch):
-    """Spec: out of range -> list again, not a pointer to it."""
-    runner = _Runner(['/a', '/b'], monkeypatch)
-    reply = runner._cwd_pick_candidate(KEY, 5)
-    assert '1. `/a`' in reply and '2. `/b`' in reply
-
-
-def test_handler_ambiguous_prefix_lists_matches(tmp_path, monkeypatch):
-    """Handler-level: an ambiguous prefix replies with the matches, sets nothing."""
-    import asyncio
-    runner = _Runner(['/x/alpha', '/x/alpine'], monkeypatch)
-    reply = asyncio.run(runner._handle_cwd_command(runner._event('al')))
-    assert '/x/alpha' in reply and '/x/alpine' in reply
-    from tools.terminal_tool import get_session_cwd
-    assert get_session_cwd(KEY) is None  # nothing was set
-
-
-def test_handler_unknown_prefix_falls_through_to_invalid_path(tmp_path, monkeypatch):
-    """Handler-level: no prefix match = literal path, so a nonexistent one gets the plain
-    invalid-directory refusal (not a list, not a set)."""
-    import asyncio
-    runner = _Runner(['/x/alpha'], monkeypatch)
-    reply = asyncio.run(runner._handle_cwd_command(runner._event('zzz-nowhere')))
-    assert 'zzz-nowhere' in reply and 'does not exist' in reply.lower()
-
-
-def test_handler_unique_prefix_expands_and_sets(tmp_path, monkeypatch):
-    """Handler-level: one basename match expands and sets — the phone path (`/cwd pers`)."""
-    import asyncio
-    work = tmp_path / 'papers'
-    work.mkdir()
-    runner = _Runner([str(tmp_path / 'site'), str(work)], monkeypatch)
-    reply = asyncio.run(runner._handle_cwd_command(runner._event('pers')))
-    assert str(work) in reply
-    from tools.terminal_tool import get_session_cwd
-    assert get_session_cwd(KEY) == str(work)
-
-
-def test_handler_superscript_number_does_not_crash(tmp_path, monkeypatch):
-    """`str.isdigit()` is True for '²' where int() raises — the handler must refuse, not crash."""
-    import asyncio
-    runner = _Runner(['/a'], monkeypatch)
-    reply = asyncio.run(runner._handle_cwd_command(runner._event('²')))
-    assert 'does not exist' in reply.lower()  # literal-path refusal, not a crash
 
 
 def test_prefix_matches_basenames_too(tmp_path):

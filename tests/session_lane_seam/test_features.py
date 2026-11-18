@@ -8,7 +8,7 @@ import gateway.session_lane_features as features
 
 def test_the_marker_is_a_frozenset_of_known_ids():
     assert isinstance(features.REMOVED_FROM_CORE, frozenset)
-    assert features.REMOVED_FROM_CORE <= {"repaint", "rescue", "gates", "forward", "pills", "model", "wake"}
+    assert features.REMOVED_FROM_CORE <= {"diagnostics", "forward", "gates", "model", "p27", "pills", "repaint", "rescue", "residue", "settle", "wake", "workspace-seed", "workspace-slash", "workspaces"}
 
 
 def test_the_module_imports_nothing():
