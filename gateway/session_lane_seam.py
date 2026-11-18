@@ -25,6 +25,9 @@ in this module, every dispatcher returns what upstream's code did before the sea
 Nothing here may stop or break a call; a refusal reaches the caller only when a plugin returned a
 ``RuntimeStoreError`` on purpose.
 
+Kinds are not all about lanes: ``session_opened`` (and, in stage B11, ``list_params`` and ``list_rows``) serve the
+``chat-workspaces`` plugin; it registers its own ``route_lane_operation`` callback and answers only its kinds.
+
 Which lane features a core has taken out of the upstream-owned files is recorded in
 ``gateway/session_lane_features.py`` (``REMOVED_FROM_CORE``), not here.
 """
@@ -54,6 +57,7 @@ KINDS = {
     "handoff_route": "None (a sync callback inside the lane-move DB write; ctx: conn, target, policy)",
     "rollback_policy": "a launch policy for a checkpoint read; RuntimeStoreError: refuse "
                        "(ctx: authority, ref, op: 'list', 'diff', 'restore', ...)",
+    "session_opened": "None (async; the callback binds a new session's workspace itself; ctx: runner, event, session_key, is_new)",
 }
 
 #: What a ``nonlocal_command`` callback returns to say "run this command here, as for a local session".
@@ -265,3 +269,9 @@ async def rollback_policy(authority: Any, ref: Any, op: str) -> Any:
     if found is None:
         raise RuntimeStoreError("permission_denied")
     return found
+
+
+async def session_opened(runner: Any, event: Any, session_key: Any, is_new: Any) -> None:
+    """A turn is being prepared for *session_key*; *is_new* is True when its session was just created. A plugin may
+    bind the new session's workspace (``chat-workspaces``). No result is read: with no plugin this does nothing."""
+    await route("session_opened", runner=runner, event=event, session_key=session_key, is_new=is_new)
