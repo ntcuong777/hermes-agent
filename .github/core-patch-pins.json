@@ -141,10 +141,10 @@
       "upstream_release": "0.22.5"
     },
     "lane-mirror/forward-submit": {
-      "ast_sha": "b3c4d22f0e845921b9e8b2c7648e1705b093a6a29238139c50692ef68cfd16cb",
+      "ast_sha": "791efbaec2840917db1021f692b2f055b1cf7d896d2dcbaa067b1edf918d18c9",
       "kind": "wrap",
       "plugin": "lane-mirror",
-      "reason": "A prompt.submit to a session a Discord thread owns is relayed into the thread as the mirror admin instead of refused: an un-attached one by upstream's own refusal, an attached one by core's one-writer guard (lane forward)",
+      "reason": "A prompt.submit to a session a Discord thread owns is relayed into the thread as the mirror admin instead of refused (lane forward)",
       "target": "gateway.session_controls:AuthorityConnection.submit",
       "target_file": "gateway/session_controls.py",
       "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
