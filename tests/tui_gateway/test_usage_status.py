@@ -180,17 +180,21 @@ def test_a_reset_child_is_another_conversation():
 
 def test_a_real_session_db_round_trip(tmp_path, monkeypatch):
     """The columns the fakes assume exist, and queued deltas are drained by the read."""
-    from hermes_state import SessionDB
+    from types import SimpleNamespace
 
-    db = SessionDB(tmp_path / "state.db")
-    db.create_session("s1", "tui")
-    db.queue_token_counts(
-        "s1", estimated_cost_usd=0.5, cost_status="estimated", api_call_count=1
-    )
-    db.end_session("s1", "compression")
-    db.create_session("s2", "tui", parent_session_id="s1")
-    db.queue_token_counts(
-        "s2", estimated_cost_usd=0.25, cost_status="estimated", api_call_count=1
-    )
-    assert usage_status.lineage_cost(db, "s2") == (0.75, "estimated")
+    from persistence_assembly import open_persistence, profile_scope
+    from tests.fixtures.storage_seed import seed_session, seed_usage
+
+    home = tmp_path / ".hermes"
+    home.mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    with open_persistence(profile_scope(home=home)) as store:
+        seed_session(store, "s1", "tui")
+        seed_usage(store, "s1", estimated_cost_usd=0.5, cost_status="estimated", api_call_count=1)
+        store.sessions.end("s1", "compression")
+        seed_session(store, "s2", "tui", parent_session_id="s1")
+        seed_usage(store, "s2", estimated_cost_usd=0.25, cost_status="estimated", api_call_count=1)
+        rows = SimpleNamespace(get_session=lambda sid: (
+            record.as_session_row() if (record := store.sessions.get(sid)) is not None else None))
+        assert usage_status.lineage_cost(rows, "s2") == (0.75, "estimated")
 
