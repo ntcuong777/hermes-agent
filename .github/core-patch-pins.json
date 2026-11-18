@@ -1,5 +1,15 @@
 {
   "pins": {
+    "chat-workspaces/cwd-help": {
+      "ast_sha": "382de1c8527252af535006380950dd861c057b700cf6aa5a88426875d941c357",
+      "kind": "wrap",
+      "plugin": "chat-workspaces",
+      "reason": "A gateway /help or /commands listing keeps the /cwd line the pre-B9 core printed (spec 08b fix F1: /cwd left core)",
+      "target": "hermes_cli.commands:gateway_help_lines",
+      "target_file": "hermes_cli/commands.py",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+      "upstream_release": "0.23.0"
+    },
     "core-fixes/checkpoint-stale-lock": {
       "ast_sha": "36df092499e414dc1b775e0b55b8e6f922ffae427e69bac085c6711cef00a887",
       "kind": "wrap",
