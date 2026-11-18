@@ -85,7 +85,7 @@ def _spawn(tasks, *, parent=None, provider=None, cfg=None, resolve=None):
     provider = provider or Roles()
     hooks = []
     with (
-        patch("tools.delegate_tool._load_config", return_value=cfg or {}),
+        patch("tools.delegate_tool_config._load_config", return_value=cfg or {}),
         patch("tools.delegate_tool_routes._active_provider", return_value=provider),
         patch("run_agent.AIAgent", side_effect=lambda **kw: MagicMock()) as agent,
         patch("hermes_cli.lifecycle.invoke_hook", side_effect=lambda name, **kw: hooks.append((name, kw))),
@@ -183,7 +183,7 @@ def test_a_provider_may_declare_role_and_the_model_fields_but_never_toolsets():
 def test_the_schema_carries_the_declared_roles_as_an_enum():
     from tools.delegate_tool import DELEGATE_TASK_SCHEMA, _build_dynamic_schema_overrides
     with patch("tools.delegate_tool_routes._active_provider", return_value=Roles()), \
-            patch("tools.delegate_tool._load_config", return_value={}):
+            patch("tools.delegate_tool_config._load_config", return_value={}):
         props = _build_dynamic_schema_overrides()["parameters"]["properties"]["tasks"]["items"]["properties"]
     assert props["role"]["enum"] == sorted(ROLES) and {"model", "provider"} <= set(props)
     static = DELEGATE_TASK_SCHEMA["parameters"]["properties"]["tasks"]["items"]["properties"]
