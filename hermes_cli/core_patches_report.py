@@ -199,9 +199,9 @@ def _log_states(rows: list[dict], surface: str, summary: bool) -> None:
         if row["drifted"]:  # spec 09: the patch RUNS against a target that changed; one line per patch and state
             (logger.error if row["critical"] else logger.warning)(
                 "core patch %s drifted but applied (on_drift apply): plugin=%s target=%s recorded-upstream=%s (%s) "
-                "expected-sha=%s current-sha=%s: %s (hermes plugins patches --upstream-diff %s; --agent-brief %s)",
+                "expected-sha=%s current-sha=%s (hermes plugins patches --upstream-diff %s; --agent-brief %s)",
                 marker[0], row["plugin"], row["target"], _short(row["upstream_commit"]), row["upstream_release"],
-                _short(row["expect_ast_sha"]), _short(row["current_sha"]), row["detail"], row["name"], row["name"])
+                _short(row["expect_ast_sha"]), _short(row["current_sha"]), row["name"], row["name"])
             continue
         logger.warning(
             "core patch %s %s: plugin=%s target=%s recorded-upstream=%s (%s) expected-sha=%s current-sha=%s: %s "

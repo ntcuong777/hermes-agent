@@ -63,6 +63,7 @@ def test_apply_logs_one_warning_per_drifted_patch_with_everything_a_later_agent_
     assert "plugin=demo" in line and f"target={target.name}:greet" in line
     assert "expected-sha=000000000000" in line and "current-sha=8ac9a553d27b" in line
     assert "recorded-upstream=" in line and "--agent-brief up" in line and "--upstream-diff up" in line
+    assert line.count("expected-sha=") == 1 and "changed (expected" not in line  # one copy of the drift information
     assert "drifted=1" in [r.getMessage() for r in caplog.records if "core patches (test)" in r.getMessage()][0]
 
 
