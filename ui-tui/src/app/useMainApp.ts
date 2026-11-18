@@ -64,7 +64,10 @@ import { $goodVibesTick } from './petFlashStore.js'
 import { applyProcessSnapshot, type ProcessEntry } from './processRoster.js'
 import { scrollWithSelectionBy } from './scroll.js'
 import { respondToServerRequest } from './serverRequestStore.js'
-import { mutateCanonicalSession } from './slash/canonicalSessionControls.js'
+import { mutateCanonicalSession as StockMutateCanonicalSession } from './slash/canonicalSessionControls.js' // fork: tui slot
+import { slotFn } from '../sdk/ext/slotReact.js' // fork: tui slot
+import { extensionHost as canonicalExtensionHost } from '../sdk/ext/host.js' // fork: tui slot
+const mutateCanonicalSession = slotFn('canonical.mutate', StockMutateCanonicalSession, canonicalExtensionHost, (r) => r === undefined || (typeof r === 'object' && r !== null)) // fork: tui slot
 import { setSlashCatalog, useSlashCatalog } from './slashCatalog.js'
 import { captureDestination, isCurrentDestination, type SubmissionDestination } from './submissionDestination.js'
 import { turnController } from './turnController.js'
@@ -220,14 +223,7 @@ export async function startPromptLiveSession({
 
   if (requestedModel) {
     const applyModel = async (confirm?: string) => {
-      const mutation = await mutateCanonicalSession(
-        { request: (method, params, timeoutMs) => rpc(method, params, { timeoutMs }) },
-        sid,
-        'model',
-        requestedModel,
-        undefined,
-        confirm
-      )
+      const mutation = await mutateCanonicalSession({ request: rpc }, sid, 'model', requestedModel, undefined, confirm)
 
       const refusal = mutation?.result
 

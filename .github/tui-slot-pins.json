@@ -8,6 +8,14 @@
       "target_file": "ui-tui/src/components/prompts.tsx",
       "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
     },
+    "canonical.mutate": {
+      "plugin": "tui-lane",
+      "reason": "reasoning efforts on the model picker, the modelPayload effort split and the compress timeout on the canonical controls",
+      "sha": "1bbd3a4a476d1624669a6c22f19313cd6098fdf30c0ccbf0a21adf255fed3c0d",
+      "symbols": [],
+      "target_file": "ui-tui/src/app/slash/canonicalSessionControls.ts",
+      "upstream_commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e"
+    },
     "completion.request": {
       "plugin": "tui-ports",
       "reason": "mid-prompt @file and inline /skill completion at the caret; replaceTo keeps the text after it",

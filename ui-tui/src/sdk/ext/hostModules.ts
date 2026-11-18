@@ -66,6 +66,7 @@ import * as submissionDestination from '../../app/submissionDestination.js' // f
 import * as createSlashHandler from '../../app/createSlashHandler.js' // fork: tui slot host modules (stage 5)
 import * as queueSlash from '../../app/queueSlash.js' // fork: tui slot host modules (stage 5)
 import * as slashRegistry from '../../app/slash/registry.js' // fork: tui slot host modules (stage 5)
+import * as slashTypes from '../../app/slash/types.js' // fork: tui slot host modules (stage 7)
 import * as submissionCore from '../../app/submissionCore.js' // fork: tui slot host modules (stage 5)
 import * as userMessages from '../../app/userMessages.js' // fork: tui slot host modules (stage 5)
 import * as interpolation from '@hermes/shared/interpolation' // fork: tui slot host modules (stage 5)
@@ -130,6 +131,7 @@ export const HOST_MODULES: Readonly<Record<string, unknown>> = Object.freeze({
   'app/createSlashHandler': createSlashHandler,
   'app/queueSlash': queueSlash,
   'app/slash/registry': slashRegistry,
+  'app/slash/types': slashTypes,
   'app/submissionCore': submissionCore,
   'app/userMessages': userMessages,
   'shared/interpolation': interpolation

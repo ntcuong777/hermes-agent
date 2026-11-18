@@ -21,6 +21,9 @@ import { usageFromTick } from '../domain/usage.js'
 import { t } from '../i18n/runtime.js'
 import { billingDialogCopy, usageLimitDialog } from '../lib/billingDialog.js'
 import { type ImageAttachment, stageImagePath } from '../lib/imageAttachments.js'
+import { slotFn } from '../sdk/ext/slotReact.js' // fork: tui slot
+import { extensionHost as cgehExtensionHost } from '../sdk/ext/host.js' // fork: tui slot
+const mutateCanonicalSession = slotFn('canonical.mutate', StockMutateCanonicalSession, cgehExtensionHost, (r) => r === undefined || (typeof r === 'object' && r !== null)) // fork: tui slot
 import { isTodoDone } from '../lib/liveProgress.js'
 import { openExternalUrl } from '../lib/openExternalUrl.js'
 import { rpcErrorMessage } from '../lib/rpc.js'
@@ -51,7 +54,7 @@ import { flashGoodVibes, flashPet } from './petFlashStore.js'
 import { forgetServerRequest } from './serverRequestStore.js'
 import { noteCanonicalCompletion } from './slash/canonicalSessionCommands.js'
 import {
-  mutateCanonicalSession,
+  mutateCanonicalSession as StockMutateCanonicalSession,
   openModelConfirmation,
   switchCanonicalModel
 } from './slash/canonicalSessionControls.js'

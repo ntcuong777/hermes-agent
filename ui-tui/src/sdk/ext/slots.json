@@ -88,6 +88,14 @@
       "props": 1,
       "summary": "The submission hook (fork: completion apply with the caret end)",
       "symbols": []
+    },
+    "canonical.mutate": {
+      "file": "ui-tui/src/app/slash/canonicalSessionControls.ts",
+      "host": ["ink", "react", "pkg/@nanostores/react", "domain/messages", "i18n/runtime", "lib/rpc", "app/overlayStore", "app/uiStore", "app/slash/types", "shared/slash-input", "shared/gateway-types", "shared/gateway-canonical"],
+      "kind": "fn",
+      "props": 1,
+      "summary": "The canonical session controls (fork: reasoning efforts, model payload split, compress timeout)",
+      "symbols": []
     }
   }
 }
