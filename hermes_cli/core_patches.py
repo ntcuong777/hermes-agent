@@ -89,7 +89,9 @@ PENDING, ACTIVE = "pending", "active"
 SKIPPED_DRIFT, SKIPPED_NO_GRANT, SKIPPED_ERROR = "skipped-drift", "skipped-no-grant", "skipped-error"
 DISABLED = "disabled-after-errors"
 REFUSE_STATUSES = frozenset({SKIPPED_DRIFT, SKIPPED_ERROR, PENDING})  # "not installed" for a critical patch
-LOUD_STATUSES = REFUSE_STATUSES | {DISABLED}
+# "loud" for a critical patch: an ERROR log, the alert and the home-channel notice. A missing grant is loud but
+# is NOT in REFUSE_STATUSES: it never refuses startup by itself (refuse_on_critical refuses on REFUSE_STATUSES only).
+LOUD_STATUSES = REFUSE_STATUSES | {DISABLED, SKIPPED_NO_GRANT}
 REFUSAL_EXIT_CODE = 78  # EX_CONFIG
 _MISSING = object()
 
@@ -814,6 +816,11 @@ def _refused(current: Iterable[PatchRecord]) -> list[str]:
             for r in current if r.critical and r.status in REFUSE_STATUSES]
 
 
+def _loud(current: Iterable[PatchRecord]) -> list[str]:
+    return [f"{r.spec.key} on {r.spec.target} is {r.status} ({r.detail})"
+            for r in current if r.critical and r.status in LOUD_STATUSES]
+
+
 def _known_managers() -> list[Any]:
     try:
         import hermes_cli.plugins as plugins_mod
@@ -865,7 +872,7 @@ def _missing_declared() -> list[str]:
 def critical_problems(current: Optional[Iterable[PatchRecord]] = None) -> list[str]:
     """One line per critical patch that is not installed, with its detail (logs, refusal; never raises)."""
     try:
-        return _refused(records() if current is None else current) + _missing_declared()
+        return _loud(records() if current is None else current) + _missing_declared()
     except Exception:  # health: allow BLE001
         logger.debug("core patches: could not evaluate the critical patches", exc_info=True)
         return []
@@ -885,7 +892,7 @@ def critical_notice_lines(current: Optional[Iterable[PatchRecord]] = None) -> li
         records_ = records() if current is None else current
         refused = [f"{r.spec.key} is {r.status}" + (f" ({kind})" if (kind := _exception_type_of(
                        stats.get(r.spec.key, (0, 0, ""))[2])) else "")
-                   for r in records_ if r.critical and r.status in REFUSE_STATUSES]
+                   for r in records_ if r.critical and r.status in LOUD_STATUSES]
         missing = [f"{plugin_key}:{n} is declared critical but not registered"
                    for plugin_key, n, _why in _missing_entries()]
         return refused + missing
@@ -985,17 +992,19 @@ def apply_core_patches(surface: str = "") -> tuple[PatchRecord, ...]:
                 _LOCK.release()
     current = _snapshot_or_busy(min(_LOCK_WAIT_S, settings.apply_timeout_s))
     problems = critical_problems(current)
+    # Only these refuse startup (exit 78 under refuse_on_critical): a missing grant is loud, never a refusal.
+    refusals = _refused(current) + _missing_declared()
     try:
         from hermes_cli import core_patches_report as report
 
         report.publish(current, surface=surface or "?", settings=settings, summary=True,
                        wait_s=min(1.0, settings.apply_timeout_s))
-        if problems and not settings.refuse_on_critical:
+        if problems and not (settings.refuse_on_critical and refusals):
             report.critical_alert(problems, critical_notice_lines(current))
     except Exception:  # health: allow BLE001 -- reporting is best effort
         logger.debug("core patches: reporting failed (%s)", surface or "?", exc_info=True)
-    if problems and settings.refuse_on_critical:
-        message = "refusing to start: critical core patch " + "; ".join(problems)
+    if refusals and settings.refuse_on_critical:
+        message = "refusing to start: critical core patch " + "; ".join(refusals)
         logger.error("core patches: %s", message)
         print(f"hermes: {message}", file=sys.stderr)
         raise CorePatchRefusal(message)
