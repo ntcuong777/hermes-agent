@@ -454,54 +454,6 @@ def _session_workspace(runner, source):
         reset_session_cwd(cwd_token)
 
 
-async def _run_in_band(connection, ref, live, home, canonical, arg, definition, before):
-    """Run a recognized command against the live runner (busy dispatch, prompt command, or handler)
-    and shape its response; the settle/publish epilogue approval.respond and cron share."""
-    authority, actor = connection.authority, connection.actor
-    from gateway.platforms.base import MessageEvent
-    from gateway.run import _profile_runtime_scope
-    from gateway.session_command_sink import capture
-    typed = '/' + canonical + (' ' + arg if arg else '')
-    event = MessageEvent(text=typed, source=live.source)
-    runner = authority.runner
-    prompt = None
-    # Use the registry's existing busy contract, not a local approximation.
-    with (_profile_runtime_scope(home), _session_workspace(runner, live.source), capture() as sink,
-          _accepting(before)):
-        if authority._handle(ref).execution_state != 'idle':
-            output = await runner._dispatch_busy_slash_command(event, definition, live.route, live.source)
-        elif canonical in _PROMPT_COMMANDS:
-            await before()  # a no-op unless the turn ended since the check above
-            handled, output = await getattr(runner, '_hm_cmd_' + canonical.replace('-', '_'))(
-                event, live.source, live.route)
-            if not handled:
-                prompt = event.text
-        else:
-            await before()
-            if canonical == 'reasoning':
-                from gateway.run_config_loaders import GatewayConfigLoadersMixin
-                from gateway.session_setting_commands import commit_reasoning_command
-                await commit_reasoning_command(authority, actor, ref,
-                                               *GatewayConfigLoadersMixin._parse_reasoning_command_args(arg))
-            handler = runner._command_handler_table((canonical,))[canonical]
-            output = await handler(event)
-    if canonical in _APPROVAL_COMMANDS:
-        # Settle the answered prompt for every viewer now (`approval.settled`), as approval.respond does.
-        handle = authority._handle(ref)
-        live.controls.snapshot(ref.session_id, handle.execution_generation
-                               if handle.execution_state == 'running' else None)
-    if canonical in _AUTOMATION_COMMANDS:
-        from gateway.session_control_actions import publish
-        publish(authority, ref.session_id)
-    prompt = prompt if prompt is not None else sink.prompt
-    if prompt:
-        # The client submits the turn with its own durable input id; the gateway never does.
-        notice = '\n'.join(filter(None, [*sink.notices, str(output or '')]))
-        return {'type': 'send', 'message': prompt, 'display': sink.display or typed,
-                **({'notice': notice} if notice else {})}
-    return {'type': 'exec', 'output': '\n'.join(filter(None, [*sink.notices, _text(output)]))}
-
-
 async def execute_command(connection, ref, params, *, dispatch=False):
     authority, actor = connection.authority, connection.actor
     authority.authorize(actor, ref, 'session:read')
@@ -590,9 +542,48 @@ async def execute_command(connection, ref, params, *, dispatch=False):
     if canonical in _OWNER_COMMANDS:
         from gateway.session_cron_commands import run_cron
         return await run_cron(authority, arg)
-    return await _run_in_band(connection, ref, live, home, canonical, arg, definition, before)
 
-
+    from gateway.platforms.base import MessageEvent
+    from gateway.session_command_sink import capture
+    typed = '/' + canonical + (' ' + arg if arg else '')
+    event = MessageEvent(text=typed, source=live.source)
+    runner = authority.runner
+    prompt = None
+    # Use the registry's existing busy contract, not a local approximation.
+    with (_profile_runtime_scope(home), _session_workspace(runner, live.source), capture() as sink,
+          _accepting(before)):
+        if authority._handle(ref).execution_state != 'idle':
+            output = await runner._dispatch_busy_slash_command(event, definition, live.route, live.source)
+        elif canonical in _PROMPT_COMMANDS:
+            await before()  # a no-op unless the turn ended since the check above
+            handled, output = await getattr(runner, '_hm_cmd_' + canonical.replace('-', '_'))(
+                event, live.source, live.route)
+            if not handled:
+                prompt = event.text
+        else:
+            await before()
+            if canonical == 'reasoning':
+                from gateway.run_config_loaders import GatewayConfigLoadersMixin
+                from gateway.session_setting_commands import commit_reasoning_command
+                await commit_reasoning_command(authority, actor, ref,
+                                               *GatewayConfigLoadersMixin._parse_reasoning_command_args(arg))
+            handler = runner._command_handler_table((canonical,))[canonical]
+            output = await handler(event)
+    if canonical in _APPROVAL_COMMANDS:
+        # Settle the answered prompt for every viewer now (`approval.settled`), as approval.respond does.
+        handle = authority._handle(ref)
+        live.controls.snapshot(ref.session_id, handle.execution_generation
+                               if handle.execution_state == 'running' else None)
+    if canonical in _AUTOMATION_COMMANDS:
+        from gateway.session_control_actions import publish
+        publish(authority, ref.session_id)
+    prompt = prompt if prompt is not None else sink.prompt
+    if prompt:
+        # The client submits the turn with its own durable input id; the gateway never does.
+        notice = '\n'.join(filter(None, [*sink.notices, str(output or '')]))
+        return {'type': 'send', 'message': prompt, 'display': sink.display or typed,
+                **({'notice': notice} if notice else {})}
+    return {'type': 'exec', 'output': '\n'.join(filter(None, [*sink.notices, _text(output)]))}
 
 
 def _is_directive(output):
