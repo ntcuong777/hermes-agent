@@ -85,12 +85,13 @@ def flavor_of(func: Callable[..., Any]) -> str:
 class Frame:
     """What one shell call saw of the original: how many times it was entered and how the last entry ended."""
 
-    __slots__ = ("entries", "state", "result", "error", "guard", "parent", "closed")
+    __slots__ = ("entries", "state", "result", "error", "guard", "parent", "closed", "handled")
 
     def __init__(self, guard: Optional["Guard"] = None, parent: Optional["Frame"] = None) -> None:
         self.entries, self.state, self.result, self.error = 0, IDLE, None, None
         self.guard, self.parent = guard, parent
         self.closed = False  # set once the shell call that owns this frame has finished (see _frame_for)
+        self.handled = False  # a wrapper counted its own handled failure in this call (see count_handled)
 
     def enter(self) -> "Frame":
         self.entries, self.state = self.entries + 1, RUNNING
@@ -200,6 +201,25 @@ def _frame_for(guard: Guard) -> Optional[Frame]:
     return None if frame is not None and frame.closed else frame
 
 
+def _clear(guard: Guard, frame: Optional[Frame]) -> None:
+    """A call that ended without a fault resets the streak, unless its wrapper counted a handled failure."""
+    if frame is None or not frame.handled:
+        guard.ok()
+
+
+def count_handled(guard: Guard, exc: BaseException, where: str) -> None:
+    """A wrapper answered ``exc`` from its own handler (it did not let it escape): count it on ``guard`` as a
+    patch-layer failure. The current call's frame is marked handled, so the call's own success or refusal
+    does not reset the streak. Never raises."""
+    try:
+        frame = _frame_for(guard)
+        if frame is not None:
+            frame.handled = True
+        guard.fail(exc, where)
+    except Exception:  # health: allow BLE001 -- counting must never break the call it guards
+        logger.debug("core patch %s: could not count a handled failure", guard.key, exc_info=True)
+
+
 def trampoline(guard: Guard, inner: Callable[[], Callable[..., Any]], original: Callable[..., Any],
                flavor: str) -> Callable[..., Any]:
     """The ``original`` a wrap factory receives: forwards to ``inner()`` and records the outcome in the
@@ -253,7 +273,7 @@ def _decide(guard: Guard, frame: Frame, exc: BaseException, *, delivered: bool, 
     the original answers, then ``Guard.settle`` counts) or RETURN (give back ``frame.result``; counted).
     ``untracked``: untracked entries of the original during this call (see ``Guard.note_untracked``)."""
     if not isinstance(exc, Exception) or guard.declared(exc):
-        guard.ok()
+        _clear(guard, frame)
         return RAISE
     if guard.kind == "replace":
         if delivered:
@@ -263,11 +283,11 @@ def _decide(guard: Guard, frame: Frame, exc: BaseException, *, delivered: bool, 
             guard.fail(exc, "the replacement body")
             return RAISE
         if guard.replace_fallback == "bug-class" and not guard.drifted and not isinstance(exc, BUG_CLASS):
-            guard.ok()  # looks like a legitimate error: the upstream function is not run a second time
+            _clear(guard, frame)  # looks like a legitimate error: the upstream function is not run a second time
             return RAISE
         return CHECKED
     if frame.state == RAISED:
-        guard.ok()  # the original raised: legitimate
+        _clear(guard, frame)  # the original raised: legitimate
         return RAISE
     if delivered:
         guard.fail(exc, "the wrapper (mid-stream)")
@@ -312,7 +332,7 @@ def _sync_shell(guard: Guard, wrapped: Callable[..., Any], inner: Callable[[], C
             caught = exc
         else:
             frame.closed = True
-            guard.ok()
+            _clear(guard, frame)
             return result
         if action == RETURN:
             return frame.result
@@ -348,7 +368,7 @@ def _async_shell(guard: Guard, wrapped: Callable[..., Any], inner: Callable[[], 
         else:
             frame.closed = True
             _FRAME.reset(token)
-            guard.ok()
+            _clear(guard, frame)
             return result
         if action == RETURN:
             return frame.result
@@ -387,7 +407,7 @@ def _gen_shell(guard: Guard, wrapped: Callable[..., Any], inner: Callable[[], Ca
                     item = _step(stream, sent, thrown)
                 except StopIteration as stop:
                     frame.closed = True
-                    guard.ok()
+                    _clear(guard, frame)
                     return stop.value
                 finally:
                     _FRAME.reset(token)
@@ -448,7 +468,7 @@ def _agen_shell(guard: Guard, wrapped: Callable[..., Any], inner: Callable[[], C
                     item = await _astep(stream, sent, thrown)
                 except StopAsyncIteration:
                     frame.closed = True
-                    guard.ok()
+                    _clear(guard, frame)
                     return
                 finally:
                     _FRAME.reset(token)
