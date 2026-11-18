@@ -6,7 +6,6 @@ the settle frames the authority publishes carry no route, so its status bar show
 until something repainted them (a typed ``/model``). The reply now carries the route the lane's next turn
 resolves, from ``local_session_info``.
 """
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -25,16 +24,15 @@ async def _lane_bound(tmp_path, monkeypatch):
     """A TUI session created on the CLI model, then bound to a Discord thread by the real repoint."""
     from gateway.run_startup import GatewayStartupMixin
     from gateway.session import AsyncSessionStore
-    from hermes_state import AsyncSessionDB
     authority = await _authority(tmp_path, monkeypatch, HOST)
     conn = AuthorityConnection(authority, SimpleNamespace(write=lambda frame: None), {'user_id': 'owner'})
     created = await conn.dispatch({'id': 1, 'method': 'session.create', 'params': {
-        'request_id': 'tui', 'source': 'tui', 'cwd': str(Path(authority.db.db_path).parent)}})
+        'request_id': 'tui', 'source': 'tui', 'cwd': str(authority.persistence.scope.profile_dir)}})
     sid = created['result']['stored_session_id']
     runner = authority.runner
     source = _source('discord', chat_id='thread-1')
     route = runner.session_store._generate_session_key(source)
-    gateway = SimpleNamespace(_session_db=AsyncSessionDB(authority.db), session_authority=authority,
+    gateway = SimpleNamespace(_session_db=authority.persistence.aio, session_authority=authority,
                               async_session_store=AsyncSessionStore(runner.session_store))
     await GatewayStartupMixin._handoff_repoint(gateway, SimpleNamespace(source=source), route, sid)
     await conn.dispatch({'id': 2, 'method': 'session.detach', 'params': {
@@ -49,4 +47,4 @@ async def test_without_the_plugin_a_lane_bound_attach_carries_only_the_protocol_
     resumed = await conn.dispatch({'id': 3, 'method': 'session.resume', 'params': {'session_id': sid}})
     assert resumed['result']['info'] == {'desktop_protocol': 'hermes-gateway-v1'}
     await conn.close()
-    authority.db.close()
+    authority.persistence.close()

@@ -17,10 +17,92 @@ from unittest.mock import Mock, patch
 import pytest
 
 from gateway import code_skew
-from tests.gateway.test_lane_model_survives import (
-    CFG, PICK, _bound, _effective, _pick, _resume, _stop)
+from gateway.session_controls import AuthorityConnection
+from tests.fixtures.storage_read import session_row
+from tests.gateway.test_authority_cold_route_recovery import _source
+from tests.gateway.test_local_session_cli_model import CFG
+
+pytestmark = pytest.mark.usefixtures('authority_cwd_in_tmp')  # symbolic profile ids are relative homes
 
 SKEW = ('abc1234567', 'def4567890')
+PICK = ('claude-opus-5-5', 'anthropic', 'low')
+HOST = 'model:\n  provider: anthropic\n  default: claude-sonnet-5-5\nagent:\n  reasoning_effort: high\n'
+
+
+# -- the lane harness: a TUI session bound to a Discord thread by the real handoff repoint (core only) -----------
+
+
+def _runtime(provider, target_model=None):
+    return {'provider': provider, 'api_key': f'key-{provider}', 'base_url': f'https://{provider}.example/v1',
+            'api_mode': 'chat_completions'}
+
+
+async def _boot(tmp_path, monkeypatch, config=CFG, host=HOST):
+    """A gateway process over the state the earlier ones left on disk: new store, runner, authority."""
+    from gateway import run
+    from gateway.config import GatewayConfig
+    from gateway.session import SessionStore
+    from gateway.session_authority import initialize_session_authority
+    home = tmp_path / 'home'
+    home.mkdir(exist_ok=True)
+    (home / 'host.yaml').write_text(host, encoding='utf-8')
+    monkeypatch.setattr(run, '_load_gateway_config', lambda *_path: config)
+    monkeypatch.setattr(run, '_gateway_config_home', lambda: home)
+    store = SessionStore(tmp_path / 'sessions', GatewayConfig())
+    runner = run.GatewayRunner.__new__(run.GatewayRunner)
+    runner.adapters, runner.session_store, runner._session_db, runner._draining = {}, store, store.persistence, False
+    runner._session_model_overrides, runner.config = {}, store.config
+    authority = await initialize_session_authority(runner, profile_id='fixture', instance_id=f'boot-{id(runner)}')
+    authority._schedule = lambda ref: None
+    frames = []
+    conn = AuthorityConnection(authority, SimpleNamespace(write=lambda frame: frames.append(frame) or True),
+                               {'user_id': 'owner'})
+    return SimpleNamespace(authority=authority, runner=runner, store=store, conn=conn, tmp=tmp_path, frames=frames)
+
+
+async def _stop(world):
+    await world.conn.close()
+    world.authority.persistence.close()
+
+
+async def _bound(tmp_path, monkeypatch, **boot):
+    """A TUI session created on the CLI model, bound to a Discord thread by the real handoff repoint."""
+    world = await _boot(tmp_path, monkeypatch, **boot)
+    created = await world.conn.dispatch({'id': 1, 'method': 'session.create', 'params': {
+        'request_id': 'tui', 'source': 'tui', 'cwd': str(world.tmp)}})
+    sid = created['result']['stored_session_id']
+    world.sid, world.source = sid, _source('discord', chat_id='thread-1')
+    world.route = world.store._generate_session_key(world.source)
+    await _rebind(world, world.source)
+    await world.conn.dispatch({'id': 2, 'method': 'session.detach', 'params': {
+        'session_id': sid, 'subscription_id': created['result']['subscription_id']}})
+    return world
+
+
+async def _rebind(world, source):
+    """The Discord session mirror's ``/resume <sid> --all`` for *source*'s thread."""
+    from gateway.run_startup import GatewayStartupMixin
+    gateway = SimpleNamespace(_session_db=world.authority.persistence.aio, session_authority=world.authority,
+                              async_session_store=world.runner.async_session_store)
+    route = world.store._generate_session_key(source)
+    await GatewayStartupMixin._handoff_repoint(gateway, SimpleNamespace(source=source), route, world.sid)
+    return route
+
+
+async def _resume(world):
+    reply = await world.conn.dispatch({'id': 9, 'method': 'session.resume', 'params': {'session_id': world.sid}})
+    assert 'error' not in reply, reply
+    return reply['result']
+
+
+def _effective(world, route=None, config=CFG):
+    """``(model, provider, effort)`` the lane's next turn runs."""
+    runner, route = world.runner, route or world.route
+    with patch('gateway.run._resolve_runtime_agent_kwargs_for_provider', side_effect=_runtime), \
+            patch('gateway.run._resolve_runtime_agent_kwargs', return_value=_runtime('openai-codex')):
+        model, runtime = runner._resolve_session_agent_runtime(session_key=route, user_config=config)
+    effort = runner._resolve_session_reasoning_config(session_key=route, model=model)
+    return model, runtime['provider'], (effort or {}).get('effort')
 
 
 def _config(mode):
@@ -170,8 +252,7 @@ async def _raw_pick(world, snap, request_id):
 
 
 def _receipts(world):
-    with world.authority.db._read_ctx() as conn:
-        return conn.execute("SELECT COUNT(*) FROM state_meta WHERE key LIKE 'gateway.mutation.v1.%'").fetchone()[0]
+    return len(world.authority.persistence.state_meta.list_prefix('gateway.mutation.v1.'))
 
 
 @pytest.mark.asyncio
@@ -180,7 +261,7 @@ async def test_a_refused_lane_pick_says_to_restart_and_records_nothing(tmp_path,
     monkeypatch.setattr(code_skew, 'detect_code_skew', lambda: None)
     fresh = await _bound(tmp_path, monkeypatch, config=_stale_config(mode))
     _effective(fresh)  # the lane's first turn adopts the session's own route as its saved pick
-    before = (_receipts(fresh), fresh.authority.db.get_session(fresh.sid)['runtime_revision'],
+    before = (_receipts(fresh), session_row(fresh.authority.persistence, fresh.sid)['runtime_revision'],
               fresh.store.get_model_override(fresh.route), _effective(fresh))
     snap = await _resume(fresh)
     monkeypatch.setattr(code_skew, 'detect_code_skew', lambda: SKEW)  # a commit landed after boot
@@ -189,10 +270,12 @@ async def test_a_refused_lane_pick_says_to_restart_and_records_nothing(tmp_path,
     assert 'model_resolution_failed' in json.dumps(error), error
     assert error['data']['detail'].endswith('hermes gateway restart'), 'the refusal is not cut short'
     assert len(error['data']['detail']) < 160 and 'Restart it' in error['data']['detail']
-    after = (_receipts(fresh), fresh.authority.db.get_session(fresh.sid)['runtime_revision'],
+    after = (_receipts(fresh), session_row(fresh.authority.persistence, fresh.sid)['runtime_revision'],
              fresh.store.get_model_override(fresh.route), _effective(fresh))
     assert after == before, 'no receipt, no revision bump, no override, no change of route'
-    assert fresh.runner._session_model_override(fresh.route)['model'] == 'claude-sonnet-5-5', 'still its own route'
+    # Core keeps no saved pick for the route: the lane-mirror plugin adopts the route's own model as one (its
+    # tests cover that), so the core-only harness sees no override here.
+    assert fresh.runner._session_model_override(fresh.route) is None, 'core records no pick for the route'
     # After the restart the same pick goes through (no skew), and records.
     monkeypatch.setattr(code_skew, 'detect_code_skew', lambda: None)
     assert 'error' not in await _raw_pick(fresh, await _resume(fresh), 'refused-1')

@@ -11,6 +11,7 @@ import pytest
 
 from gateway.route_config import local_session_config
 from gateway.session_controls import AuthorityConnection
+from tests.fixtures.storage_read import session_row
 
 CFG = {
     'model': {'provider': 'anthropic', 'default': 'claude-sonnet-5-5'},
@@ -52,8 +53,9 @@ async def _authority(tmp_path, monkeypatch, host_yaml):
     monkeypatch.setattr(run, '_gateway_config_home', lambda: home)
     store = SessionStore(tmp_path / 'sessions', GatewayConfig())
     runner = run.GatewayRunner.__new__(run.GatewayRunner)
-    runner.adapters, runner.session_store, runner._session_db, runner._draining = {}, store, store._db, False
-    authority = await initialize_session_authority(runner, profile_id=str(Path(store._db.db_path).parent), instance_id='test')
+    runner.adapters, runner.session_store, runner._session_db, runner._draining = {}, store, store.persistence, False
+    authority = await initialize_session_authority(runner, profile_id=str(store.persistence.scope.profile_dir),
+                                                   instance_id='test')
     authority._schedule = lambda ref: None
     return authority
 
@@ -63,10 +65,10 @@ async def test_without_the_plugin_a_tui_session_ignores_host_yaml(tmp_path, monk
     """The CLI-model overlay is the `config-seams` plugin's (stage B15): core alone launches from the shared config (upstream)."""
     authority = await _authority(tmp_path, monkeypatch, 'model:\n  provider: zai\n  default: glm-5.3-flash\n')
     conn = AuthorityConnection(authority, SimpleNamespace(write=lambda frame: None), {'user_id': 'owner'})
-    cwd = str(Path(authority.db.db_path).parent)
+    cwd = str(authority.persistence.scope.profile_dir)
     created = await conn.dispatch({'id': 1, 'method': 'session.create',
                                    'params': {'request_id': 'tui', 'source': 'tui', 'cwd': cwd}})
     assert 'result' in created, created
-    assert authority.db.get_session(created['result']['stored_session_id'])['model'] != 'glm-5.3-flash'
+    assert session_row(authority.persistence, created['result']['stored_session_id'])['model'] != 'glm-5.3-flash'
     await conn.close()
-    authority.db.close()
+    authority.persistence.close()
