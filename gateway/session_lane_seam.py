@@ -57,6 +57,8 @@ KINDS = {
     "handoff_route": "None (a sync callback inside the lane-move DB write; ctx: conn, target, policy)",
     "rollback_policy": "a launch policy for a checkpoint read; RuntimeStoreError: refuse "
                        "(ctx: authority, ref, op: 'list', 'diff', 'restore', ...)",
+    "mutation_guard": "RUN_HERE: this session is not a lane's, the write may run; anything else (None included): "
+                      "the core refuses (ctx: authority, ref, operation)",
     "session_opened": "None (async; the callback binds a new session's workspace itself; ctx: runner, event, session_key, is_new)",
     "list_params": "dict: the session.list params with a cwd translated to workspace (ctx: params); RuntimeStoreError: refuse",
     "list_rows": "list: the rows session.list keeps (ctx: rows, params)",
@@ -65,6 +67,9 @@ KINDS = {
 
 #: What a ``nonlocal_command`` callback returns to say "run this command here, as for a local session".
 RUN_HERE = "run-here"
+
+#: The ``session.mutate`` operations that write a session's transcript and so belong to a lane when a thread writes it.
+LANE_MUTATIONS = frozenset({"rewind", "compress", "reset", "branch"})
 
 _WARNED: set[str] = set()
 
@@ -272,6 +277,53 @@ async def rollback_policy(authority: Any, ref: Any, op: str) -> Any:
     if found is None:
         raise RuntimeStoreError("permission_denied")
     return found
+
+
+def _messaging_without_policy(authority: Any, ref: Any) -> bool:
+    """True when the session's source is not LOCAL and it has no frozen local policy row: the state the store refuses
+    compress, reset and branch on with ``runtime_coordination_required``. A history mount (no source) is not one."""
+    from gateway.config import Platform
+    from hermes_state_local import POLICY_PREFIX
+
+    live = authority.sessions.get(ref.session_id)
+    if live is not None:
+        source = live.source
+        if source is None or source.platform == Platform.LOCAL:
+            return False
+    else:
+        row = authority.db.get_session(ref.session_id)
+        if row is None or str(row.get("chat_id") or "").startswith("local-"):
+            return False
+    with authority.db._read_ctx() as conn:
+        saved = conn.execute("SELECT 1 FROM state_meta WHERE key=?", (POLICY_PREFIX + ref.session_id,)).fetchone()
+    return saved is None
+
+
+async def mutation_guard(authority: Any, actor: Any, ref: Any, params: Any) -> None:
+    """FAIL-CLOSED, the one hook that refuses: a transcript write a lane may own, on a session a lane may own.
+
+    Called by ``session.mutate`` before its admission gate. Rewind, compress, reset and branch on a session whose source
+    is not LOCAL and that has no frozen local policy row are refused with ``permission_denied`` unless a plugin answers
+    ``RUN_HERE`` (a session no lane binds). Upstream refused compress, reset and branch there already (the store, with
+    ``runtime_coordination_required``) and let rewind run; this closes rewind and makes the refusal the same for all four
+    whether or not a plugin is loaded, healthy, skipped by drift or faulted. A plugin that cannot answer (no plugin, a
+    skipped wrap, a raising callback, an unexpected answer) leaves the refusal in place. A deliberate refusal from a plugin
+    (a ``RuntimeStoreError`` instance) is raised as given. Returns None when the write may proceed."""
+    from hermes_state_runtime import RuntimeStoreError
+
+    operation = params.get("operation") if isinstance(params, dict) else None
+    if operation not in LANE_MUTATIONS:
+        return None
+    try:
+        candidate = _messaging_without_policy(authority, ref)
+    except Exception:  # health: allow BLE001 -- fail closed: a session that cannot be classified is refused
+        raise RuntimeStoreError("permission_denied") from None
+    if not candidate:
+        return None
+    found = await route("mutation_guard", authority=authority, ref=ref, operation=operation)
+    if found == RUN_HERE:
+        return None
+    raise RuntimeStoreError("permission_denied")
 
 
 def list_params(params: Any) -> Any:
