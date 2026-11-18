@@ -5,8 +5,6 @@ plugin command runs here, anything else is relayed to the lane, and with no lane
 stands."""
 import asyncio
 import time
-from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -16,38 +14,6 @@ from hermes_state_runtime import RuntimeStoreError
 
 def _run(coro):
     return asyncio.run(coro)
-
-
-def test_client_local_plugin_command_runs_here(monkeypatch):
-    monkeypatch.setattr(session_commands, '_client_local_plugin', lambda name: name == 'stash')
-    forward = AsyncMock()
-    connection = SimpleNamespace(forward_command_to_lane=forward)
-    assert _run(session_commands._nonlocal_command(
-        connection, SimpleNamespace(session_id='s'), 'stash', 'pop', ('plugin', 'stash'), 'session:control')) is None
-    forward.assert_not_called()
-
-
-def test_other_commands_are_relayed_to_the_lane(monkeypatch):
-    monkeypatch.setattr(session_commands, '_client_local_plugin', lambda name: False)
-    forward = AsyncMock(return_value={'type': 'exec', 'output': 'sent'})
-    connection = SimpleNamespace(forward_command_to_lane=forward)
-    result = _run(session_commands._nonlocal_command(
-        connection, SimpleNamespace(session_id='s'), 'sandbox', 'off', None, 'session:control'))
-    assert result == {'type': 'exec', 'output': 'sent'}
-    forward.assert_awaited_once()
-    assert forward.await_args.args[1:] == ('/sandbox off', 'session:control')
-
-
-@pytest.mark.parametrize('connection', [
-    SimpleNamespace(forward_command_to_lane=AsyncMock(return_value=None)),  # no forwarding lane
-    SimpleNamespace(),                                                       # not an authority connection
-])
-def test_without_a_lane_the_refusal_stands(monkeypatch, connection):
-    monkeypatch.setattr(session_commands, '_client_local_plugin', lambda name: False)
-    with pytest.raises(RuntimeStoreError) as refused:
-        _run(session_commands._nonlocal_command(
-            connection, SimpleNamespace(session_id='s'), 'stash', 'pop', ('plugin', 'stash'), 'session:control'))
-    assert refused.value.reason == 'permission_denied'
 
 
 def test_register_command_records_client_local(monkeypatch):
@@ -104,27 +70,6 @@ def test_permission_denied_log_names_the_raising_check(caplog):
     line = next(r.getMessage() for r in caplog.records if 'refused permission_denied' in r.getMessage())
     assert line.startswith('session.resume refused permission_denied for session s9 at ')
     assert 'test_session_commands_lane_owned.py:' in line
-
-
-def test_reads_on_a_mirror_bound_session_answer_locally(monkeypatch):
-    """``/memory pending`` is a registry read: on a session a forwarding lane owns it runs here
-    (its answer on the screen that asked), not relayed into the thread."""
-    monkeypatch.setattr(session_commands, '_client_local_plugin', lambda name: False)
-    forward = AsyncMock()
-    connection = SimpleNamespace(forward_command_to_lane=forward, has_forwarding_lane=AsyncMock(return_value=True))
-    assert _run(session_commands._nonlocal_command(
-        connection, SimpleNamespace(session_id='s'), 'memory', 'pending', None, 'session:read', 'read')) is None
-    forward.assert_not_called()
-
-
-def test_reads_on_other_messaging_sessions_stay_refused(monkeypatch):
-    monkeypatch.setattr(session_commands, '_client_local_plugin', lambda name: False)
-    connection = SimpleNamespace(forward_command_to_lane=AsyncMock(return_value=None),
-                                 has_forwarding_lane=AsyncMock(return_value=False))
-    with pytest.raises(RuntimeStoreError) as refused:
-        _run(session_commands._nonlocal_command(
-            connection, SimpleNamespace(session_id='s'), 'memory', 'pending', None, 'session:read', 'read'))
-    assert refused.value.reason == 'permission_denied'
 
 
 def test_memory_pending_is_a_read_and_memory_approve_is_not():

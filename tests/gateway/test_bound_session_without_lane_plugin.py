@@ -177,3 +177,25 @@ async def test_without_the_plugin_a_transcript_write_is_not_turned_into_lane_own
 async def test_without_the_plugin_the_seam_hooks_have_no_listener(tmp_path):
     from hermes_cli.plugins import has_hook
     assert not any(has_hook(name) for name in ('observe_session_check', 'wrap_session_call'))
+
+
+# ── stage B4: the forward is also plugin-owned ───────────────────────────────────────────────────────────────
+# Without the plugin an un-attached prompt and a typed command on a lane-bound session are refused, never relayed.
+
+
+@pytest.mark.asyncio
+async def test_without_the_plugin_an_unattached_prompt_is_refused_not_forwarded(tmp_path):
+    world = await _bound(tmp_path)
+    reply = await _call(world, 'prompt.submit', text='hello there', submission_id='sub-1')
+    assert _reason(reply) == 'permission_denied', reply
+    assert world.lane.forwarded == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('command', ['compress', 'status'])
+async def test_without_the_plugin_a_typed_command_is_refused_not_forwarded(tmp_path, command):
+    world = await _bound(tmp_path)
+    await _open(world)
+    reply = await _call(world, 'slash.exec', command=command)
+    assert _reason(reply) in ('permission_denied', 'unsupported_command'), reply
+    assert world.lane.forwarded == []

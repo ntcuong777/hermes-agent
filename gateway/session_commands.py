@@ -195,39 +195,6 @@ def _runner_command(name):
                  if get_plugin_command_handler(registered)), None)
 
 
-async def _nonlocal_command(connection, ref, name, arg, runner_command, capability, verdict=None):
-    """A command a local surface sent to a session whose source is not one of its local routes.
-    None: run it here anyway — a client-local plugin command (the composer stash) touches only
-    the calling client's own state, never this session's agent; a registry read (``/memory
-    pending``, ``/status``) on a session a forwarding lane owns changes nothing, so its answer
-    belongs on the screen that asked. A dict: anything else was relayed to that lane (the Discord
-    mirror's bound thread) to run as the lane's command. With no such lane the refusal stands
-    (``permission_denied``)."""
-    plugin = runner_command is not None and runner_command[0] == 'plugin'
-    if plugin and _client_local_plugin(runner_command[1]):
-        return None
-    lane = getattr(connection, 'has_forwarding_lane', None)
-    # A plugin command on a mirror-bound session runs here too: its handler acts on the same live
-    # session whichever surface typed it (`/sandbox off`, `/recall-log`), so only where the answer
-    # lands differs, and the asker is here. Registry commands that write the conversation, quick
-    # exec and skills still go to the thread (its one writer).
-    if (verdict == 'read' or plugin) and lane is not None and await lane(ref):
-        return None
-    forward = getattr(connection, 'forward_command_to_lane', None)
-    typed = '/' + name + (' ' + arg if arg else '')
-    forwarded = await forward(ref, typed, capability) if forward is not None else None
-    if forwarded is None:
-        raise RuntimeStoreError('permission_denied')
-    return forwarded
-
-
-def _client_local_plugin(name):
-    """True for a plugin command registered ``client_local=True`` (it acts only on the calling
-    client's own state, e.g. the composer stash)."""
-    from hermes_cli.plugins import plugin_command_is_client_local
-    return plugin_command_is_client_local(name)
-
-
 async def _run_runner_command(runner, live, name, arg, kind, shell):
     """The messaging gateway's own quick-command / plugin-command dispatch for this session
     (``run_inbound_hooks``): the operator's slash access policy, the 30 s sanitized-env exec with
@@ -492,25 +459,18 @@ async def execute_command(connection, ref, params, *, dispatch=False):
                   'session:control' if definition or runner_command else 'session:submit')
     authority.authorize(actor, ref, capability)
     live = authority.sessions[ref.session_id]
-    from gateway.session_local import authorize_local_source
-    local = authorize_local_source(authority.runner, live.source) is True
-    if verdict == 'refused' and not local:
-        # Default-safe on a session the Discord mirror bound (gateway/session_lane.py): a command this
-        # owner would refuse for a local session (its client runs it over its own RPC, which answered
-        # ``lane_owned``; or one added later that no list here knows) is relayed to the bound thread,
-        # which runs it as if typed there. With no such lane the refusal below stands.
-        forward = getattr(connection, 'forward_command_to_lane', None)
-        typed = '/' + name + (' ' + arg if arg else '')
-        if forward is not None and (forwarded := await forward(ref, typed, 'session:control')) is not None:
-            return forwarded
+    forwarded = await __import__("gateway.session_lane_seam").session_lane_seam.command_refused(connection, ref, name, arg, verdict, live)
+    if forwarded is not None:
+        return forwarded
     if verdict == 'refused' or (verdict == 'control' and canonical in _OWNER_COMMANDS
                                 and ref.session_id in connection.subscriptions):
         raise RuntimeStoreError('unsupported_command', detail=REFUSAL_HINTS.get(canonical))
     from gateway.session_history_mount import is_history_mount, read_only
     if is_history_mount(live):
         raise read_only()  # no policy or agent to run even a read command against
-    if not local:
-        forwarded = await _nonlocal_command(connection, ref, name, arg, runner_command, capability, verdict)
+    from gateway.session_local import authorize_local_source
+    if authorize_local_source(authority.runner, live.source) is not True:
+        forwarded = await __import__("gateway.session_lane_seam").session_lane_seam.nonlocal_command(connection, ref, name, arg, runner_command, capability, verdict)
         if forwarded is not None:
             return forwarded
     if capability != 'session:read':
