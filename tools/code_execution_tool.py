@@ -217,9 +217,10 @@ def generate_hermes_tools_module(enabled_tools: list[str],
     """Source of the hermes_tools.py stub module for SANDBOX_ALLOWED_TOOLS ∩ *enabled_tools*.
     ``transport``: ``"uds"`` (local socket client) or ``"file"`` (file RPC, remote backends)."""
     header = _FILE_TRANSPORT_HEADER if transport == "file" else _UDS_TRANSPORT_HEADER
+    wanted, allowed = set(enabled_tools), sandbox_allowed_tools()  # fork: code_execution.allowed_tools seam
     return header + "\n".join(
         f"def {name}({sig}):\n    {doc}\n    return _call({name!r}, {args_expr})\n"
-        for name, (sig, doc, args_expr) in sorted(_TOOL_STUBS.items()) if name in set(enabled_tools)
+        for name, (sig, doc, args_expr) in sorted(_TOOL_STUBS.items()) if name in wanted and name in allowed
     )
 
 
@@ -614,9 +615,10 @@ def _sandbox_tools_for(enabled_tools: Optional[list[str]]) -> frozenset:
     explicit list (possibly empty) → exact intersection with SANDBOX_ALLOWED_TOOLS, so an
     empty grant denies all rather than broadening to the default
     (SECURITY-CLASS-faf9d60580300e16 / #84271)."""
+    allowed = sandbox_allowed_tools()  # fork: code_execution.allowed_tools seam
     if enabled_tools is None:
-        return SANDBOX_ALLOWED_TOOLS
-    return frozenset(SANDBOX_ALLOWED_TOOLS & set(enabled_tools))
+        return allowed
+    return frozenset(allowed & set(enabled_tools))
 
 
 def _run_remote_per_call(env, env_type: str, code: str, effective_task_id: str,
@@ -882,7 +884,7 @@ def build_execute_code_schema(enabled_sandbox_tools: set | None = None,
     """execute_code schema listing only *enabled_sandbox_tools* — a disabled tool (e.g. web off)
     must not appear or the model keeps trying it. ``mode`` (None → config) picks the cwd sentence."""
     if enabled_sandbox_tools is None:
-        enabled_sandbox_tools = SANDBOX_ALLOWED_TOOLS
+        enabled_sandbox_tools = sandbox_allowed_tools()  # fork: code_execution.allowed_tools seam
     if mode is None:
         mode = _get_execution_mode()
     tool_lines = "\n".join(doc for name, doc in _TOOL_DOC_LINES if name in enabled_sandbox_tools)

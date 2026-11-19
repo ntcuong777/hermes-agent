@@ -419,9 +419,9 @@ _WIZARD_NO_SERVICE_LINES = {
 def _wizard_service_status_block() -> None:
     """Pre-platform service status: warnings, then offer to start an installed-but-stopped service."""
     print()
-    from hermes_cli.gateway_declared_supervisor import declared_external_supervisor
+    from hermes_cli.gateway_declared_supervisor import declared_external_supervisor, note_externally_supervised
     if declared := declared_external_supervisor():
-        _gw().print_success(f"Gateway service is managed by {declared}.")
+        note_externally_supervised(declared)  # fork: external-supervisor words the note (supervisor-note)
         return
     service_installed = _gw()._is_service_installed()
     service_running = _gw()._is_service_running()
