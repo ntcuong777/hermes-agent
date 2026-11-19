@@ -74,28 +74,42 @@ export const inlineSlashTrigger = (text: string): { query: string; start: number
 const completionText = (value: string, rowText: string, compReplace: number): string =>
   value[compReplace - 1] === '/' && rowText.startsWith('/') ? rowText.slice(1) : rowText
 
-/**
- * Where the word being completed ends NOW: the live caret when the composer recorded it for this very text, else the
- * end. Never the span recorded when the completion was requested: its rows arrive a moment later, and what was typed
- * in between belongs to the word (a stale end left it behind: `/writing-skillst` after picking `/writing-skills`).
- */
-export const completionEnd = (value: string, caret: null | undefined | { cursor: number; value: string }): number =>
-  caret?.value === value ? Math.max(0, Math.min(value.length, caret.cursor)) : value.length
+export type CompletionCaret = {
+  applyCompletion: (value: string, rowText: string, compReplace: number, replaceTo?: number) => string
+  completionCursor: (value: string, rowText: string, compReplace: number) => number
+  completionEnd: (value: string, caret: null | undefined | { cursor: number; value: string }) => number
+}
 
-/** `replaceTo` is where the replaced word ends (`completionEnd`). Text after it stays (the person typed `@` mid-prompt). */
+let completionCaret: CompletionCaret | null = null
+
+/** tui-input registers the caret-aware completion. Absent, a completion replaces through the end of the text. */
+export const registerCompletionCaret = (impl: CompletionCaret): void => {
+  completionCaret = impl
+}
+
+const caretRegistry = globalThis as { __hermesRegisterCompletionCaret?: typeof registerCompletionCaret }
+
+caretRegistry.__hermesRegisterCompletionCaret = registerCompletionCaret
+
+const upstreamApply = (value: string, rowText: string, compReplace: number): string =>
+  value.slice(0, compReplace) + completionText(value, rowText, compReplace)
+
+/** Where the word being completed ends. Absent a caret plugin, that is the end of the text. */
+export const completionEnd = (value: string, caret: null | undefined | { cursor: number; value: string }): number =>
+  completionCaret?.completionEnd(value, caret) ?? value.length
+
+/** `replaceTo` is where the replaced word ends. Absent a caret plugin, the tail after `compReplace` is dropped. */
 export const applyCompletion = (
   value: string,
   rowText: string,
   compReplace: number,
   replaceTo: number = value.length
-): string => {
-  const end = Math.min(value.length, Math.max(compReplace, replaceTo))
+): string =>
+  completionCaret?.applyCompletion(value, rowText, compReplace, replaceTo) ?? upstreamApply(value, rowText, compReplace)
 
-  return value.slice(0, compReplace) + completionText(value, rowText, compReplace) + value.slice(end)
-}
-
-/** Where the caret goes after `applyCompletion`: right after the inserted text. */
+/** Where the caret goes after `applyCompletion`. */
 export const completionCursor = (value: string, rowText: string, compReplace: number): number =>
+  completionCaret?.completionCursor(value, rowText, compReplace) ??
   compReplace + completionText(value, rowText, compReplace).length
 
 /**

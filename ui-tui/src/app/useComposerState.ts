@@ -16,13 +16,18 @@ import { useInputHistory } from '../hooks/useInputHistory.js'
 import { useQueue } from '../hooks/useQueue.js'
 import { t } from '../i18n/runtime.js'
 import { isUsableClipboardText, readClipboardText } from '../lib/clipboard.js'
-import { draftFromEditorText, resolveEditor } from '../lib/editor.js'
+import { resolveEditor } from '../lib/editor.js'
 import { stageClipboardImage, stageImagePath } from '../lib/imageAttachments.js'
 import { extensionHost } from '../sdk/ext/host.js' // fork: tui extension host
-import { clipboardImagePathFromExtensions, transformPasteText } from '../sdk/ext/composerHooks.js' // fork: tui extension host
+import {
+  clipboardImagePathFromExtensions,
+  composerEditor,
+  hasComposerEditor,
+  transformPasteText
+} from '../sdk/ext/composerHooks.js' // fork: tui extension host
 import { readOsc52Clipboard } from '../lib/osc52.js'
 import { isRemoteShellSession } from '../lib/terminalSetup.js'
-import { expandPasteTokens, pasteTokenLabel, stripTrailingPasteNewlines } from '../lib/text.js'
+import { pasteTokenLabel, stripTrailingPasteNewlines } from '../lib/text.js'
 
 import { placeInputCursor } from './inputSelectionStore.js'
 import type {
@@ -993,10 +998,12 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
     const file = join(dir, 'prompt.md')
     const [cmd, ...args] = resolveEditor()
 
-    // A collapsed paste shows only its label in the composer: expand every paste token so the
-    // editor always sees — and edits — the full pasted text.
     const joined = [...inputBuf, input].join('\n')
-    writeFileSync(file, expandPasteTokens(joined, tokensRef.current))
+    const prepared = hasComposerEditor()
+      ? composerEditor({ phase: 'prepare', text: joined, tokens: tokensRef.current })
+      : null
+
+    writeFileSync(file, prepared && 'text' in prepared ? prepared.text : joined)
 
     let exitCode: null | number = null
 
@@ -1009,93 +1016,107 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
         return
       }
 
-      // Leave what the editor saved as an unsent draft: the person reads it again and presses
-      // Enter themselves. (Submitting here made a save in the editor send the prompt.)
       const saved = readFileSync(file, 'utf8')
-      const draft = draftFromEditorText(saved)
+      const ui = getUiState()
+      const plan = hasComposerEditor()
+        ? composerEditor({
+            collapseChars: ui.pasteCollapseChars,
+            collapseLines: ui.pasteCollapseLines,
+            destinationOk: isCurrentDestination(destination) && isFresh(preEdit),
+            joined,
+            phase: 'saved',
+            saved
+          })
+        : null
 
-      // The composer moved on while the editor was open: applying the draft would overwrite it.
-      // Park the PRE-EDIT composer (still collapsed labels) — never the expanded blob the editor
-      // held, or restoring would dump the full paste raw into the composer. The edit itself is
-      // lost on a moved destination; the editor file's dir is removed below either way.
-      if (!(isCurrentDestination(destination) && isFresh(preEdit))) {
-        // Park the EDIT, collapsed when it passes the thresholds (label + token, restored
-        // together below) — never the expanded blob, or restoring would dump the paste raw.
-        const parked = saved.replace(/\s+$/, '')
-        const parkedLines = parked.split('\n').length
+      if (plan && 'handled' in plan && plan.handled) {
+        if ('kind' in plan && plan.kind === 'stash') {
+          if (plan.tokenText) {
+            const parkedLines = plan.tokenText.split('\n').length
+            const label = pasteTokenLabel(plan.tokenText, parkedLines)
 
-        if (parked.length > 0 && shouldCollapsePaste(parked, parkedLines)) {
-          editorStash.current = {
-            destination,
-            draft: { buf: [], line: pasteTokenLabel(parked, parkedLines) },
-            token: { kind: 'paste', label: pasteTokenLabel(parked, parkedLines), text: parked }
+            editorStash.current = {
+              destination,
+              draft: { buf: [], line: label },
+              token: { kind: 'paste', label, text: plan.tokenText }
+            }
+          } else if (plan.draft) {
+            editorStash.current = { destination, draft: plan.draft }
           }
-        } else {
-          editorStash.current = { destination, draft }
-        }
-
-        return
-      }
-
-      // A draft past a collapse threshold (an expanded paste, or a big edit) collapses back to
-      // ONE paste token: the composer stays small and the saved text never dumps into it raw.
-      const text = saved.replace(/\s+$/, '')
-      const lines = text.split('\n').length
-
-      if (text.length > 0 && shouldCollapsePaste(text, lines)) {
-        const label = pasteTokenLabel(text, lines)
-
-        const before = tokensRef.current
-
-        const expanded = new Set(
-          before.filter(tk => tk.kind === 'paste' && joined.includes(tk.label ?? '\u0000')).map(tk => tk.label)
-        )
-
-        const token: ComposerToken = { kind: 'paste', label, text }
-
-        const kept = trimTokens([...before.filter(tk => !(tk.kind === 'paste' && expanded.has(tk.label))), token])
-
-        if (!kept.includes(token)) {
-          // Past the token store's 4 MB ceiling the label would reference nothing: keep the raw
-          // draft instead (unusable as a paste token, but nothing is silently lost).
-          sys('paste too large to collapse; kept as plain text')
-          setInputBuf(draft.buf)
-          setInput(draft.line)
 
           return
         }
 
-        // Image tokens survive the collapse only if their labels stay in the composer text —
-        // otherwise submission silently drops the attachments (attachments.ts matches by label).
-        const imageLabels = before
-          .filter(tk => tk.kind === 'image' && joined.includes(tk.label ?? '\u0000'))
-          .map(tk => tk.label)
+        if ('kind' in plan && plan.kind === 'collapse') {
+          const text = plan.text
+          const label = pasteTokenLabel(text, text.split('\n').length)
+          const before = tokensRef.current
+          const expanded = new Set(
+            before.filter(tk => tk.kind === 'paste' && plan.joined.includes(tk.label ?? '\u0000')).map(tk => tk.label)
+          )
+          const token: ComposerToken = { kind: 'paste', label, text }
+          const kept = trimTokens([...before.filter(tk => !(tk.kind === 'paste' && expanded.has(tk.label))), token])
 
-        setComposerTokens(kept)
-        setInputBuf([])
-        setInput([label, ...imageLabels].join('\n'))
-        void gw
-          .request<{ path?: string }>('paste.collapse', { text })
-          .then(r => {
-            const path = r?.path
+          if (!kept.includes(token)) {
+            const plain = saved.trimEnd().split('\n')
 
-            if (!path || !isCurrentDestination(destination)) {
-              return
-            }
+            sys('paste too large to collapse; kept as plain text')
+            setInputBuf(plain.slice(0, -1))
+            setInput(plain.at(-1) ?? '')
 
-            setComposerTokens(prev => prev.map(tk => (tk === token ? { ...tk, path } : tk)))
-          })
-          .catch(() => {})
+            return
+          }
+
+          const imageLabels = before
+            .filter(tk => tk.kind === 'image' && plan.joined.includes(tk.label ?? '\u0000'))
+            .map(tk => tk.label)
+
+          setComposerTokens(kept)
+          setInputBuf([])
+          setInput([label, ...imageLabels].join('\n'))
+          void gw
+            .request<{ path?: string }>('paste.collapse', { text })
+            .then(r => {
+              const path = r?.path
+
+              if (!path || !isCurrentDestination(destination)) {
+                return
+              }
+
+              setComposerTokens(prev => prev.map(tk => (tk === token ? { ...tk, path } : tk)))
+            })
+            .catch(() => {})
+
+          return
+        }
+
+        if ('draft' in plan && plan.draft) {
+          setInputBuf(plan.buf)
+          setInput(plan.line)
+
+          return
+        }
+      }
+
+      const text = saved.trimEnd()
+
+      if (!text) {
+        return
+      }
+
+      if (!(isCurrentDestination(destination) && isFresh(preEdit))) {
+        enqueue(text, text, destination)
 
         return
       }
 
-      setInputBuf(draft.buf)
-      setInput(draft.line)
+      setInput('')
+      setInputBuf([])
+      submitRef.current(text)
     } finally {
       rmSync(dir, { force: true, recursive: true })
     }
-  }, [captureDraft, gw, input, inputBuf, isFresh, setInput, setInputBuf, setComposerTokens, sys])
+  }, [captureDraft, enqueue, gw, input, inputBuf, isFresh, setInput, setInputBuf, setComposerTokens, submitRef, sys])
 
   const actions = useMemo(
     () => ({

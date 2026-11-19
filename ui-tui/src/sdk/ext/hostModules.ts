@@ -52,7 +52,10 @@ import * as wheelAccel from '../../lib/wheelAccel.js' // fork: tui slot host mod
 import * as sdkHost from '../../sdk/host.js' // fork: tui slot host modules (stage 5)
 import * as agentRoster from '../../app/agentRoster.js' // fork: tui slot host modules (stage 5)
 import * as backtrackStore from '../../app/backtrackStore.js' // fork: tui slot host modules (stage 5)
-import * as keybinds from '../../app/keybinds.js' // fork: tui slot host modules (stage 5)
+import * as keybinds from '../../app/keybinds.js' // fork: seam, tui-keybinds fills it
+import * as slashCatalog from '../../app/slashCatalog.js' // fork: tui-keybinds reads the catalog
+import * as sdkRegistry from '../../sdk/registry.js' // fork: tui-keybinds defines the choices widget
+import * as nanostores from 'nanostores' // fork: tui-keybinds stores the configured chords
 import * as pasteStore from '../../app/pasteStore.js' // fork: tui slot host modules (stage 5)
 import * as serverRequestStore from '../../app/serverRequestStore.js' // fork: tui slot host modules (stage 5)
 import * as stashCounts from '../../app/stashCounts.js' // fork: tui slot host modules (stage 5)
@@ -118,6 +121,9 @@ export const HOST_MODULES: Readonly<Record<string, unknown>> = Object.freeze({
   'app/agentRoster': agentRoster,
   'app/backtrackStore': backtrackStore,
   'app/keybinds': keybinds,
+  'app/slashCatalog': slashCatalog,
+  'sdk/registry': sdkRegistry,
+  'pkg/nanostores': nanostores,
   'app/pasteStore': pasteStore,
   'app/serverRequestStore': serverRequestStore,
   'app/stashCounts': stashCounts,

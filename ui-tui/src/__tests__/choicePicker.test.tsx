@@ -5,7 +5,7 @@ import { stripAnsi } from '@hermes/shared/ansi'
 import React from 'react'
 import { expect, it, vi } from 'vitest'
 
-import { type Choice, reduceChoice, showChoices } from '../app/choicePicker.js'
+import { type Choice, reduceChoice, showChoices } from '../../../../../../../.worktrees/core-surface-all/hermes/plugins/tui-keybinds/tui/choicePicker'
 import { getOverlayState, resetOverlayState } from '../app/overlayStore.js'
 import { ActiveWidgetSlot, dispatchWidgetInput } from '../sdk/host.js'
 import type { WidgetInput } from '../sdk/types.js'

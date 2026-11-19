@@ -17,7 +17,7 @@ import {
   retryCatalog,
   runKeybind,
   typedDirectives
-} from '../app/keybinds.js'
+} from '../../../../../../../.worktrees/core-surface-all/hermes/plugins/tui-keybinds/tui/keybinds.ts'
 import { getOverlayState, resetOverlayState } from '../app/overlayStore.js'
 import { ActiveWidgetSlot, dispatchWidgetInput } from '../sdk/host.js'
 import type { WidgetInput } from '../sdk/types.js'
