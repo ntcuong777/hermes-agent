@@ -219,8 +219,10 @@ export function createSlashHandler(ctx: SlashHandlerContext): SlashHandler {
         return d.message?.trim() ? sendDispatch(d.display, d.message) : sys(`/${parsed.name}: empty message`)
       }
 
-      if (d.type === 'choices' || d.type === 'composer-clear') {
-        return void (sid && typedDirectives(gw, ctx.composer.setInput, sys, sid, stale).apply(raw))
+      if (d.type === 'plugin-dispatch') {
+        // A plugin-owned directive: the payload is the raw row, handled by the plugin that
+        // registered the parser (typed directives: choices pickers, composer clears).
+        return void (sid && typedDirectives(gw, ctx.composer.setInput, sys, sid, stale).apply(d.payload))
       }
 
       if (d.type === 'prefill') {

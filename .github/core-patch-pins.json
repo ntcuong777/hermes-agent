@@ -40,6 +40,16 @@
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.23.2"
     },
+    "approval-card/card-render": {
+      "ast_sha": "ca6274e8e74f5cc58bfe115d109deeca60007fa1412ef574f9a6b700dbe6e27d",
+      "kind": "replace",
+      "plugin": "approval-card",
+      "reason": "cluster 2 review2: the card layout replaced whole; core keeps the upstream layout with one mcp signature seam",
+      "target": "gateway.platforms.base_exec_approval:render_exec_approval",
+      "target_file": "gateway/platforms/base_exec_approval.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
     "approval-card/mcp-deny-only": {
       "ast_sha": "40f75bd4b9379172aa18ebe12ae55d7b646c5bff7b22d9805c20958e6c29f15f",
       "kind": "replace",
@@ -77,6 +87,16 @@
       "reason": "A background child's approval ask uses the out-of-turn lane",
       "target": "tools.approval:_gateway_idle_delivery",
       "target_file": "tools/approval.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "approval-idle/idle-turn-lane": {
+      "ast_sha": "a0bcdf1a88542e40093b5d830715be6f68d855962c37a646dbf144a8db59860c",
+      "kind": "wrap",
+      "plugin": "approval-idle",
+      "reason": "cluster 2 review2: the out-of-turn approval lane wrap; core keeps upstream's turn method",
+      "target": "gateway.run_turn_runner:TurnRunner._run_conversation_with_approval",
+      "target_file": "gateway/run_turn_runner.py",
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.23.2"
     },
@@ -1017,6 +1037,16 @@
       "reason": "Reject by number, id, or the one pending write",
       "target": "hermes_cli.write_approval_commands:_reject",
       "target_file": "hermes_cli/write_approval_commands.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "write-approval-commands/wac-verdict": {
+      "ast_sha": "fc46540b6f085de2c808d5a9a516684e5db7a8a1133c8336c0b09274ec3fbee7",
+      "kind": "wrap",
+      "plugin": "write-approval-commands",
+      "reason": "cluster 2 review2: messaging read verbs for the pending-write queues as a wrap; core's verdict table stays upstream",
+      "target": "gateway.session_commands:command_verdict",
+      "target_file": "gateway/session_commands.py",
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.23.2"
     },

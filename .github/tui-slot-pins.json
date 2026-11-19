@@ -57,13 +57,13 @@
     },
     "slash.refused": {
       "plugin": "tui-lane",
-      "reason": "a lane_owned refusal is resent as typed through slash.exec, which relays it to the session's bound thread",
+      "reason": "cluster 3 review2: the dispatch union's plugin-dispatch member replaces the choices/composer-clear branch above the refusal slot",
       "sha": "09829b8051166b35e159d44ed0c0df7f742fc46952abd133f841857f7bebb03c",
-      "snapshot_commit": "921a2db03c476c2a6a1fa089836a6d4669464b8a",
+      "snapshot_commit": "c6e317f8c7b785b3693eacb7c835212c7ceb3745",
       "snapshot_kind": "fork-core",
       "symbols": [],
       "target_file": "ui-tui/src/app/createSlashHandler.ts",
-      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915"
     },
     "statusRule": {
       "plugin": "tui-chrome",

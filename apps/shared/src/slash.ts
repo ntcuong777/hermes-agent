@@ -80,34 +80,22 @@ export interface SendCommandDispatchResponse {
 }
 
 export interface PrefillCommandDispatchResponse {
-  /** A slash command to run once the client has actually put `message` in the composer. */
-  ack?: string
   message: string
   notice?: string
   type: 'prefill'
 }
 
-/** Empty the composer (a keybind's save went through). */
-export interface ComposerClearCommandDispatchResponse {
-  notice?: string
-  type: 'composer-clear'
-}
-
-/** A picker. Enter (or 1-9) runs the row's `select` command, `x` its `drop`; each answers with a directive. */
-export interface ChoicesCommandDispatchResponse {
-  items: { drop?: string; label: string; select: string }[]
-  /** Shown as a system line when the picker opens (what a `drop` just did). */
-  notice?: string
-  selected?: number
-  title: string
-  type: 'choices'
+/** A plugin-owned dispatch directive: core parsed nothing but the row itself; the plugin that
+ *  registered a parser (``registerCommandDispatchParser``) owns the payload's shape and its handling. */
+export interface PluginCommandDispatchResponse {
+  payload: Record<string, unknown>
+  type: 'plugin-dispatch'
 }
 
 export type CommandDispatchResponse =
   | AliasCommandDispatchResponse
-  | ChoicesCommandDispatchResponse
-  | ComposerClearCommandDispatchResponse
   | ExecCommandDispatchResponse
+  | PluginCommandDispatchResponse
   | PrefillCommandDispatchResponse
   | SendCommandDispatchResponse
   | SkillCommandDispatchResponse
@@ -133,9 +121,7 @@ export function parseCommandDispatch(raw: unknown): CommandDispatchResponse | nu
       return { output: str(row.output), type: row.type }
 
     case 'prefill':
-      return typeof row.message === 'string'
-        ? { ack: str(row.ack), message: row.message, notice: str(row.notice), type: 'prefill' }
-        : null
+      return typeof row.message === 'string' ? { message: row.message, notice: str(row.notice), type: 'prefill' } : null
 
     case 'send':
       return typeof row.message === 'string'
