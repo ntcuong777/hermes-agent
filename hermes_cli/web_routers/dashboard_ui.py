@@ -16,9 +16,10 @@ from hermes_cli.config_backend import CONFIG_MUTATION_LOCK
 from hermes_cli.web_deps import late
 from hermes_cli.config import cfg_get
 from hermes_cli.web_routers._common import config_scoped_to_thread
+from hermes_cli.dashboard_bundle_gate import serves_browser_bundle  # fork: bundle gate (fork-owned)
 from hermes_cli.web_server_dashboard import (
     _BUILTIN_DASHBOARD_THEMES, _discover_user_themes, _invalidate_plugins_hub_cache, _merged_plugins_hub,
-    _plugin_consent_withheld, _serves_browser_bundle,
+    _plugin_consent_withheld,
 )
 from hermes_cli.web_server_memory import _normalize_memory_provider_name, _require_memory_provider_ready
 from hermes_cli.web_models import (
@@ -118,7 +119,7 @@ async def get_dashboard_plugins(profile: Optional[str] = None):
         # so no listed tab fails to load.
         return [p for p in _get_dashboard_plugins()
                 if p.get("name", "") not in hidden and not _plugin_consent_withheld(p)
-                and _serves_browser_bundle(p)]
+                and serves_browser_bundle(p)]
 
     # Strip internal fields before sending to frontend.
     return [{k: v for k, v in p.items() if not k.startswith("_")}

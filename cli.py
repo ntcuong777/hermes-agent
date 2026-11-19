@@ -1317,27 +1317,18 @@ class HermesCLI(CLIBacktrackMixin, CLIInitMixin, CLITuiRuntimeMixin, CLIProcessN
         if hasattr(self, '_pending_input'):
             self._pending_input.put(msg)
 
-    def _split_trailing_command_lines(self, instruction: str) -> tuple[str, list[str]]:
-        return split_trailing_command_lines(self, instruction)
-
-    def _is_dispatchable_command_line(self, line: str) -> bool:
-        return is_dispatchable_command_line(self, line)
-
-    def _dispatch_trailing_commands(self, commands: list[str]) -> None:
-        dispatch_trailing_commands(self, commands)
-
     def _run_skill_bundle_command(self, base_cmd: str, bundle_info: dict, user_instruction: str) -> None:
         """``/<bundle>`` loads several skills at once (bundles win over same-named skills)."""
-        user_instruction, trailing = self._split_trailing_command_lines(user_instruction)
+        user_instruction, trailing = split_trailing_command_lines(self, user_instruction)
         bundle_result = build_bundle_invocation_message(base_cmd, user_instruction, task_id=self.session_id)
         if not bundle_result:
             ChatConsole().print(f"[bold red]{_t('cli.skills.bundle_load_failed', command=base_cmd)}[/]")
-            self._dispatch_trailing_commands(trailing)
+            dispatch_trailing_commands(self, trailing)
             return
         msg, loaded_names, missing = bundle_result
         self._queue_loaded_skills(
             msg, _t("cli.skills.loading_bundle", name=bundle_info['name'], count=str(len(loaded_names))), missing)
-        self._dispatch_trailing_commands(trailing)
+        dispatch_trailing_commands(self, trailing)
 
     def _queue_loaded_skills(self, msg, label: str, missing) -> None:
         print(f"\n⚡ {label}")
@@ -1356,10 +1347,10 @@ class HermesCLI(CLIBacktrackMixin, CLIInitMixin, CLITuiRuntimeMixin, CLIProcessN
         # A bare /command line at the instruction's tail is a second command, not instruction text:
         # the C-g editor round-trip leaves `/caveman\n/exit`-shaped drafts and Enter must quit, not
         # send "/exit" to the model as the skill's instruction.
-        user_instruction, trailing = self._split_trailing_command_lines(user_instruction)
+        user_instruction, trailing = split_trailing_command_lines(self, user_instruction)
         gateway_rest = (" ".join(extra_keys) + " " + user_instruction).strip()
         if gateway_plugin_commands.run_skill(self, base_cmd, gateway_rest):
-            self._dispatch_trailing_commands(trailing)
+            dispatch_trailing_commands(self, trailing)
             return  # the gateway session's skill, loaded there
         if extra_keys:
             stacked_result = build_stacked_skill_invocation_message(
@@ -1367,21 +1358,21 @@ class HermesCLI(CLIBacktrackMixin, CLIInitMixin, CLITuiRuntimeMixin, CLIProcessN
             )
             if not stacked_result:
                 ChatConsole().print(f"[bold red]{_t('cli.skills.stacked_load_failed', command=base_cmd)}[/]")
-                self._dispatch_trailing_commands(trailing)
+                dispatch_trailing_commands(self, trailing)
                 return
             msg, loaded_names, missing = stacked_result
             self._queue_loaded_skills(
                 msg, _t("cli.skills.loading_stacked", count=str(len(loaded_names)), names=', '.join(loaded_names)),
                 missing,
             )
-            self._dispatch_trailing_commands(trailing)
+            dispatch_trailing_commands(self, trailing)
             return
         msg = build_skill_invocation_message(base_cmd, user_instruction, task_id=self.session_id)
         if msg:
             self._queue_loaded_skills(msg, _t("cli.skills.loading_skill", name=skill_info['name']), None)
         else:
             ChatConsole().print(f"[bold red]{_t('cli.skills.skill_load_failed', command=base_cmd)}[/]")
-        self._dispatch_trailing_commands(trailing)
+        dispatch_trailing_commands(self, trailing)
 
     def _expand_slash_prefix(self, cmd_original: str, cmd_lower: str, skill_commands, skill_bundles) -> bool:
         """Unique-prefix expansion against built-in COMMANDS + skill commands/bundles (agrees with tab-completion)."""

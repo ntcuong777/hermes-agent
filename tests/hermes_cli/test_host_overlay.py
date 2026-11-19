@@ -51,7 +51,8 @@ def test_save_after_load_does_not_write_host_model_to_shared_file(tmp_path):
         config_mod._LOAD_CONFIG_CACHE.clear()
         config_mod._RAW_CONFIG_CACHE.clear()
 
-        runtime = config_mod.load_runtime_config()
+        from hermes_cli.host_overlay import load_runtime_config
+        runtime = load_runtime_config()
         assert runtime["model"]["default"] == "host-only-model"
 
         config_mod.save_config(config_mod.load_config())

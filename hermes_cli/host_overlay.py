@@ -1,7 +1,7 @@
 """Per-machine overlay from ``<hermes home>/host.yaml``, applied to the runtime config only.
 
 ``save_config`` persists the dict it is given, so overlay values must stay out of that dict:
-``config.load_runtime_config`` applies this overlay on read paths, never on the save path.
+``host_overlay.load_runtime_config`` applies this overlay on read paths, never on the save path.
 """
 
 from __future__ import annotations
@@ -82,3 +82,16 @@ def apply_host_overlay(
                     value,
                 )
     return merged
+
+
+def load_runtime_config() -> dict[str, Any]:
+    """``load_config()`` plus ``<hermes home>/host.yaml``.
+
+    Do not pass this to ``save_config``. The save path writes the raw shared file, and host
+    values must stay out of it.
+    """
+    from hermes_constants import get_hermes_home
+    from hermes_cli.config import load_config
+
+    return apply_host_overlay(load_config(), read_host_file(get_hermes_home()))
+

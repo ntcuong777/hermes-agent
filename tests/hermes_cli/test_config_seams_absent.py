@@ -59,3 +59,18 @@ async def test_the_compress_ack_stub_sends_nothing():
     event = SimpleNamespace(source=SimpleNamespace(chat_id="c"), message_id=1)
     await GatewaySessionCommandsMixin._send_compress_started_ack(Runner(), event)
     assert sent == []
+
+
+def test_an_exhausted_fallback_chain_buffers_no_notice_without_the_plugin():
+    from types import SimpleNamespace
+
+    from agent.chat_completion_helpers import _fallback_chain_exhausted
+
+    buffered: list[str] = []
+    agent = SimpleNamespace(
+        _fallback_chain=[{"provider": "alibaba", "model": "qwen3.8-max"}],
+        _rate_limited_until=0, model="m", provider="p", _primary_runtime={},
+        _buffered=buffered, _buffer_diagnostic_status=buffered.append)
+    assert _fallback_chain_exhausted(agent, "tool_error") is False
+    assert buffered == []
+

@@ -967,7 +967,6 @@ _EXTRA_KNOWN_ROOT_KEYS = {
     "multiplex_profiles", "profile_routes", "platforms", "require_mention",
     "unauthorized_dm_behavior", "signal", "allow_all_users",
     "timeouts",          # unified timeout resolution section (agent/deadline.py)
-    "pricing",           # per-model USD/1M rates; config-seams reads them before the bundled table
 }
 _KNOWN_ROOT_KEYS = frozenset(DEFAULT_CONFIG.keys()) | _EXTRA_KNOWN_ROOT_KEYS
 
@@ -1886,17 +1885,6 @@ def load_config_readonly() -> dict[str, Any]:
     return _load_config_impl(want_deepcopy=False)
 
 
-def load_runtime_config() -> dict[str, Any]:
-    """``load_config()`` plus ``<hermes home>/host.yaml``.
-
-    Do not pass this to ``save_config``. The save path writes the raw shared file, and host
-    values must stay out of it.
-    """
-    from hermes_constants import get_hermes_home
-    from hermes_cli.host_overlay import apply_host_overlay, read_host_file
-    return apply_host_overlay(load_config(), read_host_file(get_hermes_home()))
-
-
 def _ensure_dict(parent: dict[str, Any], key: str) -> dict[str, Any]:
     """Return ``parent[key]`` as a dict, replacing a missing or non-dict value with ``{}``."""
     child = parent.get(key)
@@ -2801,7 +2789,7 @@ def _default_value_for_key(dotted_key: str):
 _OPEN_DICT_TOP_LEVEL_KEYS = frozenset({
     "providers", "credential_pool_strategies", "mcp_servers", "hooks", "quick_commands",
     "personalities", "command_allowlist", "model_catalog", "channel_prompts", "server_actions",
-    "secrets", "goals", "loops", "pricing"})
+    "secrets", "goals", "loops"})
 
 # Top-level keys whose sub-keys are partially schema-defined (e.g. a PlatformConfig dataclass) but
 # where users may add fields DEFAULT_CONFIG doesn't enumerate: validate the FIRST segment only.

@@ -14,8 +14,6 @@ from collections.abc import Callable, Iterable, Mapping
 from itertools import chain
 from typing import Any, Dict, Optional, Tuple
 
-logger = logging.getLogger(__name__)
-
 from prompt_toolkit.auto_suggest import AutoSuggest, Suggestion
 from prompt_toolkit.completion import Completer, Completion
 
@@ -81,26 +79,6 @@ def _split_args(sub_text: str) -> tuple[list[str], str]:
     return parts[:-1], parts[-1]
 
 
-def _plugin_subcommand_completions(base_cmd: str, sub_text: str):
-    """Words a plugin announced through ``register_command(subcommands=...)``: the first argument
-    completes from its words, the second from that word's choices; nothing deeper. Never raises."""
-    try:
-        from hermes_cli.plugins import get_plugin_commands
-        entry = get_plugin_commands().get(base_cmd[1:].lower())
-        table = entry.get("subcommands") if isinstance(entry, dict) else None
-        if not table:
-            return
-        done, partial = _split_args(sub_text)
-        if not done:
-            rows = list(table)
-        elif len(done) == 1:
-            rows = list(table.get(done[0].lower(), ()))
-        else:
-            return
-        yield from _prefix_completions(((s, None) for s in rows), partial)
-    except Exception:
-        logger.debug("plugin subcommand completion failed", exc_info=True)
-        return
 
 
 # Dynamic argument completers: (sub_text, sub_lower) -> Completion iterator
@@ -466,7 +444,8 @@ class SlashCommandCompleter(Completer):
                 yield from _prefix_completions(
                     ((s, None) for s in SUBCOMMANDS[base_cmd]), sub_text)
             elif base_cmd not in SUBCOMMANDS:
-                yield from _plugin_subcommand_completions(base_cmd, sub_text)
+                # fork: the registry's subcommands complete through plugin_completions (fork-owned)
+                yield from __import__("hermes_cli.plugin_completions").plugin_completions.plugin_subcommand_completions(base_cmd, sub_text, _split_args, _prefix_completions)
             return
         word = text[1:]
 
