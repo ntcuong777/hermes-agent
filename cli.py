@@ -881,9 +881,14 @@ _PASTE_REF_RE = re.compile(r'\[Pasted text #\d+: \d+ lines \u2192 (.+?)\]')
 
 
 def split_trailing_command_lines(cli, instruction: str) -> tuple[str, list[str]]:
-    """Seam. runtime-custom peels bare /command lines. Absent, the text stays the instruction."""
-    del cli
-    return (instruction or "").strip(), []
+    """Seam. runtime-custom peels bare /command lines. Absent, nothing peels: core's
+    ``is_dispatchable_command_line`` answers False for every line, so the whole text stays
+    the instruction (bd013ec0653's shape; the plugin replaces both)."""
+    lines = (instruction or "").splitlines()
+    cut = len(lines)
+    while cut and is_dispatchable_command_line(cli, lines[cut - 1].strip()):
+        cut -= 1
+    return "\n".join(lines[:cut]).strip(), [line.strip() for line in lines[cut:]]
 
 
 def is_dispatchable_command_line(cli, line: str) -> bool:
@@ -1316,6 +1321,15 @@ class HermesCLI(CLIBacktrackMixin, CLIInitMixin, CLITuiRuntimeMixin, CLIProcessN
     def _queue_skill_message(self, msg) -> None:
         if hasattr(self, '_pending_input'):
             self._pending_input.put(msg)
+
+    def _split_trailing_command_lines(self, instruction: str) -> tuple[str, list[str]]:
+        return split_trailing_command_lines(self, instruction)
+
+    def _is_dispatchable_command_line(self, line: str) -> bool:
+        return is_dispatchable_command_line(self, line)
+
+    def _dispatch_trailing_commands(self, commands: list[str]) -> None:
+        dispatch_trailing_commands(self, commands)
 
     def _run_skill_bundle_command(self, base_cmd: str, bundle_info: dict, user_instruction: str) -> None:
         """``/<bundle>`` loads several skills at once (bundles win over same-named skills)."""
