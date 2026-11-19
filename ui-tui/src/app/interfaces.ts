@@ -88,11 +88,7 @@ export interface CompletionItem {
 }
 
 export interface GatewayRpc {
-  <T extends RpcResult = RpcResult>(
-    method: string,
-    params?: Record<string, unknown>,
-    opts?: { timeoutMs?: number }
-  ): Promise<null | T>
+  <T extends RpcResult = RpcResult>(method: string, params?: Record<string, unknown>): Promise<null | T>
 }
 
 export interface GatewayServices {
@@ -359,11 +355,6 @@ export interface UiState {
   // Context compaction in progress (idle/preflight/auto). Distinct from
   // `compact`, which is the /compact layout-density flag.
   compacting: boolean
-  // A canonical manual /compress awaiting its RPC. Separate from `compacting`
-  // because turn idle and auto-compaction events clear that one; a manual
-  // compress outlives both (the gateway runs its summarization outside the
-  // session gate, so turns can start and end while it is in flight).
-  manualCompacting: boolean
   destructiveSlashConfirm: boolean
   detailsMode: DetailsMode
   detailsModeCommandOverride: boolean
@@ -642,7 +633,7 @@ export interface SlashHandlerContext {
     die: () => void
     dieWithCode: (code: number) => void
     guardBusySessionSwitch: (what?: string) => boolean
-    newLiveSession: (msg?: string, title?: string, cwd?: string) => void
+    newLiveSession: (msg?: string, title?: string) => void
     newSession: (msg?: string, title?: string) => Promise<unknown> | void
     resetVisibleHistory: (info?: null | SessionInfo) => void
     resumeById: (id: string) => Promise<void> | void
@@ -678,8 +669,8 @@ export interface AppLayoutActions {
   clearSelection: () => void
   activateLiveSession: (id: string) => void
   closeLiveSession: (id: string) => Promise<null | SessionCloseResponse>
-  newLiveSession: (cwd?: string) => void
-  newPromptSession: (prompt: string, modelArg?: string, cwd?: string) => void
+  newLiveSession: () => void
+  newPromptSession: (prompt: string, modelArg?: string) => void
   onModelSelect: (value: string) => void
   resumeById: (id: string) => void
   setStickyPrompt: (value: string) => void
@@ -748,8 +739,8 @@ export interface AppOverlaysProps {
   onActiveSessionSelect: (sessionId: string) => void
   onActiveSessionClose: (sessionId: string) => Promise<null | SessionCloseResponse>
   onModelSelect: (value: string) => void
-  onNewLiveSession: (cwd?: string) => void
-  onNewPromptSession: (prompt: string, modelArg?: string, cwd?: string) => void
+  onNewLiveSession: () => void
+  onNewPromptSession: (prompt: string, modelArg?: string) => void
   onResumeSelect: (sessionId: string) => void
   onSecretSubmit: (value: string) => void
   onSudoSubmit: (pw: string) => void

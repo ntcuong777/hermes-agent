@@ -9,15 +9,11 @@ export const canonicalEn = {
   canonical: {
     // app/slash/canonicalSessionControls.ts + canonicalSessionCommands.ts
     controls: {
-      modelUsage: 'usage: /model <model> [--provider <provider>] [--reasoning <level>] [--session]',
+      modelUsage: 'usage: /model <model> [--provider <provider>] [--session]',
       unsupportedModelOption: (flag: string) => `unsupported canonical model option: ${flag}`,
-      unsupportedReasoning: (level: string) => `unsupported reasoning level: ${level}`,
-      reasoningNotSet: (model: string, reason: string) =>
-        `switched to ${model}, but the reasoning level was not set: ${reason}; set it with /reasoning <level>`,
       identityUnavailable: 'session execution identity unavailable; reconnect before editing',
       compressedStale: 'compressed transcript is stale; reopen the session',
       compressed: '✓ transcript compressed',
-      compressPending: 'manual compression still running — the transcript refreshes when it finishes',
       notAvailable: (command: string) => `/${command} is not available on the shared gateway yet`,
       launchToolsets: (toolsets: string) => `toolsets fixed at session launch: ${toolsets}`,
       retryUnsupported: '/retry: retry does not support media or unknown content parts'

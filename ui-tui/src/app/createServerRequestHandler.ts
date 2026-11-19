@@ -1,7 +1,8 @@
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 
 import { t } from '../i18n/runtime.js'
-import type { ApprovalMcpContext, ClarifyQuestion } from '../types.js'
+import { filterValue } from '../sdk/ext/filters.js' // fork: tui extension host
+import type { ClarifyQuestion } from '../types.js'
 
 import { patchOverlayState } from './overlayStore.js'
 import { rememberServerRequest } from './serverRequestStore.js'
@@ -29,27 +30,6 @@ const PROMPT_METHODS = new Set([
 
 const strList = (v: unknown): null | string[] =>
   Array.isArray(v) && v.length > 0 ? v.filter((c): c is string => typeof c === 'string') : null
-
-/** Structured MCP context off an approval frame; null unless it names both server and tool. */
-export function approvalMcpContext(v: unknown): ApprovalMcpContext | undefined {
-  if (!v || typeof v !== 'object') {
-    return undefined
-  }
-
-  const raw = v as Record<string, unknown>
-  const server = str(raw.server).trim()
-  const tool = str(raw.tool).trim()
-
-  return server && tool
-    ? {
-        server,
-        tool,
-        tool_description: str(raw.tool_description).trim() || null,
-        arguments: str(raw.arguments).trim() || null,
-        ...(raw.arguments_cut === true ? { arguments_cut: true } : {})
-      }
-    : undefined
-}
 
 /**
  * The Ink TUI's answer to the backend's server→client requests
@@ -127,16 +107,20 @@ export function createServerRequestHandler(ctx: ServerRequestHandlerContext): (r
 
       case 'approval': {
         patchOverlayState({
-          approval: {
-            // Only an explicit false drops the permanent-allow option.
-            allowPermanent: p.allow_permanent !== false,
-            choices: strList(p.choices) ?? undefined,
-            command: str(p.command),
-            description: str(p.description) || t('session.request.dangerousCommand'),
-            mcp: approvalMcpContext(p.mcp),
-            requestId: request.id,
-            smartDenied: p.smart_denied === true
-          }
+          // fork: tui extension host. A plugin may add fields the frame carries (an MCP call's context) to the request.
+          approval: filterValue(
+            'approval.request',
+            {
+              // Only an explicit false drops the permanent-allow option.
+              allowPermanent: p.allow_permanent !== false,
+              choices: strList(p.choices) ?? undefined,
+              command: str(p.command),
+              description: str(p.description) || t('session.request.dangerousCommand'),
+              requestId: request.id,
+              smartDenied: p.smart_denied === true
+            },
+            { frame: p }
+          )
         })
         open(request, t('session.status.approvalNeeded'))
 

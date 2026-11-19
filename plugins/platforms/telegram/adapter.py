@@ -3817,11 +3817,6 @@ class TelegramAdapter(TelegramContactMixin, TelegramHeldInboundMixin, TelegramRe
     def _EA_HEADER(self) -> str:
         return f"⚠️ <b>{_html.escape(t('gateway.exec_approval.header'))}</b>\n\n"
 
-    def _ea_mcp_header(self, server: str, tool: str) -> str:
-        # Same escape-then-<b> rule: server/tool names are user-controlled text in an HTML card.
-        return (f"⚠️ <b>{_html.escape(t('gateway.exec_approval.mcp_header', server=server, tool=tool))}"
-                f"</b>\n\n")
-
     _EA_CODE_OPEN = "<pre>"
     _EA_CODE_CLOSE = "</pre>\n\n"
 

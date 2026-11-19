@@ -8,6 +8,7 @@ import type { ErrorSurface } from '@hermes/shared/gateway-events'
 
 import { messages, t } from '../i18n/runtime.js'
 import type { Translations } from '../i18n/types.js'
+import { filterValue } from '../sdk/ext/filters.js' // fork: tui extension host
 
 /** JSON-RPC error codes the gateway answers with. */
 export const RPC_INVALID_PARAMS = 4000
@@ -148,12 +149,6 @@ const RPC_ERROR_ROWS: RpcErrorRow[] = [
   [(_code, text) => NOT_CONNECTED_RE.test(text), () => t('userMessages.rpc.notConnected')],
   [(_code, text) => UNAVAILABLE_METHOD_RE.exec(text), m => t('userMessages.rpc.methodUnavailable', m?.[1] ?? '?')],
   [(_code, text) => text.trim() === 'launch_credentials_unavailable', () => t('userMessages.rpc.launchCredentialsChanged')],
-  // The runtime store's CAS refusal (hermes_state_runtime.py): the session moved between
-  // the control's read and its commit, so nothing was written. `stale_generation` stays
-  // raw on purpose: an interrupt answering it means the turn already settled, where
-  // "try again" is wrong advice (turnController keeps structured refusal reasons raw).
-  [(_code, text) => text.trim() === 'revision_conflict', () => t('userMessages.rpc.sessionChanged')],
-  [(_code, text) => text.trim() === 'session_busy', () => t('userMessages.rpc.sessionBusy')],
   [(_code, text) => TIMED_OUT_RE.exec(text), m => t('userMessages.rpc.timedOut', m?.[1] ?? '?')]
 ]
 
@@ -179,7 +174,7 @@ export const describeRpcError = (err: unknown): string => {
     return versionSkewMessage()
   }
 
-  for (const [matcher, render] of RPC_ERROR_ROWS) {
+  for (const [matcher, render] of filterValue('rpc.errorRows', RPC_ERROR_ROWS)) { // fork: tui extension host
     const m = matcher(code, text)
 
     if (m) {

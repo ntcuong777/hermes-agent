@@ -25,7 +25,6 @@ from urllib.parse import parse_qs, urlparse, urlunparse
 from agent.context_compressor import ContextCompressor
 from agent.agent_init_fallback import _fallback_entries, _init_fallback_chain, recompute_init_fallback_api_mode
 from agent.agent_init_params import _CALLBACK_PARAMS, _GATEWAY_IDENTITY_PARAMS, _PASSTHROUGH_PARAMS
-from agent.agent_init_routes import _context_route_mismatch
 from agent.agent_runtime_helpers import _ra
 from agent.iteration_budget import IterationBudget, normalize_budget_warning_ratio
 from agent.memory_context import StreamingContextScrubber
@@ -53,6 +52,78 @@ from utils import base_url_host_matches, is_truthy_value
 
 # Same logger name as run_agent so caplog/patches on "run_agent" see our records.
 logger = logging.getLogger("run_agent")
+
+
+def _provider_default_routes(provider: str) -> set[str]:
+    """Return known exact default routes for a canonical provider id."""
+    routes: set[str] = set()
+
+    def add(value):
+        route = normalize_route_base_url(value)
+        if route:
+            routes.add(route)
+
+    with suppress(Exception):
+        from hermes_cli.providers import HERMES_OVERLAYS, get_provider
+        overlay = HERMES_OVERLAYS.get(provider)
+        provider_def = get_provider(provider, allow_network=False)
+        add(getattr(overlay, "base_url_override", ""))
+        add(getattr(provider_def, "base_url", ""))
+
+    with suppress(Exception):
+        from providers import get_provider_profile
+        add(getattr(get_provider_profile(provider), "base_url", ""))
+
+    with suppress(Exception):
+        from hermes_cli.auth import PROVIDER_REGISTRY
+        from hermes_cli.models import normalize_provider as normalize_model_provider
+        from hermes_cli.providers import normalize_provider as normalize_registry_provider
+        for provider_id, config in PROVIDER_REGISTRY.items():
+            if normalize_registry_provider(normalize_model_provider(provider_id)) == provider:
+                add(getattr(config, "inference_base_url", ""))
+
+    if provider == "gemini":
+        routes.update(f"{route.rstrip('/')}/openai" for route in list(routes))
+    return routes
+
+
+def _context_route_mismatch(
+    configured_base_url: Any, active_base_url: Any, configured_provider: Any, active_provider: Any,
+    *, already_normalized: bool = False,
+) -> bool:
+    """Return whether a context pin's configured route differs from runtime."""
+    _norm = (lambda v: str(v or "")) if already_normalized else normalize_route_base_url
+    configured_route, active_route = _norm(configured_base_url), _norm(active_base_url)
+    if configured_route:
+        return configured_route != active_route
+
+    configured_provider = str(configured_provider or "").strip()
+    active_provider = str(active_provider or "").strip()
+    if not configured_provider:
+        return False
+    try:
+        from hermes_cli.models import normalize_provider as normalize_model_provider
+        configured_provider = normalize_model_provider(configured_provider)
+        active_provider = normalize_model_provider(active_provider)
+    except Exception:
+        configured_provider = configured_provider.lower()
+        active_provider = active_provider.lower()
+    with suppress(Exception):
+        from hermes_cli.providers import normalize_provider as normalize_registry_provider
+        configured_provider = normalize_registry_provider(configured_provider)
+        active_provider = normalize_registry_provider(active_provider)
+
+    if active_route:
+        configured_routes = _provider_default_routes(configured_provider)
+        if configured_routes:
+            return active_route not in configured_routes
+        # Named/custom providers have no catalog default routes: an empty configured URL
+        # with a matching provider identity is the same route (gateway display paths
+        # compare the raw empty model.base_url and must not drop model.context_length).
+        return not (active_provider and configured_provider == active_provider)
+    return bool(
+        configured_provider and active_provider and configured_provider != active_provider
+    )
 
 
 def _normalize_custom_provider_name(value: Any) -> str:
@@ -1097,7 +1168,6 @@ def _init_memory(agent, _agent_cfg, skip_memory, platform, memory_manager=None):
             from tools.memory_tool import (
                 MemoryStore, get_builtin_memory_config, get_builtin_memory_store_flags,
             )
-
             mem_config = get_builtin_memory_config(_agent_cfg)
             agent._memory_enabled, agent._user_profile_enabled = get_builtin_memory_store_flags(
                 _agent_cfg
@@ -1110,8 +1180,8 @@ def _init_memory(agent, _agent_cfg, skip_memory, platform, memory_manager=None):
             agent._memory_nudge_interval = int(mem_config.get("nudge_interval", 10))
             if agent._memory_enabled or agent._user_profile_enabled:
                 agent._memory_store = MemoryStore(
-                    memory_char_limit=int(mem_config.get("memory_char_limit", 2200)),
-                    user_char_limit=int(mem_config.get("user_char_limit", 1375)),
+                    memory_char_limit=mem_config.get("memory_char_limit", 2200),
+                    user_char_limit=mem_config.get("user_char_limit", 1375),
                     memory_enabled=agent._memory_enabled,
                     user_profile_enabled=agent._user_profile_enabled,
                 )
@@ -1167,6 +1237,7 @@ def _apply_agent_section(agent, _agent_cfg):
         agent.run_budget_seconds = _normalize_run_budget_seconds(
             _agent_section.get("run_budget_seconds")
         )
+
     # Empty-response guard: a malformed section falls back to schema defaults (on, $0.25).
     from agent.empty_response_guard import resolve_guard_settings
     (

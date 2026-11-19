@@ -2,6 +2,7 @@ import { execFile } from 'child_process'
 
 import { forceRedraw, onTerminalBackground, onTerminalForeground } from '@hermes/ink'
 import { extensionHost } from '../sdk/ext/host.js' // fork: tui slot
+import { filterValue } from '../sdk/ext/filters.js' // fork: tui extension host
 import { stripAnsi } from '@hermes/shared/ansi'
 import { relativeLuminance } from '@hermes/shared/color'
 import type { MessageDeltaPayload, SubagentStatus, Usage } from '@hermes/shared/gateway-events'
@@ -661,22 +662,7 @@ function applySessionInfo(payload: unknown, { appendMessage, setHistoryItems, se
     return
   }
 
-  let info: SessionInfo = { ...current, ...incoming }
-
-  // A frame that lost its route (a synced session with no agent yet, a partial publish) reports no model
-  // or effort: it must not blank the pills already on screen. A real change still lands.
-  const known = current as Record<string, unknown> | undefined
-  const kept = (key: string) => (incoming as Record<string, unknown>)[key] == null && known?.[key] != null
-
-  if (kept('model') || ((incoming as Record<string, unknown>).model === '' && current?.model)) {
-    info = { ...info, model: current?.model }
-  }
-
-  for (const key of ['reasoning_effort', 'reasoning_effort_wire', 'service_tier', 'fast']) {
-    if (kept(key)) {
-      info = { ...info, [key]: known?.[key] }
-    }
-  }
+  let info: SessionInfo = filterValue('session.info', { ...current, ...incoming }, { current, incoming }) // fork: tui extension host
 
   // A busy-time admission painted no bubble at submit; paint it when the
   // authority starts it, so it lands after the previous assistant reply.

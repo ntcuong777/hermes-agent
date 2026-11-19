@@ -1,3 +1,5 @@
+import { filterValue } from '../sdk/ext/filters.js' // fork: tui extension host
+
 const ESC = '\x1b'
 const BEL = '\x07'
 const ST = `${ESC}\\`
@@ -64,11 +66,7 @@ export async function readOsc52Clipboard(querier: null | OscQuerier, timeoutMs =
 
   const response = await Promise.race([query, timeout])
 
-  // The DA1 sentinel flush() waits on has no deadline of its own ("never times
-  // out on its own" is the querier's contract), so a terminal that never
-  // answers DA1 would hang every clipboard read past the query's race. Bound
-  // it: a read is advisory, the caller falls through to the next source.
-  await Promise.race([querier.flush(), timeout])
+  await filterValue('osc52.flush', querier.flush(), { timeout }) // fork: tui extension host
 
   return response ? parseOsc52ClipboardData(response.data) : null
 }

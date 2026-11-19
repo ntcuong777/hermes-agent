@@ -33,7 +33,6 @@ import * as faces from '../../content/faces.js' // fork: tui slot host modules (
 import * as verbs from '../../content/verbs.js' // fork: tui slot host modules (stage 6)
 import * as domainMessages from '../../domain/messages.js' // fork: tui slot host modules (stage 6)
 import * as domainViewport from '../../domain/viewport.js' // fork: tui slot host modules (stage 6)
-import * as statusUsage from '../../lib/statusUsage.js' // fork: tui slot host modules (stage 6)
 import * as subagentTree from '../../lib/subagentTree.js' // fork: tui slot host modules (stage 6)
 import * as viewportStore from '../../lib/viewportStore.js' // fork: tui slot host modules (stage 6)
 import * as sharedFormat from '@hermes/shared/format' // fork: tui slot host modules (stage 6)
@@ -58,7 +57,6 @@ import * as sdkRegistry from '../../sdk/registry.js' // fork: tui-keybinds defin
 import * as nanostores from 'nanostores' // fork: tui-keybinds stores the configured chords
 import * as pasteStore from '../../app/pasteStore.js' // fork: tui slot host modules (stage 5)
 import * as serverRequestStore from '../../app/serverRequestStore.js' // fork: tui slot host modules (stage 5)
-import * as stashCounts from '../../app/stashCounts.js' // fork: tui slot host modules (stage 5)
 import * as turnController from '../../app/turnController.js' // fork: tui slot host modules (stage 5)
 import * as gatewayCanonical from '@hermes/shared/gateway-canonical' // fork: tui slot host modules (stage 5)
 import * as gatewayTypes from '@hermes/shared/gateway-types' // fork: tui slot host modules (stage 5)
@@ -101,7 +99,6 @@ export const HOST_MODULES: Readonly<Record<string, unknown>> = Object.freeze({
   'content/verbs': verbs,
   'domain/messages': domainMessages,
   'domain/viewport': domainViewport,
-  'lib/statusUsage': statusUsage,
   'lib/subagentTree': subagentTree,
   'lib/viewportStore': viewportStore,
   'shared/format': sharedFormat,
@@ -126,7 +123,6 @@ export const HOST_MODULES: Readonly<Record<string, unknown>> = Object.freeze({
   'pkg/nanostores': nanostores,
   'app/pasteStore': pasteStore,
   'app/serverRequestStore': serverRequestStore,
-  'app/stashCounts': stashCounts,
   'app/turnController': turnController,
   'shared/gateway-canonical': gatewayCanonical,
   'shared/gateway-types': gatewayTypes,

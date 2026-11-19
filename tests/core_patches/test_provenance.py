@@ -155,7 +155,7 @@ def test_the_agent_brief_is_self_contained(target, plugin, no_discovery, capsys)
                    "## Current core source", 'return f"hi {name}"', "## Diff old -> current",
                    "copied replacement (`patch.py:french`)", "def french(name):",
                    "hermes plugins patches --record up --reason", "hermes plugins patches --sha",
-                   "--write-pins", "python -m pytest tests -q -p no:cacheprovider", "git commit --no-verify",
+                   "--write-pins", "-m pytest tests -q -p no:cacheprovider", "git commit --no-verify",
                    "never open an upstream pull request", "run_tests.sh -j 3 <explicit files>",
                    "## Rules of this fork"):
         assert needle in brief, needle

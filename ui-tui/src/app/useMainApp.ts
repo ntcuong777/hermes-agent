@@ -30,7 +30,7 @@ import { RESIZE_COALESCE_MS } from '../config/timing.js'
 import { hasLeadGap, prevRenderedMsg } from '../domain/blockLayout.js'
 import { SECTION_NAMES, sectionMode } from '../domain/details.js'
 import { hasPasteChip } from '../domain/pasteExpand.js'
-import { fmtProjectCwdBranch, shortCwd, terminalTitle } from '../domain/paths.js'
+import { composeTabTitle, fmtProjectCwdBranch, shortCwd } from '../domain/paths.js'
 import { type GatewayClient } from '../gatewayClient.js'
 import { useGitBranch } from '../hooks/useGitBranch.js'
 import { pruneVirtualHeightCache, useVirtualHistory } from '../hooks/useVirtualHistory.js'
@@ -45,6 +45,7 @@ import { terminalParityHints } from '../lib/terminalParity.js'
 import { formatAbandonedClarify, sameToolTrailGroup, toolTrailLabel } from '../lib/text.js'
 import { estimatedMsgHeight, messageHeightKey } from '../lib/virtualHeights.js'
 import { onUserWidgets } from '../sdk/userWidgets.js'
+import { filterValue } from '../sdk/ext/filters.js' // fork: tui extension host
 import { useExtensionHost } from '../sdk/ext/useExtensionHost.js' // fork: tui extension host
 import type { Msg, PanelSection } from '../types.js'
 
@@ -176,13 +177,10 @@ const detailsVisibility = (detailsLayoutKey: string, ui: Pick<UiState, 'detailsM
 }
 
 export interface PromptLiveSessionOptions {
-  /** Deliberate workspace pick from the `+new` row; rides session.create as
-   *  `{ cwd, cwd_explicit: true }` (`workspaceCwdParams`). */
-  cwd?: string
   dispatchSubmission: (full: string, destination: SubmissionDestination) => void
   maybeWarn: (value: unknown) => void
   modelArg?: string
-  newLiveSession: (msg?: string, title?: string, cwd?: string) => Promise<null | string> | null | string | void
+  newLiveSession: (msg?: string, title?: string) => Promise<null | string> | null | string | void
   onModelSwitched?: (value: string, result: ConfigSetResponse) => void
   prompt: string
   rpc: GatewayRpc
@@ -190,7 +188,6 @@ export interface PromptLiveSessionOptions {
 }
 
 export async function startPromptLiveSession({
-  cwd,
   dispatchSubmission,
   maybeWarn,
   modelArg,
@@ -210,7 +207,7 @@ export async function startPromptLiveSession({
   // the initial title. Auto-title generation can rename it after the first
   // response; pre-queuing prompt text here causes duplicate-title errors when
   // users dispatch common prompts like "Hello, what model are you?".
-  const sid = (await newLiveSession(t('session.lifecycle.newLiveSessionStarted'), undefined, cwd)) ?? null
+  const sid = (await newLiveSession(t('session.lifecycle.newLiveSessionStarted'))) ?? null
 
   if (!sid) {
     sys(`error: ${t('session.main.failedToStartLiveSession')}`)
@@ -652,11 +649,12 @@ export function useMainApp(gw: GatewayClient) {
   const rpc: GatewayRpc = useCallback(
     async <T extends Record<string, any> = Record<string, any>>(
       method: string,
-      params: Record<string, unknown> = {},
-      opts?: { timeoutMs?: number }
+      params: Record<string, unknown> = {}
     ) => {
       try {
-        const result = asRpcResult<T>(await gw.request<T>(method, params, opts?.timeoutMs))
+        // fork: tui extension host. A plugin may lengthen one method's deadline (session.compress).
+        const timeoutMs = filterValue<number | undefined>('rpc.timeoutMs', undefined, { method, params })
+        const result = asRpcResult<T>(await gw.request<T>(method, params, timeoutMs))
 
         if (result) {
           return result
@@ -795,7 +793,18 @@ export function useMainApp(gw: GatewayClient) {
 
   const tabCwd = ui.info?.cwd
 
-  useTerminalTitle(terminalTitle(marker, ui.sessionTitle, model, tabCwd ?? '', cwd => shortCwd(cwd, 24)))
+  useTerminalTitle(
+    filterValue(
+      'terminalTitle', // fork: tui extension host
+      model
+        ? {
+            tab: composeTabTitle(marker, ui.sessionTitle, '', ''),
+            window: composeTabTitle(marker, ui.sessionTitle, model, tabCwd ? shortCwd(tabCwd, 24) : '')
+          }
+        : 'Hermes',
+      { composeTabTitle, cwd: tabCwd ?? '', marker, model, sessionTitle: ui.sessionTitle, shortCwd }
+    )
+  )
 
   useEffect(() => {
     if (!ui.sid || !stdout) {
@@ -1417,9 +1426,8 @@ export function useMainApp(gw: GatewayClient) {
   )
 
   const newPromptSession = useCallback(
-    (prompt: string, modelArg?: string, cwd?: string) => {
+    (prompt: string, modelArg?: string) => {
       void startPromptLiveSession({
-        cwd,
         dispatchSubmission: (text, destination) => send(text, true, text, value => value, { destination }),
         maybeWarn,
         modelArg,
@@ -1506,7 +1514,7 @@ export function useMainApp(gw: GatewayClient) {
       answerVaultUnlock,
       cancelClarify,
       clearSelection,
-      newLiveSession: (cwd?: string) => session.newLiveSession(undefined, undefined, cwd),
+      newLiveSession: () => session.newLiveSession(),
       newPromptSession,
       onModelSelect,
       // Resuming a cold session from the overlay CLOSES the current one, so it

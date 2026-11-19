@@ -3,7 +3,8 @@ import type {
   SessionInfo
 } from '@hermes/shared/gateway-types'
 
-import { approvalMcpContext } from './createServerRequestHandler.js'
+import { filterValue } from '../sdk/ext/filters.js' // fork: tui extension host
+
 import { patchOverlayState } from './overlayStore.js'
 import { patchUiState } from './uiStore.js'
 
@@ -145,17 +146,21 @@ export function openCanonicalApproval(
   }
 
   patchOverlayState({
-    approval: {
-      // Only an explicit false (tirith warning) drops the permanent-allow option.
-      allowPermanent: shared.allow_permanent !== false,
-      choices: shared.choices,
-      command: String(shared.command ?? ''),
-      description: String(shared.description ?? 'dangerous command'),
-      mcp: approvalMcpContext(shared.mcp),
-      requestId: shared.prompt_id,
-      sharedControl,
-      smartDenied: shared.smart_denied === true
-    }
+    // fork: tui extension host. A plugin may add fields the frame carries (an MCP call's context) to the request.
+    approval: filterValue(
+      'approval.request',
+      {
+        // Only an explicit false (tirith warning) drops the permanent-allow option.
+        allowPermanent: shared.allow_permanent !== false,
+        choices: shared.choices,
+        command: String(shared.command ?? ''),
+        description: String(shared.description ?? 'dangerous command'),
+        requestId: shared.prompt_id,
+        sharedControl,
+        smartDenied: shared.smart_denied === true
+      },
+      { frame: shared }
+    )
   })
   setStatus('approval needed')
   ringPromptBell()

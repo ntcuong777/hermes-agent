@@ -5,6 +5,7 @@ import { useEffect } from 'react'
 
 import { t } from '../i18n/runtime.js'
 import { rpcErrorMessage } from '../lib/rpc.js'
+import { filterValue } from '../sdk/ext/filters.js' // fork: tui extension host
 import type { SlashCatalog } from '../types.js'
 
 import type { GatewayRpc } from './interfaces.js'
@@ -21,14 +22,20 @@ export const loadSlashCatalog = (rpc: GatewayRpc, sid: null | string, setCatalog
         return
       }
 
-      setCatalog({
-        canon: r.canon ?? {},
-        categories: r.categories ?? [],
-        keybinds: r.keybinds ?? {},
-        pairs: r.pairs,
-        skillCount: r.skill_count ?? 0,
-        sub: r.sub ?? {}
-      })
+      setCatalog(
+        // fork: tui extension host. A plugin may carry more of the reply (the chords plugins declared) into the catalog.
+        filterValue(
+          'slash.catalog',
+          {
+            canon: r.canon ?? {},
+            categories: r.categories ?? [],
+            pairs: r.pairs,
+            skillCount: r.skill_count ?? 0,
+            sub: r.sub ?? {}
+          },
+          { response: r }
+        )
+      )
 
       if (r.warning) {
         turnController.pushActivity(r.warning, 'warn')

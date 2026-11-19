@@ -442,7 +442,7 @@ from gateway.platforms.base_delivery_ledger import (
     finalize_final_obligation, ledger_attempted, ledger_bracket, record_final_obligation)
 from gateway.platforms.base_exec_approval import (
     approval_timeout_seconds, ea_action_labels, ea_default_reason_text, ea_header_text,
-    ea_mcp_header_text, ea_reason_label_text, ea_smart_deny_line_text, exec_approval_cmd_budget,
+    ea_reason_label_text, ea_smart_deny_line_text, exec_approval_cmd_budget,
     format_approval_deadline_line, card_shows_whole_command, mcp_arguments_cut, render_exec_approval,
     approval_card_parts)
 from gateway.platforms.base_streaming_tts import (
@@ -2676,11 +2676,6 @@ class BasePlatformAdapter(_SessionModelSettingsMixin, ABC):
     def _EA_HEADER(self) -> str:
         return f"⚠️ {ea_header_text()}\n\n"
 
-    def _ea_mcp_header(self, server: str, tool: str) -> str:
-        """MCP tool-call headline — the twin of ``_EA_HEADER`` for approvals carrying MCP context.
-        Adapters that wrap ``_EA_HEADER`` in platform markup override this for the same markup."""
-        return f"⚠️ {ea_mcp_header_text(server, tool)}\n\n"
-
     @property
     def _EA_REASON_LABEL(self) -> str:
         return f"{ea_reason_label_text()}: "
@@ -2720,8 +2715,7 @@ class BasePlatformAdapter(_SessionModelSettingsMixin, ABC):
         mcp: Optional[dict[str, Any]] = None, full_command_shown: bool = False) -> str:
         """Shared exec-approval prompt text: header + fenced (truncated) command + why it was flagged +
         the deadline line, plus the smart-deny line (``base_exec_approval.render_exec_approval``).
-        ``mcp`` (the structured MCP tool-call context) swaps the header for the server/tool headline
-        and leads the fenced body with the tool description."""
+        ``mcp`` (the structured MCP tool-call context) is what the approval-card plugin words the card from."""
         return render_exec_approval(self, str(command or ""), ea_default_reason_text() if description is None
                                     else description, smart_denied, full_command_shown, mcp=mcp)[0]
 
@@ -2760,7 +2754,7 @@ class BasePlatformAdapter(_SessionModelSettingsMixin, ABC):
     ) -> SendResult:
         """Interactive exec-approval prompt; a press resolves via ``tools.approval.resolve_gateway_approval``.
         Text and choice set are shared; adapters render them natively in ``_send_exec_approval_prompt``.
-        ``mcp`` carries structured MCP tool-call context for the server/tool headline. A preview that
+        ``mcp`` carries structured MCP tool-call context (the approval-card plugin words the card from it). A preview that
         cannot hold the whole command is preceded by the full command; when that cannot be sent, the
         card offers Deny only — nobody approves a command they could not read."""
         description = ea_default_reason_text() if description is None else description

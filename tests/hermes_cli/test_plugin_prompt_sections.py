@@ -20,14 +20,6 @@ def _context(manager: PluginManager, name: str = "example-plugin") -> PluginCont
     )
 
 
-@pytest.fixture(autouse=True)
-def _install_prompt_cap(monkeypatch):
-    import sys
-    sys.path.insert(0, "/private/etc/nix-darwin/.worktrees/core-surface-all/hermes/plugins/prompt-cap")
-    import pc_cap
-    pc_cap.install(monkeypatch)
-
-
 def test_registration_validates_stable_id_position_budget_and_duplicates():
     manager = PluginManager()
     ctx = _context(manager)
@@ -37,9 +29,7 @@ def test_registration_validates_stable_id_position_budget_and_duplicates():
             ctx.register_system_prompt_section(invalid_id, "content")
 
     with pytest.raises(ValueError):
-        ctx.register_system_prompt_section(
-            "example.rules", "content", position="priority-17"
-        )
+        ctx.register_system_prompt_section("example.rules", "content", position="priority-17")
     with pytest.raises(ValueError):
         ctx.register_system_prompt_section("example.rules", "content", max_chars=0)
 
@@ -98,39 +88,3 @@ def test_render_fails_open_for_callback_failure_wrong_type_and_aggregate_budget(
     assert "plugin exploded" in caplog.text
     assert "returned dict, not str" in caplog.text
     assert "aggregate" in caplog.text
-
-
-# ``plugins.prompt_sections_total_chars`` raises the aggregate cap (default 8,000) for a profile that
-# wants more than that in plugin sections, e.g. a long working agreement plus the project glossary.
-
-
-def _render_with_cap(monkeypatch, cap, sections=3, size=3500):
-    from hermes_cli import plugins
-
-    monkeypatch.setattr(
-        plugins,
-        "load_config_readonly",
-        lambda: (
-            {"plugins": {"prompt_sections_total_chars": cap}} if cap is not None else {}
-        ),
-    )
-    manager = PluginManager()
-    ctx = _context(manager)
-    for index in range(sections):
-        ctx.register_system_prompt_section(
-            f"example.s{index}", "x" * size, max_chars=size
-        )
-    return [item.id for item in manager.render_system_prompt_sections({})]
-
-
-def test_aggregate_cap_defaults_to_the_built_in_one(monkeypatch):
-    assert len(_render_with_cap(monkeypatch, None)) == 2  # 3 x 3,500 > 8,000
-
-
-def test_aggregate_cap_can_be_raised_in_config(monkeypatch):
-    assert len(_render_with_cap(monkeypatch, 12_000)) == 3
-
-
-@pytest.mark.parametrize("bad", [1000, 7999, 32_001, "12000", True, 12.5, [1]])
-def test_a_bad_or_lowering_cap_falls_back_to_the_default(monkeypatch, bad):
-    assert len(_render_with_cap(monkeypatch, bad)) == 2

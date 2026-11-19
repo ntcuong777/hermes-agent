@@ -2110,27 +2110,3 @@ class TestCliApprovalTimeoutClassifiedSeparately:
         assert result.get("user_consent") is False
         assert "timed out without user response" in result["message"]
         assert "Silence is not consent" in result["message"]
-
-
-def test_an_id_answer_to_a_cut_mcp_call_is_refused_and_a_whole_one_still_resolves():
-    """``resolve_gateway_approval(request_id=...)`` finds the entry with ``_entry_for_request`` and then applies the
-    arguments-cut filter: a call whose arguments were cut stays pending for every approving choice (it can only be
-    denied), while a whole call resolves as usual."""
-    from tools.approval_gateway_wait import _ApprovalEntry
-
-    key = "approval-cut-request-id"
-    cut = {"server": "files", "tool": "write", "arguments": '{"a": 1}\n... [arguments truncated]', "arguments_cut": True}
-    whole = {"server": "files", "tool": "write", "arguments": '{"a": 1}'}
-    cut_entry = _ApprovalEntry({"request_id": "cut", "command": "c", "description": "d", "mcp": dict(cut)})
-    whole_entry = _ApprovalEntry({"request_id": "whole", "command": "c", "description": "d", "mcp": dict(whole)})
-    approval_module._gateway_queues[key] = [cut_entry, whole_entry]
-    try:
-        assert approval_module.resolve_gateway_approval(key, "once", request_id="cut") == 0
-        assert cut_entry.result is None and not cut_entry.event.is_set()
-        assert approval_module._gateway_queues[key] == [cut_entry, whole_entry]
-        assert approval_module.resolve_gateway_approval(key, "once", request_id="whole") == 1
-        assert whole_entry.result == "once"
-        assert approval_module.resolve_gateway_approval(key, "deny", request_id="cut") == 1
-        assert cut_entry.result == "deny"
-    finally:
-        approval_module._gateway_queues.pop(key, None)

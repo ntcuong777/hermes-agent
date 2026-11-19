@@ -134,13 +134,12 @@ def register_gateway_notify(session_key: str, cb) -> None:
 def plugin_hook_approval_card(choice: str, mcp) -> bool:
     """Plugin hook: approval-card.
 
-    The plugin sets ``arguments_cut`` when MCP arguments were truncated. This
-    function refuses every approving choice while that flag is set, even if the
-    card plugin is skipped or faulted. Upstream payloads have no such key, so
-    every choice stays answerable. Deny always stays answerable.
+    Refuses every approving choice for a card context the plugin says is
+    Deny-only (``mcp_deny_only``: MCP arguments were cut). Upstream payloads
+    have no ``mcp`` key, so every choice stays answerable. Deny always does.
     """
-    from tools.approval_mcp import arguments_cut
-    return choice == "deny" or not arguments_cut(mcp)
+    from tools.approval_context_seam import mcp_deny_only
+    return choice == "deny" or not mcp_deny_only(mcp)
 
 
 def plugin_hook_yolo_exempt(yolo_exempt: bool) -> bool:

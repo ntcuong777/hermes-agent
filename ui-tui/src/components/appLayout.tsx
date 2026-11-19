@@ -11,7 +11,6 @@ import { $inputSelection } from '../app/inputSelectionStore.js'
 import type { AppLayoutProps } from '../app/interfaces.js'
 import { $isBlocked, $overlayState, patchOverlayState } from '../app/overlayStore.js'
 import { $petBox } from '../app/petFlashStore.js'
-import { $stashCounts } from '../app/stashCounts.js'
 import { $uiState } from '../app/uiStore.js'
 import { usePet } from '../app/usePet.js'
 import { $voicePartial } from '../app/voicePartialStore.js'
@@ -34,8 +33,9 @@ import { AgentsOverlay } from './agentsOverlay.js'
 import { LiveAgentsPanel } from './agentsPanel.js'
 import { GoodVibesHeart, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
 import { StatusRule as StockStatusRule } from './appChrome.js' // fork: tui slot
-const StatusRule = slotComponent<Parameters<typeof StockStatusRule>[0] & { stashCounts?: { global: number; session: number } }>('statusRule', StockStatusRule) // fork: tui slot. The fork's kept glue passes stashCounts, which upstream's StatusRuleProps lacks; the slot contract admits it as an optional field (adding an optional field is not a props bump, master spec 6.6).
+const StatusRule = slotComponent('statusRule', StockStatusRule) // fork: tui slot
 import { slotComponent } from '../sdk/ext/slotReact.js' // fork: tui slot
+import { filterValue } from '../sdk/ext/filters.js' // fork: tui extension host
 import { FloatingOverlays, PromptZone } from './appOverlays.js'
 import { Banner, Panel, SessionPanel } from './branding.js'
 import { HalfBlockImage, KittyImage } from './cellImage.js'
@@ -49,7 +49,7 @@ import { PasteHint } from './pasteSections.js'
 import { QueuedMessages } from './queuedMessages.js'
 import { RewindFocusScroller, useBacktrackHint, useRewindFocusIndex } from './rewindFocus.js'
 import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
-import { type InputCursorSnapshot, TextInputMouseApi } from './textInput.js'
+import { type InputCursorSnapshot, type TextInputMouseApi } from './textInput.js'
 import { TextInput as StockTextInput } from './textInput.js' // fork: tui slot
 const TextInput = slotComponent<Parameters<typeof StockTextInput>[0] & { caretRef?: MutableRefObject<InputCursorSnapshot | null> }>('textInput', StockTextInput) // fork: tui slot. The kept glue passes caretRef, which upstream's TextInputProps lacks; the slot contract admits it as an optional field (adding an optional field is not a props bump, master spec 6.6).
 
@@ -604,7 +604,6 @@ const StatusRulePane = memo(function StatusRulePane({
   status
 }: Pick<AppLayoutProps, 'composer' | 'status'> & { at: 'bottom' | 'top'; nativeMode: boolean }) {
   const ui = useStore($uiState)
-  const stashCounts = useStore($stashCounts)
 
   if (ui.statusBar === 'off' || (nativeMode ? at !== 'top' : ui.statusBar !== at)) {
     return null
@@ -617,7 +616,7 @@ const StatusRulePane = memo(function StatusRulePane({
         bgCount={ui.bgTasks.size}
         busy={ui.busy}
         cols={composer.cols}
-        compacting={ui.compacting || ui.manualCompacting}
+        compacting={filterValue('status.compacting', ui.compacting, { ui })} // fork: tui extension host
         cwdLabel={status.cwdLabel}
         focusView={ui.focusView}
         indicatorStyle={ui.indicatorStyle}
@@ -631,7 +630,6 @@ const StatusRulePane = memo(function StatusRulePane({
         onSessionCountClick={() => patchOverlayState({ sessions: true })}
         sessionStartedAt={status.sessionStartedAt}
         sessionTitle={status.sessionTitle}
-        stashCounts={stashCounts}
         status={ui.status}
         statusBarFields={ui.statusBarFields}
         statusColor={status.statusColor}

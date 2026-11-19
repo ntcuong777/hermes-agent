@@ -76,21 +76,19 @@ def _model_switch_skew_note() -> Optional[str]:
     return t("gateway.model.warn_skew", boot_rev=boot_rev, disk_rev=disk_rev)
 
 
-async def _persist_model_switch_to_config(
-    result, config_path, *, surface: str = "cli", reasoning_effort: str = "",
-) -> None:
+async def _persist_model_switch_to_config(result, config_path, **route) -> None:
     """Write-through a resolved /model switch to the profile config at ``config_path``, off the
-    event loop. ``surface='gateway'`` writes ``gateway.model``; ``surface='cli'`` writes ``model.*``."""
+    event loop (the route comparison can do cold-start disk I/O). ``route`` is whatever
+    :func:`_persist_route` returned; it reaches ``persist_routed_selection`` untouched."""
     from hermes_cli.model_switch import persist_model_selection
-    await asyncio.to_thread(
-        persist_model_selection, result, config_path, surface=surface, reasoning_effort=reasoning_effort,
-    )
+    await asyncio.to_thread(persist_model_selection, result, config_path, **route)
 
 
-def _persist_surface(source: Any) -> str:
-    """The local CLI writes ``model.*``. Every messaging platform writes ``gateway.model``."""
-    from gateway.config import Platform
-    return "cli" if getattr(source, "platform", None) == Platform.LOCAL else "gateway"
+def _persist_route(source: Any, ctx: Any) -> dict:
+    """Seam: extra routing a /model write needs for this ``source`` (which surface wrote it, the
+    reasoning level it carried). Core has none, so the write goes to ``model.*`` as upstream's.
+    config-seams replaces this together with ``persist_routed_selection``."""
+    return {}
 
 
 @dataclasses.dataclass
@@ -294,10 +292,7 @@ class GatewayModelCommandsMixin:
         global_error: Optional[str] = None
         if ctx.persist_global:
             try:
-                await _persist_model_switch_to_config(
-                    result, ctx.config_path,
-                    surface=_persist_surface(source), reasoning_effort=ctx.reasoning_effort,
-                )
+                await _persist_model_switch_to_config(result, ctx.config_path, **_persist_route(source, ctx))
             except Exception as e:
                 logger.warning("Failed to persist model switch: %s", e)
                 global_error = t("gateway.model.err_config_not_updated", error=str(e) or type(e).__name__)

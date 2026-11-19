@@ -12,6 +12,7 @@ import type { GatewayClient } from '../gatewayClient.js'
 import { messages } from '../i18n/runtime.js'
 import { useT } from '../i18n/useT.js'
 import { asRpcResult, rpcErrorMessage } from '../lib/rpc.js'
+import { filterValue } from '../sdk/ext/filters.js' // fork: tui extension host
 import type { Theme } from '../theme.js'
 
 import { OverlayHint, useOverlayKeys, windowItems } from './overlayControls.js'
@@ -635,9 +636,9 @@ export function ModelPicker({
         </Text>
 
         {keyError ? (
-          // No truncate-end here: long errors (e.g. the code-skew refusal whose tail names the
-          // restart command) must wrap, or the one actionable line stays invisible (#screenshot).
-          <Text color={t.color.label}>{C.error(keyError)}</Text>
+          <Text color={t.color.label} wrap={filterValue('modelPicker.keyErrorWrap', 'truncate-end')}>
+            {C.error(keyError)}
+          </Text>
         ) : keySaving ? (
           <Text color={t.color.muted} wrap="truncate-end">
             {M.key.saving}

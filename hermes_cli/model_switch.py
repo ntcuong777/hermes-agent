@@ -1920,21 +1920,16 @@ def remote_model_selection_guard(before: Any, after: Any) -> None:
 _MISSING = object()
 
 
-def persist_routed_selection(
-    result: ModelSwitchResult, path: Any, *, surface: str = "cli", reasoning_effort: str = "",
-) -> bool:
+def persist_routed_selection(result: ModelSwitchResult, path: Any, **route: Any) -> bool:
     """Seam for a route that is not ``model.*``. Core writes nothing and returns False.
 
     config-seams replaces this: ``surface='gateway'`` writes ``gateway.model``, and a host
-    file beside the config receives a CLI switch. Callers may pass ``surface`` and
-    ``reasoning_effort`` either way, so a missing plugin does not raise.
+    file beside the config receives a CLI switch. ``route`` is empty unless a plugin supplied it.
     """
     return False
 
 
-def persist_model_selection(
-    result: ModelSwitchResult, config_path: Any = None, *, surface: str = "cli", reasoning_effort: str = "",
-) -> None:
+def persist_model_selection(result: ModelSwitchResult, config_path: Any = None, **route: Any) -> None:
     """Write a successful :func:`switch_model` result to ``config_path`` (default:
     ``HERMES_HOME/config.yaml`` — the context override or ``HERMES_HOME`` at call time).
 
@@ -1949,15 +1944,14 @@ def persist_model_selection(
     recomputed against the fresh block. ``_CONFIG_LOCK`` is in-process only: a cross-process
     config lock, once one exists, must wrap the same section.
 
-    ``surface`` and ``reasoning_effort`` are accepted so a caller does not raise when the route
-    plugin is absent. :func:`persist_routed_selection` handles a gateway or host-file route when
-    that patch is active. Otherwise this writes ``model.*``.
+    ``route`` goes to :func:`persist_routed_selection`, which handles a gateway or host-file route
+    when that patch is active. Otherwise this writes ``model.*``.
     """
     from pathlib import Path
     from hermes_cli.config import _CONFIG_LOCK, atomic_config_replace, get_config_path, read_user_config_raw
     from hermes_cli.config_backend import supports_file_tooling, write_config_keys
     path = Path(config_path) if config_path else get_config_path()
-    if persist_routed_selection(result, path, surface=surface, reasoning_effort=reasoning_effort):
+    if persist_routed_selection(result, path, **route):
         return
     planned_from = read_user_config_raw(path).get("model")
     updates = model_selection_config_updates(result, planned_from)

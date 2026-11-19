@@ -35,44 +35,39 @@ def ea_header_text() -> str:
     return t("gateway.exec_approval.header")
 
 
-def ea_mcp_header_text(server: str, tool: str) -> str:
-    """Localized MCP tool-call headline (bare; adapters add their own markup around it)."""
-    return t("gateway.exec_approval.mcp_header", server=server, tool=tool)
-
-
-_MCP_ARGUMENTS_MARK = "\n\nArguments:\n"
-
-
-def ea_mcp_block(mcp: dict, command: str) -> str:
-    """Fenced body for an MCP tool-call approval: what the tool does, then the call as the prompt text
-    states it (notices + arguments). The prompt text carries the arguments cut to the trust gate's 1,200
-    characters; the structured context carries them in full (20,000, redacted), which is what the
-    TUI/Desktop card shows, so a card shows those: nobody approves a call whose arguments were cut."""
-    text = str(command or "").strip()
-    arguments = str(mcp.get("arguments") or "").strip()
-    if arguments:
-        head = text.split(_MCP_ARGUMENTS_MARK, 1)[0].strip()
-        text = f"{head}{_MCP_ARGUMENTS_MARK}{arguments}" if head else f"Arguments:\n{arguments}"
-    parts = [str(mcp.get("tool_description") or "").strip(), text]
-    return "\n\n".join(p for p in parts if p)
-
-
 def mcp_arguments_cut(mcp: Optional[dict]) -> bool:
-    """True when an MCP call's arguments were cut. The rule lives in ``tools.approval_mcp``."""
-    from tools.approval_mcp import arguments_cut
-    return arguments_cut(mcp)
+    """True when this card's MCP context is Deny-only. The rule is the approval-card plugin's
+    (``tools.approval_context_seam.mcp_deny_only``); absent, there is no context and it is False."""
+    from tools.approval_context_seam import mcp_deny_only
+    return bool(mcp_deny_only(mcp))
 
 
+# Seams for the approval-card plugin: the structured MCP context (``mcp``, an opaque dict here) changes
+# what a card shows. Each default is the upstream behavior; the plugin replaces them.
 def approval_card_parts(command: str, description: str, mcp: Optional[dict] = None) -> tuple[str, str]:
-    """``(body, reason)`` as every surface shows a request: the description's first line is the reason (the
-    headline), and the lines under it (a plugin approval's command, path, URL or query, which the gate
-    appends there: ``permission-gate`` names what a web fetch, a directory write or a search is about) join
-    the body with the command, so they are previewed whole and covered by the Deny-only rule instead of
-    being cut with the reason's budget. An MCP call's body is its tool description and full arguments."""
-    reason, *detail = str(description or "").split("\n")
-    lead = "\n".join(detail).strip("\n")
-    body = ea_mcp_block(mcp, command) if mcp else str(command or "")
-    return "\n".join(part for part in (lead, body) if part), reason
+    """Seam. ``(body, reason)`` the card shows. Absent, the command and the reason as they came."""
+    del mcp
+    return str(command or ""), str(description or "")
+
+
+def card_header(adapter: Any, mcp: Optional[dict] = None) -> str:
+    """Seam. The card's headline in ``adapter``'s markup. Absent, ``adapter._EA_HEADER``."""
+    del mcp
+    return adapter._EA_HEADER
+
+
+def text_card_heading(mcp: Optional[dict] = None) -> str:
+    """Seam. The bold headline of the typed-reply text prompt. Absent, the generic header."""
+    del mcp
+    return f"⚠️ **{ea_header_text()}**"
+
+
+def text_card_body(heading: str, body: str, reason: str) -> str:
+    """Seam. The typed-reply prompt's text up to the choices: headline, the command in a code fence, the reason.
+    Absent, the locale's ``text_body`` template with its fixed fence (upstream). The plugin sizes the fence to
+    the body, which a command holding backticks would otherwise close early."""
+    return t("gateway.exec_approval.text_body", heading=heading, command=body,  # whole: send() splits it
+             reason_label=ea_reason_label_text(), reason=reason)
 
 
 def ea_reason_label_text() -> str:
@@ -168,41 +163,38 @@ def render_exec_approval(adapter: Any, command: str, description: str, smart_den
                          full_command_shown: bool, mcp: Optional[dict] = None) -> tuple[str, bool]:
     """``(card text, truncated)`` for ``adapter``'s markup. A preview that cannot hold the whole command
     says so in the card: where the full command was sent just before it (``full_command_shown``), or
-    that only Deny is offered because it could not be (#62359). ``mcp`` (the structured MCP tool-call
-    context) swaps the header for the server/tool headline and leads the fenced body with the tool
-    description."""
-    header = adapter._EA_HEADER
-    body, description = approval_card_parts(command, description, mcp)
-    if mcp:
-        header = adapter._ea_mcp_header(str(mcp.get("server") or ""), str(mcp.get("tool") or ""))
+    that only Deny is offered because it could not be (#62359). ``mcp`` is the structured MCP context the
+    approval-card plugin words the card from (``approval_card_parts``, ``card_header``)."""
+    header = card_header(adapter, mcp)
+    command, description = approval_card_parts(command, description, mcp)
     if adapter._EA_REASON_BUDGET:
         description = adapter._ea_fit(str(description or ""), adapter._EA_REASON_BUDGET)
     args_cut = mcp_arguments_cut(mcp)
     key = "truncated_full_above" if full_command_shown and not args_cut else "truncated_deny_only"
-    cut_notice = "\n\n" + adapter._ea_escape(t(f"gateway.exec_approval.{key}", total=len(body)))
+    cut_notice = "\n\n" + adapter._ea_escape(t(f"gateway.exec_approval.{key}", total=len(command)))
     capped = bool(adapter._EA_CARD_CAP)
-    # The budgets below measure _EA_HEADER's fixed frame; the MCP headline differs in length, and a
-    # cap-edge card would overflow its platform cap without the delta.
-    mcp_delta = len(header) - len(adapter._EA_HEADER)
+    # The budgets below measure ``_EA_HEADER``'s fixed frame; a different headline would overflow a cap-edge
+    # card without the delta.
+    header_delta = len(header) - len(adapter._EA_HEADER)
     if capped:  # the reason gives way first: the deadline line and the cut notice always stay on the card
         room = (adapter._exec_approval_cmd_budget("", smart_denied) - adapter.message_len_fn(cut_notice)
-                - mcp_delta)
+                - header_delta)
         description = adapter._ea_fit(str(description or ""), max(0, room - _EA_MIN_PREVIEW - len("...")))
     # A ``` inside the shown preview would close a markdown fence early; a longer fence holds it, and its
     # extra backticks come out of the preview budget.
-    base = adapter._exec_approval_cmd_budget(description, smart_denied) - mcp_delta
+    base = adapter._exec_approval_cmd_budget(description, smart_denied) - header_delta
 
     def fit(fence: str) -> str:
         budget = base - 2 * (len(fence) - 3)
-        preview = adapter._ea_fit(body, budget)
-        if preview == body:
+        preview = adapter._ea_fit(command, budget)
+        if preview == command:
             return preview
         # The notice shares the cap the budget was sized for; a tiny fixed budget keeps half its preview.
         left = budget - adapter.message_len_fn(cut_notice)
-        return adapter._ea_fit(body, max(left, 0) if capped else max(left, budget // 2))
+        return adapter._ea_fit(command, max(left, 0) if capped else max(left, budget // 2))
 
-    preview, fence = fit_fenced(body, fit)
-    truncated = preview != body or args_cut
+    preview, fence = fit_fenced(command, fit)
+    truncated = preview != command or args_cut
     notice = cut_notice if truncated else ""
     code_open, code_close = (part.replace("```", fence, 1) for part in (adapter._EA_CODE_OPEN, adapter._EA_CODE_CLOSE))
     text = (f"{header}"

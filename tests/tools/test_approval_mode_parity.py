@@ -56,12 +56,11 @@ def _write_config(home, yaml_text: str | None) -> None:
     else:
         cfg.write_text(yaml_text, encoding="utf-8")
 
-# (config yaml, expected mode, expected timeout); DEFAULT_TIMEOUT is the unset-config value
-DEFAULT_TIMEOUT = 300
+# (config yaml, expected mode, expected timeout)
 CASES = [
-    pytest.param(None, "smart", DEFAULT_TIMEOUT, id="unset-defaults"),
+    pytest.param(None, "smart", 300, id="unset-defaults"),
     pytest.param(
-        "approvals:\n  mode: manual\n", "manual", DEFAULT_TIMEOUT, id="global-manual"
+        "approvals:\n  mode: manual\n", "manual", 300, id="global-manual"
     ),
     pytest.param(
         "approvals:\n  mode: smart\n  timeout: 120\n",
@@ -80,11 +79,11 @@ CASES = [
     pytest.param(
         "approvals:\n  mode: bogus-value\n  timeout: not-a-number\n",
         "manual",
-        DEFAULT_TIMEOUT,
+        300,
         id="malformed-values",
     ),
     pytest.param(
-        "approvals:\n  mode: '  Smart  '\n", "smart", DEFAULT_TIMEOUT, id="whitespace-case"
+        "approvals:\n  mode: '  Smart  '\n", "smart", 300, id="whitespace-case"
     ),
 ]
 

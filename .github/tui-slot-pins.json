@@ -30,12 +30,14 @@
     "gateway.event": {
       "plugin": "tui-lane",
       "reason": "a command that ran on the session's bound thread echoes its output into the local transcript",
-      "sha": "3907c1b1c415cd15bd2711fce5d7e1c8099d365e7ecad031ac95a288ed94d979",
-      "snapshot_commit": "921a2db03c476c2a6a1fa089836a6d4669464b8a",
+      "sha": "b5a44638f1cfa59659e66f85d2bc1c424dfdd7eb29d04336cf942c09c5626a29",
+      "snapshot_commit": "6b9d984dafd202120e867f4689c889d40ab43bbb",
       "snapshot_kind": "fork-core",
-      "symbols": [],
+      "symbols": [
+        "createGatewayEventHandler"
+      ],
       "target_file": "ui-tui/src/app/createGatewayEventHandler.ts",
-      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915"
     },
     "inputHandlers": {
       "plugin": "tui-input",

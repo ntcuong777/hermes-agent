@@ -68,11 +68,11 @@ async def test_exec_approval_content_stays_within_discord_cap_for_long_reason():
 
 
 @pytest.mark.asyncio
-async def test_exec_approval_view_outlives_its_approval_wait_with_request_id(monkeypatch):
+async def test_exec_approval_view_honors_discord_timeout_with_request_id(monkeypatch):
     import hermes_cli.config
-    approvals = {"timeout": 7200, "discord_prompt_timeout": 3600}
-    monkeypatch.setattr(hermes_cli.config, "read_raw_config", lambda: {"approvals": approvals})
-    monkeypatch.setattr("tools.approval_context._get_approval_config", lambda: approvals)
+    monkeypatch.setattr(hermes_cli.config, "read_raw_config", lambda: {
+        "approvals": {"timeout": 7200, "discord_prompt_timeout": 3600},
+    })
     adapter = DiscordAdapter(PlatformConfig(enabled=True, token="***"))
     sent = _capture_channel(adapter)
 
@@ -82,8 +82,7 @@ async def test_exec_approval_view_outlives_its_approval_wait_with_request_id(mon
     )
 
     assert result.success
-    # The card answers a 7200 s wait: a shorter discord_prompt_timeout only ever extends it.
-    assert sent["view"].timeout == 7200
+    assert sent["view"].timeout == 3600
     assert sent["view"].request_id == "request-1"
 
 

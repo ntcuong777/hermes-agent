@@ -639,8 +639,8 @@ def _broadcast_global_event(event: str, payload: dict | None = None, *, skip=fro
 def _approval_request_payload(data: dict | None) -> dict:
     """Build the client-safe representation of a pending approval."""
     payload = dict(data or {})
-    from tools.approval_mcp import arguments_cut
-    if arguments_cut(payload.get("mcp")):
+    from tools.approval_context_seam import mcp_deny_only
+    if mcp_deny_only(payload.get("mcp")):
         payload["choices"] = ["deny"]  # a call nobody could read whole is never approved
     if "choices" not in payload:
         choices = ["once"]
@@ -651,9 +651,6 @@ def _approval_request_payload(data: dict | None) -> dict:
         payload["choices"] = choices + ["deny"]
     from gateway.run import _redact_approval_command  # description too: consent prompts carry MCP/vault text
     payload.update({k: _redact_approval_command(payload[k]) for k in ("command", "description") if k in payload})
-    if isinstance(payload.get("mcp"), dict):  # same display boundary: redact the card's MCP context text
-        payload["mcp"] = {k: (_redact_approval_command(v) if isinstance(v, str) else v)
-                          for k, v in payload["mcp"].items()}
     return payload
 
 

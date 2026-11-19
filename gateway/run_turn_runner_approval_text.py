@@ -16,17 +16,17 @@ from agent.i18n import t
 
 
 def approval_text_prompt(adapter: Any, chat_id: str, session_key: str, request_id: str | None, command: str,
-                         description: str, prefix: str, **flags: bool) -> str:
+                         description: str, prefix: str, mcp: dict | None = None, **flags: bool) -> str:
     """The plain-text approval prompt for ``adapter``. An adapter that splits long messages gets the
     default layout; one whose send cuts text gets ``_cutting_text_prompt``, and when even that cannot
     show the whole command the request is marked Deny-only like a card that could not."""
     from gateway.platforms.base_exec_approval import send_cannot_prove_whole
     from gateway.run import _format_exec_approval_fallback
     if getattr(adapter, "splits_long_messages", True):
-        text = _format_exec_approval_fallback(command, description, prefix, **flags)
+        text = _format_exec_approval_fallback(command, description, prefix, mcp=mcp, **flags)
         if not send_cannot_prove_whole(adapter, chat_id, text):  # a capped split drops the instructions too
             return text
-    text, deny_only = _cutting_text_prompt(adapter, chat_id, command, description, prefix, **flags)
+    text, deny_only = _cutting_text_prompt(adapter, chat_id, command, description, prefix, mcp=mcp, **flags)
     if deny_only:
         from tools.approval import restrict_gateway_approval_card_to_deny
         restrict_gateway_approval_card_to_deny(session_key, request_id)
@@ -39,21 +39,15 @@ def _cutting_text_prompt(adapter: Any, chat_id: str, command: str, description: 
     """``(prompt, deny_only)``: instructions and deadline ahead of the command, so a cut can only
     shorten the command; when the whole prompt does not fit, a shortened command and Deny alone.
     LINE has no ``MAX_MESSAGE_LENGTH``, so its 4096 default is used: conservative, never cut.
-    ``mcp`` (the structured MCP tool-call context) swaps the header for the server/tool headline and
-    leads the fenced body with the tool description."""
+    ``mcp`` (the structured MCP context) is what the approval-card plugin words the prompt from."""
     from gateway.platforms.base import fit_prefix
     from gateway.platforms.base_exec_approval import (
-        approval_card_parts, approval_timeout_seconds, code_fence, ea_header_text, ea_mcp_header_text,
-        fit_fenced, ea_reason_label_text, format_approval_deadline_line)
+        approval_card_parts, approval_timeout_seconds, code_fence, fit_fenced, ea_reason_label_text,
+        format_approval_deadline_line, text_card_heading)
     limit = adapter.max_message_length_for_chat(chat_id)
     measure = adapter.message_len_fn_for_chat(chat_id)
-    body, description = approval_card_parts(command, description, mcp)
-    if smart_denied:
-        heading = t("gateway.exec_approval.smart_deny_heading")
-    elif mcp:
-        heading = f"⚠️ **{ea_mcp_header_text(str(mcp.get('server') or ''), str(mcp.get('tool') or ''))}**"
-    else:
-        heading = f"⚠️ **{ea_header_text()}**"
+    command, description = approval_card_parts(command, description, mcp)
+    heading = t("gateway.exec_approval.smart_deny_heading") if smart_denied else text_card_heading(mcp)
 
     def prompt(choices: list[str], notice: str, shown: str, fence: str) -> str:
         instructions = (t("gateway.exec_approval.text_choice_joiner").join(choices[:-1])
@@ -67,17 +61,17 @@ def _cutting_text_prompt(adapter: Any, chat_id: str, command: str, description: 
         if allow_permanent:
             choices.append(t("gateway.exec_approval.text_choice_always", prefix=prefix))
     choices.append(t("gateway.exec_approval.text_choice_deny", prefix=prefix))
-    full = prompt(choices, "", body, code_fence(body))
+    full = prompt(choices, "", command, code_fence(command))
     if measure(full) <= limit:
         return full, False
     deny = [t("gateway.exec_approval.text_choice_deny", prefix=prefix)]
     # The whole command fits beside Deny alone but not beside every choice: say so, not "shortened".
-    whole = prompt(deny, t("gateway.exec_approval.text_prompt_deny_only") + "\n", body, code_fence(body))
+    whole = prompt(deny, t("gateway.exec_approval.text_prompt_deny_only") + "\n", command, code_fence(command))
     if measure(whole) <= limit:
         return whole, True
-    notice = t("gateway.exec_approval.truncated_deny_only", total=len(body)) + "\n"
+    notice = t("gateway.exec_approval.truncated_deny_only", total=len(command)) + "\n"
     # The fence is sized from the shortened command, so it always closes within the cut; the budget stays
     # under the whole command so the "shortened" notice is never shown beside the full text.
-    shown, fence = fit_fenced(body, lambda fence: fit_prefix(body, max(0, min(
-        measure(body) - 1, limit - measure(prompt(deny, notice, "", fence)) - measure("..."))), measure))
+    shown, fence = fit_fenced(command, lambda fence: fit_prefix(command, max(0, min(
+        measure(command) - 1, limit - measure(prompt(deny, notice, "", fence)) - measure("..."))), measure))
     return prompt(deny, notice, shown, fence), True

@@ -59,7 +59,7 @@
     },
     "statusRule": {
       "file": "ui-tui/src/components/appChrome.tsx",
-      "host": ["ink", "react", "app/delegationStore", "app/interfaces", "app/overlayStore", "app/turnStore", "config/env", "content/faces", "content/verbs", "domain/messages", "domain/viewport", "i18n/runtime", "lib/statusUsage", "lib/subagentTree", "lib/viewportStore", "appTheme", "types", "components/overlayPrimitives", "shared/format", "shared/gateway-events", "pkg/@nanostores/react", "pkg/unicode-animations"],
+      "host": ["ink", "react", "app/delegationStore", "app/interfaces", "app/overlayStore", "app/turnStore", "config/env", "content/faces", "content/verbs", "domain/messages", "domain/viewport", "i18n/runtime", "lib/subagentTree", "lib/viewportStore", "appTheme", "types", "components/overlayPrimitives", "shared/format", "shared/gateway-events", "pkg/@nanostores/react", "pkg/unicode-animations"],
       "kind": "component",
       "props": 1,
       "summary": "The status bar rule (fork: medium effort shown, plugin segments, stash count)",
@@ -75,7 +75,7 @@
     },
     "inputHandlers": {
       "file": "ui-tui/src/app/useInputHandlers.ts",
-      "host": ["ink", "react", "pkg/@nanostores/react", "config/env", "config/timing", "i18n/runtime", "lib/platform", "lib/precisionWheel", "lib/wheelAccel", "sdk/host", "app/agentRoster", "app/backtrackStore", "app/inputSelectionStore", "app/interfaces", "app/keybinds", "app/overlayStore", "app/pasteStore", "app/serverRequestStore", "app/stashCounts", "app/turnController", "app/turnStore", "app/uiStore", "shared/gateway-canonical", "shared/gateway-types", "shared/slash-input"],
+      "host": ["ink", "react", "pkg/@nanostores/react", "config/env", "config/timing", "i18n/runtime", "lib/platform", "lib/precisionWheel", "lib/wheelAccel", "sdk/host", "app/agentRoster", "app/backtrackStore", "app/inputSelectionStore", "app/interfaces", "app/keybinds", "app/overlayStore", "app/pasteStore", "app/serverRequestStore", "app/turnController", "app/turnStore", "app/uiStore", "shared/gateway-canonical", "shared/gateway-types", "shared/slash-input"],
       "kind": "hook",
       "props": 1,
       "summary": "The composer key handlers (fork: Ctrl+C order, double-Esc doc, Ctrl+G raw, completion apply at caret)",
@@ -111,7 +111,7 @@
       "kind": "hook",
       "props": 1,
       "summary": "Every gateway event before the stock switch (the lane relay echoes command.output)",
-      "symbols": []
+      "symbols": ["createGatewayEventHandler"]
     }
   }
 }

@@ -32,13 +32,13 @@ class PendingControls:
                       'command': _redact_approval_command(data.get('command', '')),
                       'description': _redact_approval_command(data.get('description', '')),
                       'choices': choices}
-            if isinstance(data.get('mcp'), dict):  # structured MCP tool-call context for the approval card
-                prompt['mcp'] = {k: (_redact_approval_command(v) if isinstance(v, str) else v)
-                                 for k, v in data['mcp'].items()}
+            if isinstance(data.get('mcp'), dict):  # structured MCP card context; the approval-card plugin built it redacted
+                prompt['mcp'] = dict(data['mcp'])
             if 'edit' in data:
                 prompt['edit'] = deepcopy(data['edit'])
                 prompt['choices'] = ['once', 'deny']
-            if isinstance(data.get('mcp'), dict) and data['mcp'].get('arguments_cut'):
+            from tools.approval_context_seam import mcp_deny_only
+            if isinstance(data.get('mcp'), dict) and mcp_deny_only(data['mcp']):
                 prompt['choices'] = ['deny']  # the arguments were cut: nobody approves a call they could not read
             if timeout_s is not None:
                 prompt['timeout_s'] = timeout_s

@@ -14,20 +14,6 @@ from gateway.platforms.base import BasePlatformAdapter, ExecApprovalPrompt, Send
 from gateway.run_turn_runner import _renders_exec_approval_buttons
 
 
-@pytest.fixture(autouse=True)
-def _fork_locales():
-    """The MCP header wording ships in the fork-locales plugin, not in locales/en.yaml."""
-    from pathlib import Path
-
-    from agent import i18n_layers
-
-    pack = Path("/private/etc/nix-darwin/.worktrees/core-surface-all/hermes/plugins/fork-locales/locales/en.yaml")
-    entry = i18n_layers.register_pack("en", i18n_layers.CORE_SURFACE, i18n_layers.parse_locale_file(pack),
-                                      source="fork-locales")
-    yield
-    i18n_layers.unregister_pack(entry)
-
-
 class _Plain(BasePlatformAdapter):
     def __init__(self):
         super().__init__(PlatformConfig(enabled=True), Platform.TELEGRAM)
@@ -88,43 +74,6 @@ async def test_command_is_truncated_to_the_platform_budget():
     assert "x" * 10 + "..." in prompt.text and "x" * 11 not in prompt.text  # half: the rest is the notice
     assert "Preview shortened" in prompt.text
     assert prompt.command == "x" * 100  # the raw command stays available for embeds/cards
-
-
-@pytest.mark.asyncio
-async def test_mcp_context_swaps_headline_and_leads_with_tool_description():
-    """An MCP tool-call approval says which server wants to run which tool, leads the body with
-    the tool description, and keeps the command text (notices + arguments) — instead of the
-    generic 'run a command' chrome. The raw context rides the prompt for native cards."""
-    adapter = _Buttons()
-    mcp = {"server": "linear", "tool": "create_issue",
-           "tool_description": "Create an issue in a repository",
-           "arguments": '{\n  "title": "x"\n}'}
-    await adapter.send_exec_approval(
-        "chat", "MCP tool 'create_issue' on UNTRUSTED server 'linear' wants to run.\n\nArguments:\n{...}",
-        "sess", description="Server 'linear' is configured 'trust: untrusted'.", mcp=mcp)
-    (prompt,) = adapter.prompts
-    assert "MCP server 'linear' wants to run tool 'create_issue'" in prompt.text
-    assert "Hermes wants to run a command" not in prompt.text
-    body = prompt.text.split("\n\n", 1)[1]  # after the headline: fenced body, then reason/deadline
-    assert body.index("Create an issue in a repository") < body.index("wants to run")
-    assert prompt.mcp == mcp
-
-
-@pytest.mark.asyncio
-async def test_mcp_headline_length_shift_does_not_overflow_the_platform_budget():
-    """The budget helpers measure the generic header's frame; a longer MCP headline must shrink
-    the body budget by the delta or a cap-edge card overflows its platform cap."""
-    class _Small(_Buttons):
-        _EA_CMD_BUDGET = 40
-
-    adapter = _Small()
-    mcp = {"server": "a-very-long-server-name", "tool": "a_tool_with_a_long_name"}
-    await adapter.send_exec_approval("chat", "y" * 200, "sess", mcp=mcp)
-    (prompt,) = adapter.prompts
-    headline = "MCP server 'a-very-long-server-name' wants to run tool 'a_tool_with_a_long_name'"
-    assert headline in prompt.text
-    # 40-char body budget minus the headline delta: the body still fits, cut, never the frame.
-    assert len(prompt.text) < len(headline) + 200
 
 
 def test_runner_only_offers_buttons_to_adapters_that_render_them():

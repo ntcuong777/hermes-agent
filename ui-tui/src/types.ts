@@ -97,17 +97,6 @@ export interface DelegationStatus {
   paused: boolean
 }
 
-/** Structured MCP tool-call context on an approval (contract `ApprovalMcpContext`): the card
- *  renders a tool-call panel instead of command chrome. */
-export interface ApprovalMcpContext {
-  server: string
-  tool: string
-  tool_description?: string | null
-  arguments?: string | null
-  /** The arguments were cut even in the structured context: only Deny is offered. */
-  arguments_cut?: boolean
-}
-
 export interface ApprovalReq {
   sharedControl?: SharedControl
   // false when the backend won't honor a permanent allow → hide "Always allow".
@@ -115,7 +104,6 @@ export interface ApprovalReq {
   choices?: string[]
   command: string
   description: string
-  mcp?: ApprovalMcpContext
   /** Server→client request id; the answer is the response frame for it. */
   requestId: string
   smartDenied?: boolean
@@ -265,8 +253,6 @@ export interface PanelSection {
 export interface SlashCatalog {
   canon: Record<string, string>
   categories: SlashCategory[]
-  /** Chords plugins declared as defaults (`alt+s` -> `/stash toggle`); `display.tui_keybinds` overrides. */
-  keybinds?: Record<string, string>
   pairs: [string, string][]
   skillCount: number
   sub: Record<string, string[]>

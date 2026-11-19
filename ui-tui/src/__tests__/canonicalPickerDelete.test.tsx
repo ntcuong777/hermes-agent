@@ -133,9 +133,7 @@ it('keeps a refused delete on screen past the live-status poll', async () => {
     })
     out.text = ''
     instance.rerender(React.cloneElement(element))
-    // The busy refusal is rewritten for people (describeRpcError) but still names the running reply.
-    await vi.waitFor(() => expect(out.text).toContain('error: A reply is still running in this chat'))
-    expect(out.text).not.toContain('session_busy')
+    await vi.waitFor(() => expect(out.text).toContain('error: session_busy'))
     expect(out.text).toContain('1 resumable')
   } finally {
     instance.unmount()

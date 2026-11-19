@@ -11,7 +11,6 @@ import {
   hydrateLiveSessionInflight,
   liveSessionInflightMessages,
   signalFreshSessionBoundary,
-  workspaceCwdParams,
   writeActiveSessionFile
 } from '../app/useSessionLifecycle.js'
 
@@ -93,15 +92,5 @@ describe('live session activation in-flight state', () => {
 
     expect(turnController.bufRef).toBe('')
     expect(getTurnState().streaming).toBe('')
-  })
-})
-
-describe('workspaceCwdParams', () => {
-  it('marks a deliberate pick explicit and ignores an empty one', () => {
-    expect(workspaceCwdParams('/home/u/proj')).toEqual({ cwd: '/home/u/proj', cwd_explicit: true })
-    expect(workspaceCwdParams('  /x  ')).toEqual({ cwd: '/x', cwd_explicit: true })
-    expect(workspaceCwdParams('')).toEqual({})
-    expect(workspaceCwdParams('   ')).toEqual({})
-    expect(workspaceCwdParams(undefined)).toEqual({})
   })
 })

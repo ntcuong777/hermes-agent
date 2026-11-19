@@ -143,40 +143,27 @@ export const pickersEn = {
       },
       noOtherSessions: 'no other sessions — Enter on +new to start one',
       promptLabel: 'prompt › ',
-      filterLabel: 'find › ',
-      workspaceLabel: 'workspace › ',
       // {0} = the draft model label (short model id or `currentOrDefault`).
       draftModel: (label: string) => `model: ${label}`,
-      // {0} = the workspace directory the next +new session will be created in.
-      draftWorkspace: (label: string) => `workspace: ${label}`,
       selectNewPrefix: 'Select ',
       newRowMarker: '+new',
       selectNewSuffix: ' to type a prompt',
-      // {0} = the active filter query.
-      noMatches: (query: string) => `no sessions match "${query}"`,
       // Hint fragments are concatenated with hotkey tokens in code, so the
       // leading/trailing spaces and ` · ` separators are part of each leaf.
-      // Exception: `find` is line-final on the row-context hints, where the
-      // switcher injects the ` · ` separator itself (filterHintSuffixSegments).
       hint: {
         resumableLabel: 'Resumable:',
         resume: ' resume · ',
         delete: ' delete',
-        allSessions: ' all sessions · ',
-        thisWorkspace: ' this workspace · ',
         newRowLabel: 'New row:',
         typePrompt: ' type prompt · ',
         start: ' start · ',
-        model: ' model · ',
-        workspace: ' workspace',
+        model: ' model',
         sessionRowLabel: 'Session row:',
         switch: ' switch · ',
         close: ' close',
         move: ' move · ',
-        find: ' find',
         new: ' new · ',
-        refresh: ' refresh · ',
-        clearBack: ' clear/back'
+        refresh: ' refresh · '
       }
     },
     pet: {

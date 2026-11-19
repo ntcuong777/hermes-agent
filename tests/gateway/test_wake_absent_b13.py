@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[2]
 UPSTREAM_BLOBS = {
     "gateway/session_automation.py": "ae9e68d71f02188609fbba1eccdc5af11827f3ef",
     "gateway/session_ingress_context.py": "6910153a1a2693cdc0cb992e3ac0cdc7abafba7b",
-    "gateway/session_local_recovery.py": "ca8a206b10e31fd6422e8ea91110515ceef42c0f",
+    "gateway/session_local_recovery.py": "36fac0df2ea37dfa0419b8bcba4ab4b270648575",
     "gateway/run_notifications.py": "bd274aea9319ef9c811e8f47963ade2245f6c946",
 }
 

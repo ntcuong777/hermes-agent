@@ -58,12 +58,6 @@ export const userMessagesEn = {
         'This chat has child sessions (such as subagent runs) that deleting it would remove too, so it was not deleted.',
       notConnected:
         'Hermes is not connected right now, so that was not sent. It reconnects automatically; wait a moment and try again, or type /logs if this persists.',
-      /** The runtime store's CAS refusal (revision_conflict): the chat moved between the control's read and its commit. */
-      sessionChanged:
-        'The chat changed while that was being applied (a message, a command or an edit landed first), so nothing was changed. Try it again.',
-      /** session_busy from the runtime store: a turn is executing or its outcome is unknown. */
-      sessionBusy:
-        'A reply is still running in this chat, so that was not applied. Wait for it to finish, then try again.',
       /** `{0}` = timeout in seconds. */
       timedOut: (secs: string) =>
         `Hermes did not answer within ${secs}s. Try again; if it keeps happening, type /logs and report the last lines.`,

@@ -16,6 +16,10 @@ export const DEFAULT_LOCALE = 'en'
 export const $locale = atom<string>(DEFAULT_LOCALE)
 export const $catalog = atom<Translations>(en)
 
+// fork: tui extension host. The English tree extensions add to or override (`registerBaseMessages`); `en` stays upstream's.
+let base: Translations = en
+let activePack: Record<string, string> | undefined
+
 /** Fill `{0}`, `{1}`… from `args`; unknown indices are left as-is so a pack
  *  with a stray placeholder degrades to visible text, not `undefined`. */
 export function formatPositional(template: string, args: readonly unknown[]): string {
@@ -110,10 +114,10 @@ export function nestPack(base: unknown, messages: Record<string, string>): Recor
 /** Merge a pack (flat dotted map) over the bundled English catalog. */
 export function catalogFromPack(messages: Record<string, string> | undefined): Translations {
   if (!messages || Object.keys(messages).length === 0) {
-    return en
+    return base
   }
 
-  return mergeTranslations<Translations>(en, nestPack(en, messages) as TranslationOverride<Translations>)
+  return mergeTranslations<Translations>(base, nestPack(base, messages) as TranslationOverride<Translations>)
 }
 
 /** Install a language: `pack` may be null when the backend has no TUI strings
@@ -121,8 +125,19 @@ export function catalogFromPack(messages: Record<string, string> | undefined): T
  *  that locale id. */
 export function applyLocale(lang: string, pack: CatalogPack | null | undefined): void {
   $locale.set(lang || DEFAULT_LOCALE)
+  activePack = pack?.messages
   $catalog.set(catalogFromPack(pack?.messages))
 }
+
+/** An extension's English messages, merged over the bundled tree (a leaf it names replaces the bundled one). */
+export function registerBaseMessages(tree: unknown): void {
+  base = mergeTranslations<Translations>(base, tree as TranslationOverride<Translations>)
+  $catalog.set(catalogFromPack(activePack))
+}
+
+const baseRegistry = globalThis as { __hermesRegisterBaseMessages?: typeof registerBaseMessages }
+
+baseRegistry.__hermesRegisterBaseMessages = registerBaseMessages // fork: tui extension host
 
 export function resetLocale(): void {
   applyLocale(DEFAULT_LOCALE, null)
@@ -135,5 +150,5 @@ export const messages = (): Translations => $catalog.get()
 
 /** Resolve one key for non-React code. Function-valued leaves take `args`. */
 export function t(key: TranslationKey, ...args: unknown[]): string {
-  return translateFrom(locale => (locale === DEFAULT_LOCALE ? en : $catalog.get()), $locale.get(), key, args)
+  return translateFrom(locale => (locale === DEFAULT_LOCALE ? base : $catalog.get()), $locale.get(), key, args)
 }

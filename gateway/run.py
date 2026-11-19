@@ -583,15 +583,10 @@ def _format_exec_approval_fallback(
     steps a surface without buttons needs. The command is never cut: ``/approve`` must only ever
     answer a command the user could read in full (#62359)."""
     from gateway.platforms.base_exec_approval import (
-        approval_card_parts, approval_timeout_seconds, code_fence, ea_header_text, ea_mcp_header_text,
-        ea_reason_label_text, format_approval_deadline_line)
+        approval_card_parts, approval_timeout_seconds,
+        format_approval_deadline_line, text_card_body, text_card_heading)
     body, reason = approval_card_parts(command, description, mcp)
-    if smart_denied:
-        heading = t("gateway.exec_approval.smart_deny_heading")
-    elif mcp:
-        heading = f"⚠️ **{ea_mcp_header_text(str(mcp.get('server') or ''), str(mcp.get('tool') or ''))}**"
-    else:
-        heading = f"⚠️ **{ea_header_text()}**"
+    heading = t("gateway.exec_approval.smart_deny_heading") if smart_denied else text_card_heading(mcp)
 
     from gateway.platforms.base_exec_approval import mcp_arguments_cut
     args_cut = mcp_arguments_cut(mcp)
@@ -601,13 +596,7 @@ def _format_exec_approval_fallback(
         if allow_permanent:
             choices.append(t("gateway.exec_approval.text_choice_always", prefix=command_prefix))
     choices.append(t("gateway.exec_approval.text_choice_deny", prefix=command_prefix))
-    # The locale's template wraps the command in a fixed ``` fence; the body (a plugin's URL, path or command,
-    # model-controlled) may itself hold backticks, so the fence is sized to it.
-    marker = "\0BODY\0"
-    text = t("gateway.exec_approval.text_body", heading=heading, command=marker,
-             reason_label=ea_reason_label_text(), reason=reason)
-    fence = code_fence(body)
-    text = text.replace(f"```\n{marker}\n```", f"{fence}\n{body}\n{fence}", 1)
+    text = text_card_body(heading, body, reason)
     if args_cut:  # only Deny: say why, then how
         return (text + t("gateway.exec_approval.truncated_deny_only", total=len(body)) + "\n"
                 + choices[-1].capitalize() + ".\n" + format_approval_deadline_line(approval_timeout_seconds()))

@@ -12,6 +12,7 @@ import { t } from '../i18n/runtime.js'
 import { appendToolShelfMessage, isToolShelfMessage } from '../lib/liveProgress.js'
 import { hasReasoningTag, splitReasoning } from '../lib/reasoning.js'
 import { rpcErrorMessage } from '../lib/rpc.js'
+import { filterValue } from '../sdk/ext/filters.js' // fork: tui extension host
 import {
   boundedLiveRenderText,
   estimateTokensRough,
@@ -399,12 +400,7 @@ class TurnController {
         }
       } catch (error) {
         if (isActiveTurn()) {
-          // A structured refusal (stale_generation, session_busy) keeps its wire
-          // reason: the advice in describeRpcError's rewrites ("try again",
-          // "wait for it to finish") is control-mutation advice, and here the
-          // user is interrupting exactly the thing it names.
-          const refusal = (error as { data?: { reason?: unknown } } | null)?.data?.reason
-          sys(t('canonical.submit.interruptFailed', typeof refusal === 'string' ? refusal : rpcErrorMessage(error)))
+          sys(t('canonical.submit.interruptFailed', filterValue('interrupt.failure', rpcErrorMessage(error), { error }))) // fork: tui extension host
         }
 
         return

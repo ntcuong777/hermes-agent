@@ -1,5 +1,55 @@
 {
   "pins": {
+    "approval-card/card-body": {
+      "ast_sha": "c5189fcba7cd5e5c686aa7bcdf132c67cc2c1fabed74ce056ff529d9065abb29",
+      "kind": "replace",
+      "plugin": "approval-card",
+      "reason": "text fallback fence sized to the body, a fork fix kept as a plugin patch",
+      "target": "gateway.platforms.base_exec_approval:text_card_body",
+      "target_file": "gateway/platforms/base_exec_approval.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "approval-card/card-header": {
+      "ast_sha": "34dc71e1344ff4d6f4f1a3927d4e3fcafb2e2a3126f3f73067c01527aaedc1ee",
+      "kind": "replace",
+      "plugin": "approval-card",
+      "reason": "an MCP approval card is headlined with the server and tool, in the adapter's markup",
+      "target": "gateway.platforms.base_exec_approval:card_header",
+      "target_file": "gateway/platforms/base_exec_approval.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "approval-card/card-heading": {
+      "ast_sha": "f3bcb4a31db2e27fdac35e9e145f9283ce11d6f64971ac613b25e7ee3657cf32",
+      "kind": "replace",
+      "plugin": "approval-card",
+      "reason": "the typed-reply approval prompt is headlined with the MCP server and tool",
+      "target": "gateway.platforms.base_exec_approval:text_card_heading",
+      "target_file": "gateway/platforms/base_exec_approval.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "approval-card/card-parts": {
+      "ast_sha": "621bed851a8c3c40e95597009a5ae71620fa683947ab12c76cb0a0cbfc6382c3",
+      "kind": "replace",
+      "plugin": "approval-card",
+      "reason": "an approval card shows the reason's detail lines and an MCP call's tool description and full arguments in its body",
+      "target": "gateway.platforms.base_exec_approval:approval_card_parts",
+      "target_file": "gateway/platforms/base_exec_approval.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "approval-card/mcp-deny-only": {
+      "ast_sha": "b911ba473de03dd0c8c2ab33fb330c6e03b1eca921b0f3836a23c8e6b6b9216c",
+      "kind": "replace",
+      "plugin": "approval-card",
+      "reason": "one plugin-owned rule for a cut MCP context on every surface; core stub is upstream (False)",
+      "target": "tools.approval_context_seam:mcp_deny_only",
+      "target_file": "tools/approval_context_seam.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
     "approval-card/mcp-describe": {
       "ast_sha": "957e6ba17994682b4fd7c1bc57a2ffaf15a54018ee3df0d7a747c3dea0458c12",
       "kind": "replace",
@@ -91,12 +141,22 @@
       "upstream_release": "0.23.2"
     },
     "config-seams/model-route": {
-      "ast_sha": "de3165a10548c5641d090b80ab37cfde6a9602ff672483e679fd1aa0489b131f",
+      "ast_sha": "76d70cb639adadb564522543b64dcd1f12434dc734bdc6ae49ef9f7b4b0ae66f",
       "kind": "replace",
       "plugin": "config-seams",
-      "reason": "A messaging model switch writes gateway.model, and a CLI switch writes the host file when one exists",
+      "reason": "persist_routed_selection takes the route as **route (core passes none); surface and reasoning_effort now come from model-route-args",
       "target": "hermes_cli.model_switch:persist_routed_selection",
       "target_file": "hermes_cli/model_switch.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "config-seams/model-route-args": {
+      "ast_sha": "df1d5106399d3217ce0a65ef1bd0ebdbb0e294efba2380e844f572602ccf7796",
+      "kind": "replace",
+      "plugin": "config-seams",
+      "reason": "core _persist_route seam returns {}; the plugin supplies surface and reasoning_effort so core calls persist_model_selection exactly as upstream",
+      "target": "gateway.slash_commands_model:_persist_route",
+      "target_file": "gateway/slash_commands_model.py",
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.23.2"
     },
@@ -317,6 +377,36 @@
       "reason": "A Discord approval card stays up until the approval wait ends",
       "target": "plugins.platforms.discord.adapter_config_readers:_read_exec_approval_view_timeout",
       "target_file": "plugins/platforms/discord/adapter_config_readers.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "discord-click-answers/card-ids": {
+      "ast_sha": "a12aab72c7cea9b9eb7a17a37fb9ebf6e4acdb7699ae2e813607613acf050288",
+      "kind": "wrap",
+      "plugin": "discord-click-answers",
+      "reason": "remember which messages are approval cards so the orphan note can say no longer pending",
+      "target": "plugins.platforms.discord.adapter:DiscordAdapter._send_exec_approval_prompt",
+      "target_file": "plugins/platforms/discord/adapter.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "discord-click-answers/click-error": {
+      "ast_sha": "42aa9d393ad25e1e3bf93ae428ad922d3b76950a232d3ca6da67bce280cd3afb",
+      "kind": "replace",
+      "plugin": "discord-click-answers",
+      "reason": "a Discord approval callback that raised before the ack answers the clicker",
+      "target": "plugins.platforms.discord.adapter_exec_approval_view:_on_click_error",
+      "target_file": "plugins/platforms/discord/adapter_exec_approval_view.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "discord-click-answers/orphan-click": {
+      "ast_sha": "4ed9a45f4b1acb2b34dbfe773fa96c8b5d2564b6565b8ece456fe6561aefde3f",
+      "kind": "replace",
+      "plugin": "discord-click-answers",
+      "reason": "a Discord button click with no live view gets an ephemeral note, not interaction failed",
+      "target": "plugins.platforms.discord.adapter:DiscordAdapter._on_component_interaction",
+      "target_file": "plugins/platforms/discord/adapter.py",
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.23.2"
     },
@@ -611,14 +701,14 @@
       "upstream_release": "0.22.5"
     },
     "lane-mirror/settle-register": {
-      "ast_sha": "679b32defaac5579bbf8f0e7dc9e48d2abf59c486f7acc34b30fa81ff978ca70",
+      "ast_sha": "05fa7f57c49d05fb47748d2705d7c67c602606cd19eb87d2ca880e09b13e4c43",
       "kind": "wrap",
       "plugin": "lane-mirror",
-      "reason": "An approval answered anywhere (a platform card tap, /approve in the thread, a timeout) is withdrawn from every attached viewer at once (approval settle). The target also carries the fork's MCP card and idle-approval lines (not drift).",
+      "reason": "PendingControls.register no longer redacts the mcp context (the card plugin builds it redacted) and asks the mcp_deny_only seam",
       "target": "gateway.session_pending_controls:PendingControls.register",
       "target_file": "gateway/session_pending_controls.py",
-      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
-      "upstream_release": "0.22.5"
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
     },
     "lane-mirror/viewer-finish": {
       "ast_sha": "fd38c1882aa7e72c1ad359698396e3e9f00d200812d3fc1bd570b0802f825535",

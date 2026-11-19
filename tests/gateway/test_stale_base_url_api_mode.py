@@ -124,43 +124,12 @@ _STALE_MODEL_CFG = {
 async def test_typed_switch_to_custom_clears_stale_base_url_and_api_mode(tmp_path, monkeypatch):
     """Switching to a custom provider whose resolver returns no base_url/
     api_mode must clear the previous custom endpoint's leftovers, not keep
-    routing at the old host/protocol (#25107).
-
-    Fork surface contract: a messaging ``--global`` switch writes
-    ``gateway.model.*`` and leaves the CLI's ``model.*`` alone, so the
-    stale-endpoint regression is asserted on the CLI surface below; the
-    messaging surface's own block never carries ``base_url``/``api_mode``.
-    """
+    routing at the old host/protocol (#25107)."""
     cfg_path = _setup_isolated_home(tmp_path, monkeypatch, dict(_STALE_MODEL_CFG))
 
     result = await _make_runner()._handle_model_command(
         _make_event("/model local-llama --provider custom --global")
     )
-
-    assert result is not None
-    written = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-    assert written["gateway"]["model"]["default"] == "local-llama"
-    assert "base_url" not in written["gateway"]["model"], (
-        "the messaging switch's block never carries a base_url"
-    )
-    assert "api_mode" not in written["gateway"]["model"]
-    # The messaging switch does not own model.*: the stale CLI block is left untouched.
-    assert written["model"]["default"] == "old-custom-model"
-
-
-@pytest.mark.asyncio
-async def test_cli_surface_switch_clears_stale_base_url_and_api_mode(tmp_path, monkeypatch):
-    """The #25107 regression on the surface that owns ``model.*``: a LOCAL
-    switch to a custom provider with an empty resolved ``base_url`` must clear
-    the old endpoint's ``base_url``/``api_mode`` instead of leaving them."""
-    cfg_path = _setup_isolated_home(tmp_path, monkeypatch, dict(_STALE_MODEL_CFG))
-    event = MessageEvent(
-        text="/model local-llama --provider custom --global",
-        message_type=MessageType.TEXT,
-        source=SessionSource(platform=Platform.LOCAL, chat_id="local", chat_type="dm"),
-    )
-
-    result = await _make_runner()._handle_model_command(event)
 
     assert result is not None
     written = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
@@ -188,9 +157,8 @@ async def _drive_picker(runner, event):
 
 @pytest.mark.asyncio
 async def test_picker_tap_to_custom_clears_stale_base_url_and_api_mode(tmp_path, monkeypatch):
-    """Same regression, picker-tap path (#25107). Messaging writes
-    ``gateway.model.*`` (never ``base_url``/``api_mode``); ``model.*`` stays
-    untouched because the messaging switch does not own it.
+    """Same bug, picker-tap path: tapping a custom-provider model with an
+    empty resolved base_url must clear the previous custom endpoint (#25107).
     """
     adapter = _FakePickerAdapter()
     cfg_path = _setup_isolated_home(tmp_path, monkeypatch, dict(_STALE_MODEL_CFG))
@@ -199,7 +167,5 @@ async def test_picker_tap_to_custom_clears_stale_base_url_and_api_mode(tmp_path,
 
     assert confirmation is not None
     written = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-    assert written["gateway"]["model"]["default"] == "local-llama"
-    assert "base_url" not in written["gateway"]["model"]
-    assert "api_mode" not in written["gateway"]["model"]
-    assert "base_url" in written["model"]  # the CLI block is the CLI surface's to clear
+    assert "base_url" not in written["model"]
+    assert "api_mode" not in written["model"]

@@ -24,6 +24,7 @@ import { t } from '../i18n/runtime.js'
 import { launchRouteServes, localCreationOptions } from '../launchOptions.js'
 import { migratePendingInputs } from '../lib/pendingInputs.js'
 import { asRpcResult } from '../lib/rpc.js'
+import { filterValue } from '../sdk/ext/filters.js' // fork: tui extension host
 import type { Msg, PanelSection } from '../types.js'
 
 import { noteBackgroundHandoff } from './backgroundSessionNotices.js'
@@ -41,21 +42,6 @@ import { describeCredentialWarning } from './userMessages.js'
 export { refreshSessionView, scheduleResumeScrollToBottom } from './sessionResumeView.js'
 
 const usageFrom = (info: null | SessionInfo): Usage => (info?.usage ? { ...ZERO, ...info.usage } : ZERO)
-
-/** `session.create` params for a deliberate workspace pick on the `+new` row.
- *  `cwd_explicit` (#52589) is the provenance flag: only an explicit pick beats
- *  the profile's `terminal.cwd`; the launch-time workspace (HERMES_TUI_CWD)
- *  deliberately stays non-explicit. Empty/whitespace = no pick. */
-export interface SessionCreateCwdParams {
-  cwd: string
-  cwd_explicit: true
-}
-
-export const workspaceCwdParams = (cwd?: string): SessionCreateCwdParams | Record<string, never> => {
-  const picked = cwd?.trim()
-
-  return picked ? { cwd: picked, cwd_explicit: true } : {}
-}
 
 const statusFromLiveSession = (status?: string, running = false) => {
   if (status === 'waiting') {
@@ -437,7 +423,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
   )
 
   const startNewSession = useCallback(
-    async (msg?: string, title?: string, keepCurrent = false, cwd?: string) => {
+    async (msg?: string, title?: string, keepCurrent = false) => {
       const flight = ++attachmentFlight.current
       const previousSid = getUiState().sid
       const previousSubscription = releasedOnLeave(previousSid, canonicalSubscriptions.current, keepCurrent)
@@ -466,13 +452,9 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
           return null
         }
 
-        // A deliberate pick on the +new row wins over everything (cwd_explicit);
-        // otherwise HERMES_TUI_CWD is the dashboard-picked workspace: an explicit
-        // cwd on session.create on both transports, so /new stays in that workspace.
-        const workspaceCwd = {
-          ...(STARTUP_WORKSPACE_CWD ? { cwd: STARTUP_WORKSPACE_CWD } : {}),
-          ...workspaceCwdParams(cwd)
-        }
+        // HERMES_TUI_CWD is the dashboard-picked workspace: an explicit cwd on
+        // session.create on both transports, so /new stays in that workspace.
+        const workspaceCwd = filterValue('session.create.cwd', STARTUP_WORKSPACE_CWD ? { cwd: STARTUP_WORKSPACE_CWD } : {}) // fork: tui extension host
 
         const r = await rpc<SessionCreateResponse>(
           'session.create',
@@ -580,10 +562,10 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
   )
 
   const newLiveSession = useCallback(
-    (msg = t('session.lifecycle.newLiveSessionStarted'), title?: string, cwd?: string) => {
+    (msg = t('session.lifecycle.newLiveSessionStarted'), title?: string) => {
       patchOverlayState({ sessions: false })
 
-      return startNewSession(msg, title, true, cwd)
+      return startNewSession(msg, title, true)
     },
     [startNewSession]
   )
