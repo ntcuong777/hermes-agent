@@ -10,6 +10,16 @@
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.23.2"
     },
+    "approval-idle/idle-delivery": {
+      "ast_sha": "805107a1650599b63bd09ddcd608e125e3e4ac62fdb5b80e5f41373a5a36f5d5",
+      "kind": "replace",
+      "plugin": "approval-idle",
+      "reason": "A background child's approval ask uses the out-of-turn lane",
+      "target": "tools.approval:_gateway_idle_delivery",
+      "target_file": "tools/approval.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
     "chat-workspaces/cwd-help": {
       "ast_sha": "382de1c8527252af535006380950dd861c057b700cf6aa5a88426875d941c357",
       "kind": "wrap",
@@ -29,6 +39,16 @@
       "target_file": "plugins/platforms/discord/adapter.py",
       "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
       "upstream_release": "0.22.5"
+    },
+    "compress-off-loop/ws-runs-apart": {
+      "ast_sha": "a237bf2454ef4443585567e6ccadbd38eca56566ddd651f557d847d288c56d09",
+      "kind": "replace",
+      "plugin": "compress-off-loop",
+      "reason": "A session.mutate compress runs off the WebSocket read loop",
+      "target": "tui_gateway.ws:_runs_apart",
+      "target_file": "tui_gateway/ws.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
     },
     "config-seams/compress-ack": {
       "ast_sha": "db24fd8886f6e0a115d7bedbf229fca37a3b2dbadccb6548db5adf7231d6fa89",
@@ -279,6 +299,76 @@
       "target_file": "hermes_cli/terminal_notify.py",
       "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
       "upstream_release": "0.22.5"
+    },
+    "discord-approval-wait/discord-approval-wait": {
+      "ast_sha": "0d8be575a705be61183665ecc33aab6dd52f31be10158c9f631c2052aea7475d",
+      "kind": "replace",
+      "plugin": "discord-approval-wait",
+      "reason": "A Discord approval card stays up until the approval wait ends",
+      "target": "plugins.platforms.discord.adapter_config_readers:_read_exec_approval_view_timeout",
+      "target_file": "plugins/platforms/discord/adapter_config_readers.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "execute-preview/execute-preview": {
+      "ast_sha": "c5372bde65ceccf44e3aa2ffe50b253f7d02a299a44d54da4d8834ade2897f37",
+      "kind": "replace",
+      "plugin": "execute-preview",
+      "reason": "A long execute_code script is saved beside the approval text",
+      "target": "tools.approval:_execute_code_command",
+      "target_file": "tools/approval.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "external-supervisor/supervisor-declared": {
+      "ast_sha": "5479e3ca3fae3ce5e59fd905c0ef288201a4f799cabdd717fa85b3c27961ec0c",
+      "kind": "replace",
+      "plugin": "external-supervisor",
+      "reason": "gateway.external_supervisor names the service that owns the gateway",
+      "target": "hermes_cli.gateway_declared_supervisor:declared_external_supervisor",
+      "target_file": "hermes_cli/gateway_declared_supervisor.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "external-supervisor/supervisor-note": {
+      "ast_sha": "3302b624feda33dbedd88b33d706263e5d238b62f5f235bb9e9af378777b9232",
+      "kind": "replace",
+      "plugin": "external-supervisor",
+      "reason": "Setup says Hermes installs no second gateway service",
+      "target": "hermes_cli.gateway_declared_supervisor:note_externally_supervised",
+      "target_file": "hermes_cli/gateway_declared_supervisor.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "external-supervisor/supervisor-offer": {
+      "ast_sha": "d6eff6bb13dd71c43da242800f9c0553227eb947a5d3ceb74859160ee242b1dc",
+      "kind": "replace",
+      "plugin": "external-supervisor",
+      "reason": "The setup wizard offers a restart through the external supervisor",
+      "target": "hermes_cli.gateway_declared_supervisor:offer_restart_through_supervisor",
+      "target_file": "hermes_cli/gateway_declared_supervisor.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "external-supervisor/supervisor-stop": {
+      "ast_sha": "9d7e227789265889fcfd4fc2eda3a364d09c1650b14fc8bc67a2d7a05082239e",
+      "kind": "replace",
+      "plugin": "external-supervisor",
+      "reason": "Install stops when an external supervisor is declared",
+      "target": "hermes_cli.gateway_declared_supervisor:stop_if_declared",
+      "target_file": "hermes_cli/gateway_declared_supervisor.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "hook-chain/hook-chain": {
+      "ast_sha": "803882cbdf5e4b0c55338e78b9afc2f93f8b6dcbd5ad64bbd655287e1f79dea9",
+      "kind": "replace",
+      "plugin": "hook-chain",
+      "reason": "A rewrite hook feeds each accepted return into the next callback",
+      "target": "hermes_cli.plugins_dispatch:invoke_hook_chained",
+      "target_file": "hermes_cli/plugins_dispatch.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
     },
     "lane-mirror/forward-list-titled": {
       "ast_sha": "3a407cd28c63c8e755d77b58c728215db8b4cb34662803b3358c81bd875d33db",
@@ -620,6 +710,16 @@
       "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
       "upstream_release": "0.22.5"
     },
+    "request-messages/request-messages": {
+      "ast_sha": "92e6616435f6c13a3144c97ab9a0f78c56b0dd22a901cfd03dba68e78644c7b8",
+      "kind": "replace",
+      "plugin": "request-messages",
+      "reason": "Chained transform_request_messages rewrites the outgoing request copy",
+      "target": "agent.conversation_loop:_apply_transform_request_messages_plugins",
+      "target_file": "agent/conversation_loop.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
     "skills-staging/replay-apply-pending": {
       "ast_sha": "a036a1fc7df52a19ec3a619daa42f96f6bdf29b5098f6127277a52eaab3d2e92",
       "kind": "replace",
@@ -737,6 +837,56 @@
       "reason": "The child and the start event carry the route profile",
       "target": "tools.delegate_tool:_stamp_child_profile",
       "target_file": "tools/delegate_tool.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "trailing-commands/cli-dispatch-trailing": {
+      "ast_sha": "4b5d8813e8b363fe76053c3b808ef5da24e74e63c124878d6d2890c42b73ccb2",
+      "kind": "replace",
+      "plugin": "trailing-commands",
+      "reason": "Peeled slash commands run in order after the skill instruction",
+      "target": "cli:dispatch_trailing_commands",
+      "target_file": "cli.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "trailing-commands/cli-dispatchable": {
+      "ast_sha": "8fd8701ec193ab533c9294cf18687c80dbbdedae1fa6f0469fb61a3305e1a3f7",
+      "kind": "replace",
+      "plugin": "trailing-commands",
+      "reason": "A whole-line bare slash token is a command the CLI can run",
+      "target": "cli:is_dispatchable_command_line",
+      "target_file": "cli.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "trailing-commands/cli-split-trailing": {
+      "ast_sha": "8daeb6a2eda92772346c424209782167ca991b0a136fd7b1e1c3e2ebafed571e",
+      "kind": "replace",
+      "plugin": "trailing-commands",
+      "reason": "Bare slash commands on the tail of a skill instruction are peeled off",
+      "target": "cli:split_trailing_command_lines",
+      "target_file": "cli.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "yolo-exempt/yolo-exempt-mark": {
+      "ast_sha": "cbc3d66c94c9a30fdc6e32b41dc8bc0a16b822e75938c272d352a34d925056e0",
+      "kind": "replace",
+      "plugin": "yolo-exempt",
+      "reason": "A yolo_exempt marker is an exception, including a garbled one",
+      "target": "hermes_cli.plugins:_is_yolo_exempt",
+      "target_file": "hermes_cli/plugins.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "yolo-exempt/yolo-exempt-prefer": {
+      "ast_sha": "4047e84edbcee2d0d8c4071be65374bae96871aa26ae3e8df487e9a99023250d",
+      "kind": "replace",
+      "plugin": "yolo-exempt",
+      "reason": "A yolo-exempt approve wins over an earlier routine approve",
+      "target": "hermes_cli.plugins:_prefer_approve",
+      "target_file": "hermes_cli/plugins.py",
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.23.2"
     }

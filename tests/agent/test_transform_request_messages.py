@@ -17,7 +17,27 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from agent.conversation_loop import _apply_transform_request_messages_plugins
+
+
+@pytest.fixture(autouse=True)
+def _install_request_chain(monkeypatch):
+    import sys
+    from pathlib import Path
+    plugins = Path("/private/etc/nix-darwin/.worktrees/core-surface-all/hermes/plugins")
+    sys.path[:0] = [str(plugins / "request-messages"), str(plugins / "hook-chain")]
+    import rc_chain
+    import rc_request
+    import agent.conversation_loop as loop
+    rc_chain.install(monkeypatch)
+    rc_request.install(monkeypatch)
+    monkeypatch.setattr(
+        sys.modules[__name__],
+        "_apply_transform_request_messages_plugins",
+        loop._apply_transform_request_messages_plugins,
+    )
 
 
 REQUEST = [

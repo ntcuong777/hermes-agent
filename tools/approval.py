@@ -21,7 +21,7 @@ from typing import Any, Iterable, Optional
 
 from utils import env_var_enabled, is_truthy_value
 from agent.i18n import t
-from tools import approval_context, approval_idle
+from tools import approval_context
 from tools.approval_context import (
     _get_session_platform, _is_cron_approval_context,
     _is_gateway_approval_context, _is_interactive_cli, _is_single_query_approval_context,
@@ -1026,21 +1026,8 @@ def _smart_gate(spec: _GateSpec, command: str, description: str, pattern_key: st
 
 
 def _gateway_idle_delivery(session_key: str) -> tuple[object, bool]:
-    """Who delivers a gateway ask for *session_key*, and whether the entry must survive the turn.
-
-    ``(turn notifier, False)`` is the plain path. A background child's ask (the opt-in idle
-    context) outlives the parent's turn, so it is flagged idle even when the turn notifier is
-    live — the flag is what keeps the turn-end sweep from withdrawing an ask nobody answered
-    yet. With no turn notifier, the out-of-turn lane is the delivery path when a viewer could
-    see the card.
-    """
-    notify_cb = _gateway_notify_cb(session_key)
-    if not approval_idle.idle_ask_allowed():
-        return notify_cb, False
-    if notify_cb is None:
-        lane = approval_idle.idle_notify_for(session_key)
-        return (lane, True) if lane is not None else (None, False)
-    return notify_cb, True
+    """Seam. approval-idle delivers a background child's ask. Absent, the turn notifier is used."""
+    return _gateway_notify_cb(session_key), False
 
 
 def _human_decision(spec: _GateSpec, *, command: str, description: str,
@@ -1528,38 +1515,9 @@ _EXECUTE_CODE_DESCRIPTION = (
 )
 
 
-#: The Ink approval panel shows about 10 wrapped lines and then points "above", where only a one-line preview
-#: ever is. A longer script is saved for the person to read in full before approving (P21).
-_EXECUTE_CODE_VIEW_LINES = 8
-_EXECUTE_CODE_VIEW_KEEP = 30
-
-
 def _execute_code_command(code: str) -> str:
-    """The approval text of a script: ``execute_code <<'PY' ... PY``. A script longer than the panel is also
-    saved, redacted like the panel text, as ``<hermes home>/approvals/execute_code-<hash>.py`` (private, the
-    newest ``_EXECUTE_CODE_VIEW_KEEP`` kept) and the FIRST line names it: the first line is always visible,
-    whatever the panel cuts. Any failure leaves the plain text: approval never depends on this file."""
-    lines = code.count("\n") + 1
-    head = "execute_code <<'PY'"
-    if lines > _EXECUTE_CODE_VIEW_LINES:
-        try:
-            from pathlib import Path
-            from agent.redact import redact_sensitive_text
-            from hermes_constants import get_hermes_home
-            shown = redact_sensitive_text(code, force=True)  # first: a failing redactor writes nothing
-            root = Path(get_hermes_home()) / "approvals"
-            root.mkdir(mode=0o700, parents=True, exist_ok=True)
-            path = root / f"execute_code-{hashlib.sha256(code.encode('utf-8')).hexdigest()[:12]}.py"
-            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                handle.write(shown)
-            newest_first = sorted(root.glob("execute_code-*.py"), key=lambda p: p.stat().st_mtime_ns, reverse=True)
-            for stale in newest_first[_EXECUTE_CODE_VIEW_KEEP:]:
-                stale.unlink(missing_ok=True)
-            head += f"  # {lines} lines; full script: {path}"
-        except Exception:
-            logger.debug("execute_code approval: could not save the full script", exc_info=True)
-    return f"{head}\n{code}\nPY"
+    """Seam. execute-preview saves a long script beside the approval text. Absent, the text is the script."""
+    return f"execute_code <<'PY'\n{code}\nPY"
 
 
 def _is_local_viewer_turn() -> bool:

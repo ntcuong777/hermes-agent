@@ -253,6 +253,12 @@ def resolve_plugin_command_result(result: Any) -> Any:
     return outcome.get("value")
 
 
+def invoke_hook_chained(manager, hook_name: str, chain_key: str, *, accept=None, **kwargs):
+    """Seam. runtime-custom replaces this and chains rewrite hooks. Absent, no rewrite."""
+    del manager, hook_name, chain_key, accept, kwargs
+    return None
+
+
 class PluginDispatchMixin:
     @staticmethod
     def _hook_callback_kwargs(callback: Callable, payload: dict[str, Any]) -> dict[str, Any]:
@@ -335,8 +341,7 @@ class PluginDispatchMixin:
         self, hook_name: str, chain_key: str, *, accept: Optional[Callable[[Any], bool]] = None,
         **kwargs: Any,
     ) -> Any:
-        """Seam. The chain lives in ``hermes_cli.fork_hooks``."""
-        from hermes_cli.fork_hooks import invoke_hook_chained
+        """Seam. runtime-custom chains rewrite hooks. Absent, there is no rewrite."""
         return invoke_hook_chained(self, hook_name, chain_key, accept=accept, **kwargs)
 
     def _report_hook_failure(

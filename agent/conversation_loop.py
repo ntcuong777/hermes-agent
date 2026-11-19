@@ -1377,9 +1377,9 @@ def _apply_context_engine_selection(
 
 
 def _apply_transform_request_messages_plugins(agent, api_messages, *, logger):
-    """Seam. The chain lives in ``agent.fork_request_messages``."""
-    from agent.fork_request_messages import apply_transform_request_messages
-    return apply_transform_request_messages(agent, api_messages, logger=logger)
+    """Seam. runtime-custom runs transform_request_messages. Absent, the list is unchanged."""
+    del agent, logger
+    return api_messages
 
 
 def _notify_context_engine_turn_complete(

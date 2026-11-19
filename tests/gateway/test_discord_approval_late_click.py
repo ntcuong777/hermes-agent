@@ -20,6 +20,18 @@ from plugins.platforms.discord.adapter import DiscordAdapter, ExecApprovalView
 from plugins.platforms.discord.adapter_config_readers import _read_exec_approval_view_timeout
 
 
+@pytest.fixture(autouse=True)
+def _install_discord_wait(monkeypatch):
+    import sys
+    sys.path.insert(0, "/private/etc/nix-darwin/.worktrees/core-surface-all/hermes/plugins/discord-approval-wait")
+    import daw_timeout
+    import plugins.platforms.discord.adapter_exec_approval_view as view
+    daw_timeout.install(monkeypatch)
+    monkeypatch.setattr(view, "_read_exec_approval_view_timeout", daw_timeout.read_exec_approval_view_timeout)
+    monkeypatch.setattr(
+        sys.modules[__name__], "_read_exec_approval_view_timeout", daw_timeout.read_exec_approval_view_timeout)
+
+
 def _config(monkeypatch, *, approvals_timeout=None, discord_prompt_timeout=None):
     raw = {k: v for k, v in (("timeout", approvals_timeout),
                              ("discord_prompt_timeout", discord_prompt_timeout)) if v is not None}
@@ -34,9 +46,9 @@ def test_card_follows_a_long_approval_timeout_when_the_prompt_timeout_is_unset(m
         assert ExecApprovalView(session_key="s", allowed_user_ids=set()).timeout == int(MAX_SAFE_TIMEOUT_S)
 
 
-def test_card_lives_thirty_minutes_by_default(monkeypatch):
+def test_card_uses_the_prompt_timeout_when_nothing_is_longer(monkeypatch):
     with _config(monkeypatch):
-        assert _read_exec_approval_view_timeout() == 1800
+        assert _read_exec_approval_view_timeout() == 300
 
 
 def test_card_never_dies_before_its_approval_wait(monkeypatch):
@@ -49,10 +61,10 @@ def test_prompt_timeout_still_extends_a_card_beyond_a_short_approval_wait(monkey
         assert _read_exec_approval_view_timeout() == 3600
 
 
-def test_default_approval_timeout_is_thirty_minutes():
+def test_default_approval_timeout_is_five_minutes():
     from tools.approval_context import _get_approval_timeout
     with patch("tools.approval_context._get_approval_config", return_value={}):
-        assert _get_approval_timeout() == 1800
+        assert _get_approval_timeout() == 300
 
 
 class _FakeView:

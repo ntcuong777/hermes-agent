@@ -5,7 +5,20 @@
  * as the multi-line argument bug (#41323, #55510) reaches desktop and TUI at
  * once instead of landing in whichever copy the reporter happened to use.
  */
-import { forkPrefillAck, parseForkCommandDispatch } from './slash-fork.js'
+/** Extensions register parsers for dispatch types upstream does not know. */
+export type CommandDispatchParser = (row: Record<string, unknown>) => CommandDispatchResponse | null
+
+const extraParsers: CommandDispatchParser[] = []
+
+export function registerCommandDispatchParser(parser: CommandDispatchParser): void {
+  extraParsers.push(parser)
+}
+
+const globalRegistry = globalThis as {
+  __hermesRegisterCommandDispatch?: typeof registerCommandDispatchParser
+}
+
+globalRegistry.__hermesRegisterCommandDispatch = registerCommandDispatchParser
 
 /** A slash COMMAND invocation: `/` at position 0, a bare name, then whitespace
  *  or end. `/usr/local` (second slash) and `run /clean` (not at 0) are prose. */
@@ -121,7 +134,7 @@ export function parseCommandDispatch(raw: unknown): CommandDispatchResponse | nu
 
     case 'prefill':
       return typeof row.message === 'string'
-        ? { ack: forkPrefillAck(row), message: row.message, notice: str(row.notice), type: 'prefill' }
+        ? { ack: str(row.ack), message: row.message, notice: str(row.notice), type: 'prefill' }
         : null
 
     case 'send':
@@ -134,7 +147,16 @@ export function parseCommandDispatch(raw: unknown): CommandDispatchResponse | nu
         ? { display: str(row.display), message: str(row.message), name: row.name, type: 'skill' }
         : null
 
-    default:
-      return parseForkCommandDispatch(row)
+    default: {
+      for (const parse of extraParsers) {
+        const parsed = parse(row)
+
+        if (parsed) {
+          return parsed
+        }
+      }
+
+      return null
+    }
   }
 }

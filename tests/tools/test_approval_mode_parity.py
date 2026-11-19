@@ -57,7 +57,7 @@ def _write_config(home, yaml_text: str | None) -> None:
         cfg.write_text(yaml_text, encoding="utf-8")
 
 # (config yaml, expected mode, expected timeout); DEFAULT_TIMEOUT is the unset-config value
-DEFAULT_TIMEOUT = 1800
+DEFAULT_TIMEOUT = 300
 CASES = [
     pytest.param(None, "smart", DEFAULT_TIMEOUT, id="unset-defaults"),
     pytest.param(

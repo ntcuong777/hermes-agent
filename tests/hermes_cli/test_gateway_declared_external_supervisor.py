@@ -21,6 +21,14 @@ def _boom(*_a, **_k):
     raise AssertionError("an install step ran although a supervisor is declared")
 
 
+@pytest.fixture(autouse=True)
+def _install_supervisor(monkeypatch):
+    import sys
+    sys.path.insert(0, "/private/etc/nix-darwin/.worktrees/core-surface-all/hermes/plugins/external-supervisor")
+    import rc_supervisor
+    rc_supervisor.install(monkeypatch)
+
+
 @pytest.fixture
 def declare(tmp_path, monkeypatch):
     """Point HERMES_HOME at a tmp dir and let a test write its config.yaml."""

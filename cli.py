@@ -880,6 +880,23 @@ from hermes_cli.cli_chat_turn_mixin import CLIChatTurnMixin
 _PASTE_REF_RE = re.compile(r'\[Pasted text #\d+: \d+ lines \u2192 (.+?)\]')
 
 
+def split_trailing_command_lines(cli, instruction: str) -> tuple[str, list[str]]:
+    """Seam. runtime-custom peels bare /command lines. Absent, the text stays the instruction."""
+    del cli
+    return (instruction or "").strip(), []
+
+
+def is_dispatchable_command_line(cli, line: str) -> bool:
+    """Seam. Absent, no line is peeled."""
+    del cli, line
+    return False
+
+
+def dispatch_trailing_commands(cli, commands: list[str]) -> None:
+    """Seam. Absent, peeled commands are not run."""
+    del cli, commands
+
+
 class HermesCLI(CLIBacktrackMixin, CLIInitMixin, CLITuiRuntimeMixin, CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin, CLITuiMixin, CLIStatusBarMixin, CLIVoiceMixin, CLIModelSwitchMixin, CLISessionMixin, CLIStreamMixin, CLIModalMixin, CLITerminalMixin, CLIInfoMixin, CLILoopsMixin, CLIChatTurnMixin):
     """Interactive REPL for the Hermes Agent."""
 
@@ -1301,15 +1318,12 @@ class HermesCLI(CLIBacktrackMixin, CLIInitMixin, CLITuiRuntimeMixin, CLIProcessN
             self._pending_input.put(msg)
 
     def _split_trailing_command_lines(self, instruction: str) -> tuple[str, list[str]]:
-        from hermes_cli.cli_trailing_commands import split_trailing_command_lines
         return split_trailing_command_lines(self, instruction)
 
     def _is_dispatchable_command_line(self, line: str) -> bool:
-        from hermes_cli.cli_trailing_commands import is_dispatchable_command_line
         return is_dispatchable_command_line(self, line)
 
     def _dispatch_trailing_commands(self, commands: list[str]) -> None:
-        from hermes_cli.cli_trailing_commands import dispatch_trailing_commands
         dispatch_trailing_commands(self, commands)
 
     def _run_skill_bundle_command(self, base_cmd: str, bundle_info: dict, user_instruction: str) -> None:

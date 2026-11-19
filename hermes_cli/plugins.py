@@ -1163,12 +1163,15 @@ class _PreToolCallDirective:
 
 
 def _is_yolo_exempt(result: dict[str, Any]) -> bool:
-    """Whether an ``approve`` result opts out of the yolo bypass (``"yolo_exempt": True``).
+    """Seam. yolo-exempt treats a marker as an exception. Absent, no approve is exempt."""
+    del result
+    return False
 
-    Fail closed: absent, ``None`` or ``False`` mean routine; ANY other value (``True``, ``"yes"``,
-    a malformed non-bool) is treated as exempt, so a garbled marker can never turn an exception
-    into a silent yolo auto-approval."""
-    return result.get("yolo_exempt", None) not in (None, False)
+
+def _prefer_approve(held, message, rule_key, exempt):
+    """Seam. The first approve wins. yolo-exempt prefers an exempt approve over an earlier routine one."""
+    del message, rule_key, exempt
+    return held
 
 
 def set_thread_tool_whitelist(
@@ -1233,9 +1236,10 @@ def _get_pre_tool_call_directive_details(
         # approve is held back until the whole list has been scanned for a veto; a yolo-exempt
         # approve displaces an earlier routine one.
         exempt = _is_yolo_exempt(result)
-        if first_approve is None or (exempt and not first_approve[2]):
-            rule_key = result.get("rule_key")
-            first_approve = (message, (rule_key.strip() or None) if isinstance(rule_key, str) else None, exempt)
+        rule_key = result.get("rule_key")
+        candidate = (message, (rule_key.strip() or None) if isinstance(rule_key, str) else None, exempt)
+        chosen = _prefer_approve(first_approve, *candidate)
+        first_approve = candidate if first_approve is None else chosen
     if first_approve is not None:
         return _PreToolCallDirective(action="approve", message=first_approve[0], rule_key=first_approve[1],
                                      modified_args=modified_args, yolo_exempt=first_approve[2])

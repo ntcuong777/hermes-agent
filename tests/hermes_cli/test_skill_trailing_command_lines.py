@@ -9,8 +9,31 @@ stays instruction text.
 
 from unittest.mock import patch
 
+import pytest
+
 import cli as cli_mod
 from tests.hermes_cli.test_cli_init import _make_cli
+
+
+@pytest.fixture(autouse=True)
+def _install_trailing(monkeypatch):
+    """Re-apply after ``_make_cli``, which reloads ``cli`` and restores the stubs."""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, "/private/etc/nix-darwin/.worktrees/core-surface-all/hermes/plugins/trailing-commands")
+    import tests.hermes_cli.test_cli_init as init
+    import rc_cli
+
+    real = init._make_cli
+
+    def wrapped(*args, **kwargs):
+        cli = real(*args, **kwargs)
+        rc_cli.install(monkeypatch)
+        return cli
+
+    monkeypatch.setattr(init, "_make_cli", wrapped)
+    globals()["_make_cli"] = wrapped
+    rc_cli.install(monkeypatch)
 
 
 def _skill_cli(monkeypatch, queued):
