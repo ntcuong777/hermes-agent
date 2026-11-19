@@ -36,32 +36,15 @@ from tools.tool_output_truncate import head_tail_split, truncation_notice
 
 logger = logging.getLogger(__name__)
 
-# Loopback TCP replaces AF_UNIX on Windows, so execute_code runs on every platform Hermes does.
-SANDBOX_AVAILABLE = True
-
-# Built-in default for the tools allowed inside the sandbox; ∩ the session's enabled tools decides which
-# stubs are generated. ``code_execution.allowed_tools`` in config.yaml replaces it (``sandbox_allowed_tools``).
+# Tools allowed inside the sandbox; ∩ the session's enabled tools decides which stubs are generated.
 SANDBOX_ALLOWED_TOOLS = frozenset([
     "web_search", "web_extract", "read_file", "write_file", "search_files", "patch", "terminal",
 ])
 
-# Never offered to a script, whatever the config says: a script that re-enters execute_code stacks kernels.
-_NEVER_IN_SANDBOX = frozenset({"execute_code"})
-
 
 def sandbox_allowed_tools() -> frozenset:
-    """Tools a script may import from ``hermes_tools``: ``code_execution.allowed_tools`` (an explicit list
-    REPLACES the default), else ``SANDBOX_ALLOWED_TOOLS``. Unset, empty or malformed falls back to the
-    default (malformed with a warning). A tool without a hand-written stub gets a generic
-    ``name(**kwargs)`` one; a name the session cannot reach is simply not importable."""
-    raw = _load_config().get("allowed_tools")
-    if raw is None or raw == []:
-        return SANDBOX_ALLOWED_TOOLS
-    if not isinstance(raw, (list, tuple)):
-        logger.warning("Ignoring code_execution.allowed_tools=%r (expected a list of tool names)", raw)
-        return SANDBOX_ALLOWED_TOOLS
-    names = {str(n).strip() for n in raw if str(n).strip()} - _NEVER_IN_SANDBOX
-    return frozenset(names) or SANDBOX_ALLOWED_TOOLS
+    """Seam. core-fixes reads code_execution.allowed_tools. Absent, the built-in set."""
+    return SANDBOX_ALLOWED_TOOLS
 
 
 # Resource limit defaults (overridable via config.yaml → code_execution.*)
@@ -180,31 +163,17 @@ def _missing_hermes_tools_import_hint(m, enabled_tools) -> str:
                 "and retry with reset=true.")
     available = sorted(_sandbox_tools_for(enabled_tools))
     available_text = ", ".join(available) or "none"
-    if _is_registered_tool(missing):
-        return (f"'{missing}' is a Hermes tool but is not importable inside execute_code. "
-                f"Importable tools here: {available_text}. Call it as a normal tool call; if it is not "
-                f"in your tool list, go through tool_call: tool_call(calls=[{{\"name\": \"{missing}\", "
-                "\"arguments\": {...}}]). To make it importable, add its name to "
-                "code_execution.allowed_tools in config.yaml.")
     return (f"'{missing}' is not available inside the execute_code sandbox. "
             f"Importable tools here: {available_text}. For anything "
             "else, use the normal tool call instead of execute_code.")
-
-
-def _is_registered_tool(name: str) -> bool:
-    try:
-        from tools.registry import registry
-        return registry.get_entry(name) is not None
-    except Exception:
-        logger.debug("tool registry probe failed for %s", name, exc_info=True)
-        return False
 
 
 # (regex, formatter(match, enabled_tools)) — first match wins. Production mining (state.db) ranked
 # these as the top execute_code failure classes: hermes_tools import misuse, missing helper
 # imports, treating tool results as strings, importing third-party packages absent from the sandbox.
 _FAILURE_HINT_RULES = (
-    (r"cannot import name '(\w+)' from 'hermes_tools'", _missing_hermes_tools_import_hint),
+    (r"cannot import name '(\w+)' from 'hermes_tools'",
+     lambda m, enabled: _missing_hermes_tools_import_hint(m, enabled)),
     (r"NameError: name '(json_parse|shell_quote|retry)' is not defined",
      lambda m, _: f"Import {m.group(1)} before calling it: "
                   f"from hermes_tools import {m.group(1)}"),
@@ -234,35 +203,15 @@ def _sandbox_failure_hint(stderr_text: str, enabled_tools=None) -> Optional[str]
     return None
 
 
-def _rpc_wait_seconds() -> float:
-    """How long a stub waits for one tool result: the host's human-wait ceiling (a call parked on an
-    approval answers only when its human does) plus the old 300 s tool budget. Shorter would make the
-    stub give up on a call the host is still legitimately waiting on."""
-    try:
-        from tools.approval_human_wait import human_wait_ceiling
-        return float(human_wait_ceiling()) + 300.0
-    except Exception:
-        return 300.0
-
-
 def generate_hermes_tools_module(enabled_tools: list[str],
                                  transport: str = "uds") -> str:
     """Source of the hermes_tools.py stub module for SANDBOX_ALLOWED_TOOLS ∩ *enabled_tools*.
     ``transport``: ``"uds"`` (local socket client) or ``"file"`` (file RPC, remote backends)."""
     header = _FILE_TRANSPORT_HEADER if transport == "file" else _UDS_TRANSPORT_HEADER
-    header = header.replace("__RPC_WAIT_S__", repr(_rpc_wait_seconds()))
-    wanted, allowed = set(enabled_tools), sandbox_allowed_tools()
-    stubs = [
+    return header + "\n".join(
         f"def {name}({sig}):\n    {doc}\n    return _call({name!r}, {args_expr})\n"
-        for name, (sig, doc, args_expr) in sorted(_TOOL_STUBS.items()) if name in wanted and name in allowed
-    ]
-    # A configured tool with no hand-written stub: keyword arguments as in its own schema.
-    stubs += [
-        f"def {name}(**kwargs):\n    \"\"\"Hermes tool: keyword arguments as in its schema. Returns its result, parsed.\"\"\"\n"
-        f"    return _call({name!r}, kwargs)\n"
-        for name in sorted((wanted & allowed) - set(_TOOL_STUBS)) if name.isidentifier()
-    ]
-    return header + "\n".join(stubs)
+        for name, (sig, doc, args_expr) in sorted(_TOOL_STUBS.items()) if name in set(enabled_tools)
+    )
 
 
 # ---- Shared helpers section (embedded in both transport headers) ----------
@@ -344,20 +293,8 @@ def _connect():
         else:
             _sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             _sock.connect(endpoint)
-        # Covers a call parked on a human approval; the host's cell deadline is the real bound.
-        _sock.settimeout(__RPC_WAIT_S__)
+        _sock.settimeout(300)
     return _sock
-
-def _peer_gone(conn):
-    """True when the server already closed an idle connection (EOF or error pending), so the request
-    can be sent on a fresh socket instead of a dead one."""
-    import select
-    try:
-        if not select.select([conn], [], [], 0)[0]:
-            return False
-        return conn.recv(1, socket.MSG_PEEK) == b""
-    except (OSError, ValueError):
-        return True
 
 def _call(tool_name, args):
     """Send a tool call to the parent process and return the parsed result."""
@@ -366,21 +303,26 @@ def _call(tool_name, args):
         "args": args,
         "token": os.environ.get("HERMES_RPC_TOKEN", ""),
     }) + "\\n"
-    # Session kernels outlive the RPC server's 300s idle window, so their connection can be
-    # legitimately gone by the next cell. The server re-accepts (HERMES_RPC_PERSISTENT=1); a stale
-    # socket is detected and replaced BEFORE the request goes out, and a connect/send failure is
-    # retried once on a fresh socket. Once the request has been sent it is never re-sent: the host
-    # serves RPC serially, so a retry would dispatch the (possibly approval-gated) call twice.
+    # Session kernels outlive the RPC server's 300s idle window, so their
+    # connection can be legitimately gone by the next cell. The server
+    # re-accepts (HERMES_RPC_PERSISTENT=1); retry once on a fresh socket.
     _attempts = 2 if os.environ.get("HERMES_RPC_PERSISTENT") == "1" else 1
-    global _sock
     with _call_lock:
         for _attempt in range(_attempts):
             try:
                 conn = _connect()
-                if _attempt == 0 and _attempts > 1 and _peer_gone(conn):
-                    raise ConnectionResetError("stale RPC connection")
                 conn.sendall(request.encode())
-            except OSError:
+                buf = b""
+                while True:
+                    chunk = conn.recv(65536)
+                    if not chunk:
+                        raise RuntimeError("Agent process disconnected")
+                    buf += chunk
+                    if buf.endswith(b"\\n"):
+                        break
+                break
+            except (OSError, RuntimeError):
+                global _sock
                 try:
                     if _sock is not None:
                         _sock.close()
@@ -389,25 +331,6 @@ def _call(tool_name, args):
                 _sock = None
                 if _attempt + 1 >= _attempts:
                     raise
-                continue
-            break
-        buf = b""
-        try:
-            while True:
-                chunk = conn.recv(65536)
-                if not chunk:
-                    raise RuntimeError("Agent process disconnected")
-                buf += chunk
-                if buf.endswith(b"\\n"):
-                    break
-        except (OSError, RuntimeError):
-            try:
-                if _sock is not None:
-                    _sock.close()
-            except OSError:
-                pass
-            _sock = None
-            raise
     raw = buf.decode().strip()
     result = json.loads(raw)
     if isinstance(result, str):
@@ -461,11 +384,11 @@ def _call(tool_name, args):
     os.rename(tmp, req_file)
 
     # Wait for response with adaptive polling
-    deadline = time.monotonic() + __RPC_WAIT_S__  # covers a call parked on a human approval
+    deadline = time.monotonic() + 300  # 5-minute timeout per tool call
     poll_interval = 0.05  # Start at 50ms
     while not os.path.exists(res_file):
         if time.monotonic() > deadline:
-            raise RuntimeError(f"RPC timeout: no response for {tool_name} after {int(__RPC_WAIT_S__)}s")
+            raise RuntimeError(f"RPC timeout: no response for {tool_name} after 300s")
         time.sleep(poll_interval)
         poll_interval = min(poll_interval * 1.2, 0.25)  # Back off to 250ms
 
@@ -678,14 +601,13 @@ def _finish_remote_kernel_result(kernel_result: dict[str, Any], *,
 
 
 def _sandbox_tools_for(enabled_tools: Optional[list[str]]) -> frozenset:
-    """Tri-state sandbox tool resolution. None → legacy default (every allowed tool); an
-    explicit list (possibly empty) → exact intersection with the allowed tools, so an
+    """Tri-state sandbox tool resolution. None → legacy default (every sandbox tool); an
+    explicit list (possibly empty) → exact intersection with SANDBOX_ALLOWED_TOOLS, so an
     empty grant denies all rather than broadening to the default
     (SECURITY-CLASS-faf9d60580300e16 / #84271)."""
-    allowed = sandbox_allowed_tools()
     if enabled_tools is None:
-        return allowed
-    return frozenset(allowed & set(enabled_tools))
+        return SANDBOX_ALLOWED_TOOLS
+    return frozenset(SANDBOX_ALLOWED_TOOLS & set(enabled_tools))
 
 
 def _run_remote_per_call(env, env_type: str, code: str, effective_task_id: str,
@@ -951,16 +873,10 @@ def build_execute_code_schema(enabled_sandbox_tools: set | None = None,
     """execute_code schema listing only *enabled_sandbox_tools* — a disabled tool (e.g. web off)
     must not appear or the model keeps trying it. ``mode`` (None → config) picks the cwd sentence."""
     if enabled_sandbox_tools is None:
-        enabled_sandbox_tools = sandbox_allowed_tools()
+        enabled_sandbox_tools = SANDBOX_ALLOWED_TOOLS
     if mode is None:
         mode = _get_execution_mode()
-    # code_execution.allowed_tools may enable tools without a doc line; give those a generic
-    # signature rather than letting the model discover them by trial. Main's dedupe removed the
-    # dynamic import hint from the `code` parameter, so no import-example list is built here.
-    documented = {name for name, _ in _TOOL_DOC_LINES}
-    generic = [f"  {n}(**kwargs)\n    Keyword arguments as in the tool's own schema (tool_describe)."
-               for n in sorted(enabled_sandbox_tools - documented) if n.isidentifier()]
-    tool_lines = "\n".join([doc for name, doc in _TOOL_DOC_LINES if name in enabled_sandbox_tools] + generic)
+    tool_lines = "\n".join(doc for name, doc in _TOOL_DOC_LINES if name in enabled_sandbox_tools)
     if mode == "strict":
         cwd_note = (
             "Scripts run in their own temp dir, not the session's CWD — pass "

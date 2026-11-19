@@ -826,34 +826,21 @@ def _background_reaper() -> None:
             logger.exception("kernel idle reaper pass failed; retrying next interval")
 
 
-# Most a cell's deadline may stretch for human waits in total, whatever approvals.timeout says (a
-# deployment may set it to a year): a wedged waiter must not keep a cell alive indefinitely.
+def _human_wait_seconds() -> float:
+    """Seam. core-fixes reads the approval wait. Absent, a cell's own budget is the deadline."""
+    return 0.0
+
+
 HUMAN_WAIT_CELL_CAP_S = 7200.0
 
 
-def _human_wait_seconds() -> float:
-    """Seconds the current session has spent blocked on a human prompt (0 when unavailable)."""
-    try:
-        from tools.approval_human_wait import human_wait_seconds
-        return human_wait_seconds()
-    except Exception:
-        return 0.0
-
-
 def _await_cell(kernel: SessionKernel, timeout: int, is_interrupted) -> tuple[str, dict[str, Any]]:
-    """Wait for the cell's reply; returns (host status, payload). The cell's own time budget does
-    not run while one of its tool calls is parked on a human answer (approval prompt): the cell
-    would otherwise be killed at ``timeout`` with the prompt still open and the user's answer
-    arriving at a dead kernel."""
+    """Wait for the cell's reply; returns (host status, payload)."""
     deadline = time.monotonic() + timeout if timeout else None
-    waited_before = _human_wait_seconds()
     while True:
         if is_interrupted():
             return "interrupted", {}
-        # The human-wait read (config cache + lock) only runs once the plain deadline has passed.
-        if (deadline is not None and time.monotonic() > deadline
-                and time.monotonic() > deadline + min(HUMAN_WAIT_CELL_CAP_S,
-                                                      max(0.0, _human_wait_seconds() - waited_before))):
+        if deadline is not None and time.monotonic() > deadline:
             return "timeout", {}
         try:
             payload = kernel.response_q.get(timeout=0.05)

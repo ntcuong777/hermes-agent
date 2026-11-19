@@ -15,6 +15,12 @@ import pytest
 import model_tools
 from tools import code_execution_tool as cet
 
+
+@pytest.fixture(autouse=True)
+def _install_execute_park(monkeypatch):
+    import cf_execute_park
+    cf_execute_park.install(monkeypatch)
+
 DEFAULT = {
     "web_search",
     "web_extract",

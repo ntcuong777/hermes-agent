@@ -10,8 +10,16 @@ import threading
 import time
 from types import SimpleNamespace
 
+import pytest
+
 from tools import code_kernel
 from tools.approval_human_wait import human_wait_window
+
+
+@pytest.fixture(autouse=True)
+def _install_execute_park(monkeypatch):
+    import cf_execute_park
+    cf_execute_park.install(monkeypatch)
 
 
 def _kernel(reply_after_s=None):
