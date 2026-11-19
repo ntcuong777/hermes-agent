@@ -20,6 +20,16 @@
       "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
       "upstream_release": "0.22.5"
     },
+    "config-seams/memory-snapshot": {
+      "ast_sha": "a798ff04a40cc412e7e573e189ce16d8019808a4c492decaa476499c8f89989e",
+      "kind": "replace",
+      "plugin": "config-seams",
+      "reason": "A memory snapshot cap keeps the system-prompt block to whole entries and names how many more the store holds, so the file can grow while the prompt stays bounded",
+      "target": "tools.memory_tool_store:MemoryStore._render_block",
+      "target_file": "tools/memory_tool_store.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
     "config-seams/p27-load-config": {
       "ast_sha": "203c096032b996c4f69b75f9f10a4dbf6cd1d38cfb99e442c32f6d1500357919",
       "kind": "wrap",
