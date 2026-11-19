@@ -1,21 +1,32 @@
 /** What the composer asks of extensions. Paste, clipboard image, and the external editor. */
 import { extensionHost, type Host } from './host.js'
 
-export type ComposerEditorPlan =
-  | { text: string }
-  | { buf: string[]; draft: true; handled: true; line: string }
-  | { handled: true; joined: string; kind: 'collapse'; text: string }
-  | { draft?: { buf: string[]; line: string }; handled: true; kind: 'stash'; tokenText?: string }
+export type ComposerEditorAssign = {
+  input?: string
+  inputBuf?: string[]
+  pasteCollapse?: { text: string; token: { kind: 'paste'; label?: string; text?: string } }
+  sys?: string
+  tokens?: Array<{ kind: string; label?: string; text?: string }>
+}
+
+export type ComposerEditorPlan = { text: string } | { assign: ComposerEditorAssign; handled: true }
+
+type ComposerTokenLike = { kind: string; label?: string; text?: string }
 
 type ComposerEditorPayload = {
   collapseChars?: number
   collapseLines?: number
+  composerEmpty?: boolean
+  destination?: unknown
   destinationOk?: boolean
+  holds?: (destination: unknown) => boolean
   joined?: string
-  phase: 'prepare' | 'saved'
+  label?: (text: string, lineCount: number) => string
+  phase: 'idle' | 'prepare' | 'saved'
   saved?: string
   text?: string
-  tokens?: ReadonlyArray<{ kind: string; label?: string; text?: string }>
+  tokens?: ReadonlyArray<ComposerTokenLike>
+  trimTokens?: (tokens: ComposerTokenLike[]) => ComposerTokenLike[]
 }
 
 type ComposerEditorFn = (payload: ComposerEditorPayload) => ComposerEditorPlan | null | undefined

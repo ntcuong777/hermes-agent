@@ -22,6 +22,7 @@ import { extensionHost } from '../sdk/ext/host.js' // fork: tui extension host
 import {
   clipboardImagePathFromExtensions,
   composerEditor,
+  type ComposerEditorAssign,
   hasComposerEditor,
   transformPasteText
 } from '../sdk/ext/composerHooks.js' // fork: tui extension host
@@ -955,41 +956,66 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
 
   const attachImagePath = useCallback((path: string) => attachImagePaths([path]), [attachImagePaths])
 
-  // One slot: a newer stale edit replaces an older one.
-  const editorStash = useRef<null | {
-    destination: SubmissionDestination
-    draft: { buf: string[]; line: string }
-    token?: ComposerToken
-  }>(null)
+  const applyEditorAssign = useCallback(
+    (assign: ComposerEditorAssign, destination: SubmissionDestination) => {
+      if (assign.sys) {
+        sys(assign.sys)
+      }
 
-  const sid = useStore($uiSessionId)
+      if (assign.tokens) {
+        setComposerTokens(assign.tokens as ComposerToken[])
+      }
 
-  useEffect(() => {
-    const stash = editorStash.current
+      if (assign.inputBuf) {
+        setInputBuf(assign.inputBuf)
+      }
 
-    if (!stash || input || inputBuf.length || !isCurrentDestination(stash.destination)) {
-      return
-    }
+      if (assign.input != null) {
+        setInput(assign.input)
+      }
 
-    editorStash.current = null
-    setInputBuf(stash.draft.buf)
-    setInput(stash.draft.line)
+      if (!assign.pasteCollapse) {
+        return
+      }
 
-    if (stash.token) {
-      const token = stash.token
-      setComposerTokens(prev => trimTokens([...prev, token]))
+      const token = assign.pasteCollapse.token
+
       void gw
-        .request<{ path?: string }>('paste.collapse', { text: token.text ?? '' })
+        .request<{ path?: string }>('paste.collapse', { text: assign.pasteCollapse.text })
         .then(r => {
           const path = r?.path
 
-          if (path) {
-            setComposerTokens(prev => prev.map(tk => (tk === token ? { ...tk, path } : tk)))
+          if (!path || !isCurrentDestination(destination)) {
+            return
           }
+
+          setComposerTokens(prev => prev.map(tk => (tk === token ? { ...tk, path } : tk)))
         })
         .catch(() => {})
+    },
+    [gw, setComposerTokens, setInput, setInputBuf, sys]
+  )
+
+  const sid = useStore($uiSessionId)
+
+  // Seam: an editor plugin may return an assign when the composer is empty. Core writes it and does not keep the draft.
+  useEffect(() => {
+    if (!hasComposerEditor()) {
+      return
     }
-  }, [gw, input, inputBuf, setComposerTokens, setInput, setInputBuf, sid])
+
+    const plan = composerEditor({
+      composerEmpty: input.length === 0 && inputBuf.length === 0,
+      holds: destination => isCurrentDestination(destination as SubmissionDestination),
+      phase: 'idle',
+      tokens: tokensRef.current,
+      trimTokens
+    })
+
+    if (plan && 'assign' in plan && plan.assign) {
+      applyEditorAssign(plan.assign, captureDestination())
+    }
+  }, [applyEditorAssign, input, inputBuf, sid])
 
   const openEditor = useCallback(async () => {
     const destination = captureDestination()
@@ -1022,80 +1048,21 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
         ? composerEditor({
             collapseChars: ui.pasteCollapseChars,
             collapseLines: ui.pasteCollapseLines,
+            destination,
             destinationOk: isCurrentDestination(destination) && isFresh(preEdit),
             joined,
+            label: pasteTokenLabel,
             phase: 'saved',
-            saved
+            saved,
+            tokens: tokensRef.current,
+            trimTokens
           })
         : null
 
-      if (plan && 'handled' in plan && plan.handled) {
-        if ('kind' in plan && plan.kind === 'stash') {
-          if (plan.tokenText) {
-            const parkedLines = plan.tokenText.split('\n').length
-            const label = pasteTokenLabel(plan.tokenText, parkedLines)
+      if (plan && 'assign' in plan && plan.assign) {
+        applyEditorAssign(plan.assign, destination)
 
-            editorStash.current = {
-              destination,
-              draft: { buf: [], line: label },
-              token: { kind: 'paste', label, text: plan.tokenText }
-            }
-          } else if (plan.draft) {
-            editorStash.current = { destination, draft: plan.draft }
-          }
-
-          return
-        }
-
-        if ('kind' in plan && plan.kind === 'collapse') {
-          const text = plan.text
-          const label = pasteTokenLabel(text, text.split('\n').length)
-          const before = tokensRef.current
-          const expanded = new Set(
-            before.filter(tk => tk.kind === 'paste' && plan.joined.includes(tk.label ?? '\u0000')).map(tk => tk.label)
-          )
-          const token: ComposerToken = { kind: 'paste', label, text }
-          const kept = trimTokens([...before.filter(tk => !(tk.kind === 'paste' && expanded.has(tk.label))), token])
-
-          if (!kept.includes(token)) {
-            const plain = saved.trimEnd().split('\n')
-
-            sys('paste too large to collapse; kept as plain text')
-            setInputBuf(plain.slice(0, -1))
-            setInput(plain.at(-1) ?? '')
-
-            return
-          }
-
-          const imageLabels = before
-            .filter(tk => tk.kind === 'image' && plan.joined.includes(tk.label ?? '\u0000'))
-            .map(tk => tk.label)
-
-          setComposerTokens(kept)
-          setInputBuf([])
-          setInput([label, ...imageLabels].join('\n'))
-          void gw
-            .request<{ path?: string }>('paste.collapse', { text })
-            .then(r => {
-              const path = r?.path
-
-              if (!path || !isCurrentDestination(destination)) {
-                return
-              }
-
-              setComposerTokens(prev => prev.map(tk => (tk === token ? { ...tk, path } : tk)))
-            })
-            .catch(() => {})
-
-          return
-        }
-
-        if ('draft' in plan && plan.draft) {
-          setInputBuf(plan.buf)
-          setInput(plan.line)
-
-          return
-        }
+        return
       }
 
       const text = saved.trimEnd()
@@ -1116,7 +1083,7 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
     } finally {
       rmSync(dir, { force: true, recursive: true })
     }
-  }, [captureDraft, enqueue, gw, input, inputBuf, isFresh, setInput, setInputBuf, setComposerTokens, submitRef, sys])
+  }, [applyEditorAssign, captureDraft, enqueue, input, inputBuf, isFresh, setInput, setInputBuf, submitRef])
 
   const actions = useMemo(
     () => ({
