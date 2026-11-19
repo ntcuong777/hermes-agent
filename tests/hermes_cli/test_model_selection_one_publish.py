@@ -13,7 +13,7 @@ from hermes_cli.model_switch import ModelSwitchResult, persist_model_selection
 
 @pytest.fixture(autouse=True)
 def _route_plugin(monkeypatch):
-    import cs_model_route
+    cs_model_route = pytest.importorskip("cs_model_route")
     cs_model_route.install(monkeypatch)
 
 _RESULT = ModelSwitchResult(

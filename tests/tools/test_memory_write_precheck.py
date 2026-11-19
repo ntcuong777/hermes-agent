@@ -20,7 +20,7 @@ from tools.skill_provenance import reset_current_write_origin, set_current_write
 
 @pytest.fixture(autouse=True)
 def _budget_plugin(monkeypatch):
-    import cs_memory_budget
+    cs_memory_budget = pytest.importorskip("cs_memory_budget")
     cs_memory_budget.install(monkeypatch)
 
 

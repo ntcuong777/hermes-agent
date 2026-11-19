@@ -1936,21 +1936,22 @@ def persist_model_selection(
     result: ModelSwitchResult, config_path: Any = None, *, surface: str = "cli", reasoning_effort: str = "",
 ) -> None:
     """Write a successful :func:`switch_model` result to ``config_path`` (default:
-    ``HERMES_HOME/config.yaml``, the context override or ``HERMES_HOME`` at call time).
+    ``HERMES_HOME/config.yaml`` — the context override or ``HERMES_HOME`` at call time).
 
     Build the complete selection from one raw snapshot, preserving sibling settings and secret
     references, then publish once. Per-key publication can leave a mixed route after a failed
-    write or an overlapping selection. ``should_clear_context_pin`` can do cold-start disk I/O.
-    Async callers run this on a worker thread.
+    write or an overlapping selection. ``should_clear_context_pin`` can do cold-start disk I/O
+    — async callers run this on a worker thread.
 
     The replace deletes keys missing from the snapshot, so every route decision (and its disk
-    I/O) is made from a pre-read BEFORE the snapshot; read, merge, replace is then a pure
+    I/O) is made from a pre-read BEFORE the snapshot; read -> merge -> replace is then a pure
     in-memory section. Only when another writer changed ``model:`` in between are the updates
     recomputed against the fresh block. ``_CONFIG_LOCK`` is in-process only: a cross-process
     config lock, once one exists, must wrap the same section.
 
-    ``surface`` and ``reasoning_effort`` are accepted and ignored here. :func:`persist_routed_selection`
-    handles a gateway or host-file route when that patch is active.
+    ``surface`` and ``reasoning_effort`` are accepted so a caller does not raise when the route
+    plugin is absent. :func:`persist_routed_selection` handles a gateway or host-file route when
+    that patch is active. Otherwise this writes ``model.*``.
     """
     from pathlib import Path
     from hermes_cli.config import _CONFIG_LOCK, atomic_config_replace, get_config_path, read_user_config_raw

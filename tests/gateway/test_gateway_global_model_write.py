@@ -11,13 +11,13 @@ import pytest
 
 import hermes_yaml as yaml
 from gateway.slash_commands_model import _persist_model_switch_to_config
+from hermes_cli.model_switch import ModelSwitchResult
 
 
 @pytest.fixture(autouse=True)
 def _route_plugin(monkeypatch):
-    import cs_model_route
+    cs_model_route = pytest.importorskip("cs_model_route")
     cs_model_route.install(monkeypatch)
-from hermes_cli.model_switch import ModelSwitchResult
 
 _SEED = (
     "model:\n"

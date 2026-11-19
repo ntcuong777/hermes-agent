@@ -17,11 +17,6 @@ from unittest.mock import Mock, patch
 import pytest
 
 from gateway import code_skew
-
-try:
-    import cs_skew
-except ImportError:
-    cs_skew = None
 from gateway.session_controls import AuthorityConnection
 from tests.fixtures.storage_read import session_row
 from tests.gateway.test_authority_cold_route_recovery import _source
@@ -116,14 +111,13 @@ def _config(mode):
 
 @pytest.fixture(autouse=True)
 def _installed_skew_modes(monkeypatch):
-    """The mode policy lives in config-seams. Core alone refuses."""
-    if cs_skew is not None:
-        cs_skew.install(monkeypatch)
+    """The mode policy lives in config-seams. Without it these tests skip."""
+    cs_skew = pytest.importorskip("cs_skew")
+    cs_skew.install(monkeypatch)
 
 
 def _modes():
-    if cs_skew is None:
-        pytest.skip("config-seams skew policy is not on PYTHONPATH")
+    import cs_skew
     return cs_skew
 
 
