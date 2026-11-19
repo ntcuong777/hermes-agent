@@ -1965,7 +1965,7 @@ def persist_model_selection(
         # No config file (Remote Config): one keyed write, so a lock on any key refuses the whole
         # switch instead of a document save silently omitting the locked part. The planned-from
         # block is the EFFECTIVE one, so a key it holds may come from an upper level, where a
-        # profile-level unset cannot reach it (contract 5.4): an inherited old-endpoint api_key
+        # profile-level unset cannot reach it (contract §5.4): an inherited old-endpoint api_key
         # would stay active at the new endpoint. A key the switch clears and the effective block
         # still holds is therefore masked with null ("no value"); an absent one is just unset.
         from hermes_cli.config_backend import Changes, write_changes
