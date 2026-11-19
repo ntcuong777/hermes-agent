@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Mapping, Optional
 
 from hermes_cli.plugins_capability_ctx import PluginCapabilityCtxMixin
+from hermes_cli.core_patches_ctx import CorePatchCtxMixin  # fork: core-patch registry
 from hermes_cli.plugins_dispatch import DEFAULT_SYSTEM_PROMPT_SECTION_MAX_CHARS
 from hermes_cli.plugins_idle_tasks import PluginIdleTaskCtxMixin
 from hermes_cli.plugins_ledger import PluginRegistration
@@ -35,7 +36,7 @@ def _facade():
     return facade
 
 
-class PluginContext(PluginCapabilityCtxMixin, PluginIdleTaskCtxMixin):
+class PluginContext(PluginCapabilityCtxMixin, PluginIdleTaskCtxMixin, CorePatchCtxMixin):
     """Facade given to plugins so they can register tools and hooks."""
 
     def __init__(self, manifest: PluginManifest, manager: PluginManager):
@@ -461,6 +462,7 @@ class PluginContext(PluginCapabilityCtxMixin, PluginIdleTaskCtxMixin):
         subcommands: dict | list | tuple | None = None,
         run_while_busy: bool = False,
         client_local: bool = False,
+        keybinds: dict | None = None,
     ) -> Optional[PluginRegistration]:
         """Register an in-session slash command (``/name``); handler ``fn(raw_args: str) -> str | None``
         (sync or async), plus the session-context keywords it declares (``plugin_command_dispatch``). ``args_hint`` (e.g. ``"<file>"``) lets adapters like Discord surface an argument
@@ -484,6 +486,7 @@ class PluginContext(PluginCapabilityCtxMixin, PluginIdleTaskCtxMixin):
                 subs[str(word).lower()] = tuple(str(c) for c in (choices or ()))
         elif subcommands:
             subs = {str(word).lower(): () for word in subcommands}
+        from hermes_cli.plugin_composer import clean_keybinds
         entry = {
             "handler": handler, "description": description or "Plugin command",
             "plugin": self.manifest.name, "plugin_key": self.plugin_id, "args_hint": hint,
@@ -494,6 +497,8 @@ class PluginContext(PluginCapabilityCtxMixin, PluginIdleTaskCtxMixin):
             # never the session's agent, so a local surface may run it on any session it can read
             # — including one a messaging lane (the Discord mirror's bound thread) now owns.
             "client_local": bool(client_local),
+            # `{"alt+s": "toggle"}`: default TUI chords that run `/name <args>`; `display.tui_keybinds` overrides.
+            "keybinds": clean_keybinds(keybinds, clean),
             "subcommands": subs,
             "argument_mode": argument_mode if argument_mode in {"options", "text", "mixed"}
             else ("text" if hint else None),

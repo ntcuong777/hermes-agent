@@ -265,6 +265,8 @@ export interface PanelSection {
 export interface SlashCatalog {
   canon: Record<string, string>
   categories: SlashCategory[]
+  /** Chords plugins declared as defaults (`alt+s` -> `/stash toggle`); `display.tui_keybinds` overrides. */
+  keybinds?: Record<string, string>
   pairs: [string, string][]
   skillCount: number
   sub: Record<string, string[]>

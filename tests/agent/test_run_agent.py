@@ -611,7 +611,7 @@ class TestInit:
             assert a._use_prompt_caching is True
 
     def test_prompt_caching_cache_ttl_defaults_without_config(self):
-        """cache_ttl stays 5m when prompt_caching is absent from config."""
+        """cache_ttl falls back to the auto tier (never None) when prompt_caching is absent."""
         with (
             patch("model_tools.get_tool_definitions", return_value=[]),
             patch("model_tools.check_toolset_requirements", return_value={}),
@@ -1503,11 +1503,10 @@ class TestExecuteToolCalls:
             "model_tools.handle_function_call", return_value="search result"
         ) as mock_hfc:
             agent._execute_tool_calls(mock_msg, messages, "task-1")
-            # enabled_tools carries the agent's own valid_tool_names (plus the deferred
-            # tools the session can reach through tool_call — see sandbox_tool_names).
+            # enabled_tools passes the agent's own valid_tool_names
             args, kwargs = mock_hfc.call_args
             assert args[:3] == ("web_search", {"q": "test"}, "task-1")
-            assert agent.valid_tool_names <= set(kwargs.get("enabled_tools", []))
+            assert set(kwargs.get("enabled_tools", [])) == agent.valid_tool_names
         assert len(messages) == 1
         assert messages[0]["role"] == "tool"
         assert "search result" in messages[0]["content"]
@@ -6901,7 +6900,7 @@ class TestMemoryContextSanitization:
         """Helper-level: a string with an embedded memory-context block is
         cleaned to just the surrounding text.  Used by build_memory_context_block
         (input-validation) and by plugins on their own backend boundary."""
-        from agent.memory_context import sanitize_context
+        from session_rules.turns import sanitize_context
         user_text = "how is the honcho working"
         injected = (
             user_text + "\n\n"

@@ -186,13 +186,14 @@ class CanonicalListParams(ProfileParams):
     title: str | None = None
     include_hidden: bool = False
     # Only conversations of this folder, judged on each conversation's first row by the classic CLI's
-    # ``hermes -c`` rule (``hermes_state_sessions.workspace_key``): its git repo root equals this, or
+    # ``hermes -c`` rule (``persistence.conversation.sessions.workspace_key``): its git repo root equals this, or
     # (no root recorded) its cwd is this folder or under it. Pass the caller's repo root (else its cwd).
     workspace: str | None = None
     # Each row also carries the picker fields below (off by default: a live-list poll does not pay for them).
     picker: bool = False
     # The caller's directory: list only sessions in its workspace (repo root, else the directory).
     # Resolved to the same ``workspace`` key server-side (``workspace_for_dir``).
+    # Served by the chat-workspaces plugin (B11): the workspace resolution is the plugin's list_params callback now.
     cwd: str | None = None
     # Stored scope only. ``query``: conversations whose title or id contains this text (1-200 characters).
     # ``cursor``: an earlier stored page's ``next_cursor``, valid only with that page's ``workspace``,

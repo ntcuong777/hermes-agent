@@ -23,7 +23,10 @@ import { DEFAULT_INDICATOR_STYLE, INDICATOR_STYLES, type IndicatorStyle } from '
 import { patchOverlayState } from '../../overlayStore.js'
 import { getUiState, patchUiState } from '../../uiStore.js'
 import { canonicalReasoning, canonicalUsage } from '../canonicalSessionCommands.js'
-import { runCanonicalSessionControl } from '../canonicalSessionControls.js'
+import { runCanonicalSessionControl as StockRunCanonicalSessionControl } from '../canonicalSessionControls.js' // fork: tui slot
+import { slotFn } from '../../../sdk/ext/slotReact.js' // fork: tui slot
+import { extensionHost as sessionExtensionHost } from '../../../sdk/ext/host.js' // fork: tui slot
+const runCanonicalSessionControl = slotFn('canonical.mutate', StockRunCanonicalSessionControl, sessionExtensionHost, (r) => r === undefined || (typeof r === 'object' && r !== null)) // fork: tui slot
 import type { SlashCommand, SlashRunCtx } from '../types.js'
 import { usageTotalsSections } from '../usagePanel.js'
 

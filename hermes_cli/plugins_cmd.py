@@ -208,7 +208,7 @@ def _scan_plugin_tree(plugin_dir: Path, identifier: str, *, force: bool, scan_de
     """
     if not _scan_on_install_enabled():
         return None
-    from tools.plugin_guard import format_scan_report, scan_plugin, should_allow_plugin_install
+    from hermes_cli.plugins_install_scan import format_scan_report, scan_plugin, should_allow_plugin_install
     result = scan_plugin(plugin_dir, source=identifier)
     allowed, reason = should_allow_plugin_install(result, force=force)
     if allowed is None and reviewed_pin:
@@ -1174,6 +1174,7 @@ _PLUGIN_ACTIONS = {
     "doctor": lambda args: cmd_plugin_doctor(args.target, ci=getattr(args, "ci", False)),
     "pack": _action_pack,
     "show": lambda args: cmd_show(args.name),
+    "patches": lambda args: __import__("hermes_cli.core_patches_safe").core_patches_safe.cmd_patches(args),  # fork: core-patch registry
     "info": lambda args: _catalog().cmd_info(args.name),
     None: lambda args: cmd_toggle(),
 }

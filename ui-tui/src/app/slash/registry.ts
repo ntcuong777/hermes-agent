@@ -1,5 +1,6 @@
 import { coreCommands } from './commands/core.js'
 import { debugCommands } from './commands/debug.js'
+import { extensionCommands } from '../../sdk/ext/slash.js' // fork: tui extension host
 import { opsCommands } from './commands/ops.js'
 import { sessionCommands } from './commands/session.js'
 import { setupCommands } from './commands/setup.js'
@@ -16,6 +17,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   ...opsCommands,
   ...wakeCommands,
   ...setupCommands,
+  ...extensionCommands, // fork: tui extension host
   ...debugCommands
 ]
 

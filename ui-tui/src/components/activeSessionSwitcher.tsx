@@ -1,12 +1,9 @@
 import { Box, Text, useInput, useStdout } from '@hermes/ink'
-import type { Key } from '@hermes/ink'
-import { fuzzyRank } from '@hermes/shared/fuzzy'
 import type { SessionListResult, SessionListRow } from '@hermes/shared/gateway-events'
 import type { SessionActiveItem, SessionActiveListResponse, SessionCloseResponse } from '@hermes/shared/gateway-types'
 import { sessionScopedModelArg } from '@hermes/shared/slash-input'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { $sessionsOverlayInputMode } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import { useSessionDelete } from '../hooks/useSessionDelete.js'
 import { messages } from '../i18n/runtime.js'
@@ -94,43 +91,6 @@ export const resumableHistory = (history: readonly SessionListRow[], live: reado
   return history.filter(h => !liveIds.has(h.id))
 }
 
-/** Everything a row can be found by: words from the title/preview, the id, and
- *  — the reason resume filtering exists — which project a session belonged to
- *  (cwd / branch; live rows carry the model instead). */
-export const sessionSearchText = (row: SessionActiveItem | SessionListRow): string =>
-  [
-    row.title,
-    row.preview,
-    row.id,
-    'cwd' in row ? row.cwd : undefined,
-    'git_branch' in row ? row.git_branch : undefined,
-    'model' in row ? row.model : undefined
-  ]
-    .filter(Boolean)
-    .join(' ')
-
-export interface SessionLists {
-  items: SessionActiveItem[]
-  history: SessionListRow[]
-}
-
-/** Fuzzy-narrow both row lists by `query` (same ranker as the model picker).
- *  An empty query is the identity, returning the input arrays untouched. */
-export const filterSessionLists = (
-  items: readonly SessionActiveItem[],
-  history: readonly SessionListRow[],
-  query: string
-): SessionLists => {
-  if (!query.trim()) {
-    return { items: items as SessionActiveItem[], history: history as SessionListRow[] }
-  }
-
-  return {
-    items: fuzzyRank(items, query, sessionSearchText).map(r => r.item),
-    history: fuzzyRank(history, query, sessionSearchText).map(r => r.item)
-  }
-}
-
 // Hint segment tables are functions (not module constants) so their text
 // fragments resolve against the active language at render time.
 export const resumeRowContextHintSegments = (): OrchestratorHintSegment[] => {
@@ -142,21 +102,7 @@ export const resumeRowContextHintSegments = (): OrchestratorHintSegment[] => {
     { role: 'hotkey', text: 'Enter' },
     { role: 'text', text: h.resume },
     { role: 'hotkey', text: 'd' },
-    { role: 'text', text: h.delete },
-    ...filterHintSuffixSegments()
-  ]
-}
-
-/** `session.list` params for the switcher: the caller's workspace only while the filter is on. */
-export const sessionListWorkspaceParams = (workspaceOnly: boolean, cwd: string): { cwd?: string } =>
-  workspaceOnly && cwd ? { cwd } : {}
-
-export const workspaceHintSegments = (workspaceOnly: boolean): OrchestratorHintSegment[] => {
-  const h = messages().pickers.session.hint
-
-  return [
-    { role: 'hotkey', text: 'w' },
-    { role: 'text', text: workspaceOnly ? h.allSessions : h.thisWorkspace }
+    { role: 'text', text: h.delete }
   ]
 }
 
@@ -177,9 +123,7 @@ export const orchestratorContextHintSegments = (newSelected: boolean): Orchestra
         { role: 'hotkey', text: 'Enter' },
         { role: 'text', text: h.start },
         { role: 'hotkey', text: 'Tab' },
-        { role: 'text', text: h.model },
-        { role: 'hotkey', text: 'Ctrl+O' },
-        { role: 'text', text: h.workspace }
+        { role: 'text', text: h.model }
       ]
     : [
         { role: 'label', text: h.sessionRowLabel },
@@ -187,8 +131,7 @@ export const orchestratorContextHintSegments = (newSelected: boolean): Orchestra
         { role: 'hotkey', text: 'Enter' },
         { role: 'text', text: h.switch },
         { role: 'hotkey', text: 'Ctrl+D' },
-        { role: 'text', text: h.close },
-        ...filterHintSuffixSegments()
+        { role: 'text', text: h.close }
       ]
 }
 
@@ -204,33 +147,6 @@ export const orchestratorGlobalHotkeyHintSegments = (): OrchestratorHintSegment[
     { role: 'text', text: h.refresh },
     { role: 'hotkey', text: 'Esc' },
     { role: 'text', text: h.close }
-  ]
-}
-
-/** `/ find` is advertised on the row-context hint lines — it is a row action
- *  (it cannot open from the `+new` row) and the global hotkey line is already
- *  at its truncation width with the workspace segment appended. */
-export const filterHintSuffixSegments = (): OrchestratorHintSegment[] => {
-  const h = messages().pickers.session.hint
-
-  return [
-    { role: 'text', text: ' · ' },
-    { role: 'hotkey', text: '/' },
-    { role: 'text', text: h.find }
-  ]
-}
-
-/** Hint line shown while the filter input is open: what a row does now. */
-export const orchestratorFilterHintSegments = (onHistory: boolean): OrchestratorHintSegment[] => {
-  const h = messages().pickers.session.hint
-
-  return [
-    { role: 'hotkey', text: '↑↓' },
-    { role: 'text', text: h.move },
-    { role: 'hotkey', text: 'Enter' },
-    { role: 'text', text: onHistory ? h.resume : h.switch },
-    { role: 'hotkey', text: 'Esc' },
-    { role: 'text', text: h.clearBack }
   ]
 }
 
@@ -382,132 +298,6 @@ function OrchestratorHintText({ segments, t }: OrchestratorHintTextProps) {
   )
 }
 
-interface NewSessionRowProps {
-  selected: boolean
-  draft: string
-  draftModel: string
-  onClick: (event: { stopImmediatePropagation?: () => void }) => void
-  t: Theme
-}
-
-// The pinned "+ new" row: selection marker, draft label, picked model and the
-// draft title/preview.
-function NewSessionRow({ selected, draft, draftModel, onClick, t }: NewSessionRowProps) {
-  const S = useT().pickers.session
-  const rowStyle = selected ? selectedSessionRowStyle(t) : null
-  const rowTextColor = rowStyle?.color
-  const markerColor = newSessionMarkerColor(t, selected)
-  const promptTitle = draftTitleFromPrompt(draft) || S.row.startNew
-
-  return (
-    <Box backgroundColor={rowStyle?.backgroundColor} flexDirection="row" onClick={onClick} width="100%">
-      <Text bold={selected} color={rowTextColor ?? t.color.muted}>
-        {selected ? '▸ ' : '  '}
-      </Text>
-
-      <Box {...fixedSessionColumnStyle()} width={5}>
-        <Text bold={selected} color={markerColor}>
-          {'+'.padStart(2)}
-        </Text>
-      </Box>
-
-      <Box {...fixedSessionColumnStyle()} width={11}>
-        <Text bold={selected} color={markerColor} wrap="truncate-end">
-          {S.row.new}
-        </Text>
-      </Box>
-
-      <Box {...fixedSessionColumnStyle()} width={11}>
-        <Text color={rowTextColor ?? t.color.muted} wrap="truncate-end">
-          {S.row.draft}
-        </Text>
-      </Box>
-
-      <Box {...fixedSessionColumnStyle()} width={18}>
-        <Text color={rowTextColor ?? t.color.muted} wrap="truncate-end">
-          {draftModelDisplayLabel(draftModel)}
-        </Text>
-      </Box>
-
-      <Box flexGrow={1} flexShrink={1} minWidth={0}>
-        <Text bold={selected} color={rowTextColor ?? t.color.muted} wrap="truncate-end">
-          {promptTitle}
-        </Text>
-      </Box>
-    </Box>
-  )
-}
-
-interface NewSessionPromptFooterProps {
-  pickingWorkspace: boolean
-  cwdInput: string
-  onCwdInputChange: (value: string) => void
-  draft: string
-  onDraftChange: (value: string) => void
-  onDraftSubmit: (value: string) => void
-  draftModel: string
-  pickedCwd: string
-  promptColumns: number
-  t: Theme
-}
-
-// Under the list while the "+ new" row is selected: the prompt editor (or the
-// workspace path editor while Ctrl+O holds it), plus the draft model and
-// workspace lines.
-function NewSessionPromptFooter({
-  pickingWorkspace,
-  cwdInput,
-  onCwdInputChange,
-  draft,
-  onDraftChange,
-  onDraftSubmit,
-  draftModel,
-  pickedCwd,
-  promptColumns,
-  t
-}: NewSessionPromptFooterProps) {
-  const S = useT().pickers.session
-
-  return (
-    <>
-      <Box marginTop={1}>
-        {pickingWorkspace ? (
-          <>
-            <Text color={t.color.label}>{S.workspaceLabel}</Text>
-            <TextInput
-              color={t.color.text}
-              columns={promptColumns}
-              ignoreVerticalArrows
-              onChange={onCwdInputChange}
-              value={cwdInput}
-            />
-          </>
-        ) : (
-          <>
-            <Text color={t.color.label}>{S.promptLabel}</Text>
-            <TextInput
-              color={t.color.text}
-              columns={promptColumns}
-              onChange={onDraftChange}
-              onSubmit={onDraftSubmit}
-              value={draft}
-            />
-          </>
-        )}
-      </Box>
-      <OrchestratorHintText segments={orchestratorContextHintSegments(true)} t={t} />
-      <Text color={t.color.muted} wrap="truncate-end">
-        {S.draftModel(draftModelDisplayLabel(draftModel))}
-      </Text>
-      {pickedCwd ? (
-        <Text color={t.color.muted} wrap="truncate-end">
-          {S.draftWorkspace(pickedCwd)}
-        </Text>
-      ) : null}
-    </>
-  )
-}
-
 export function ActiveSessionSwitcher({
   currentSessionId,
   gw,
@@ -531,25 +321,11 @@ export function ActiveSessionSwitcher({
   const [draftModel, setDraftModel] = useState('')
   const [pickingModel, setPickingModel] = useState(false)
   const [closingId, setClosingId] = useState('')
-  // `/` filter: while open, printable keys feed the query and the row lists
-  // narrow to fuzzy matches (client-side over the already-loaded pages).
-  const [filtering, setFiltering] = useState(false)
-  const [query, setQuery] = useState('')
-  // Workspace pick on the `+new` row: Ctrl+O swaps the prompt input for a
-  // path input; the confirmed value rides session.create as
-  // `{ cwd, cwd_explicit: true }` (empty pick = default workspace resolution).
-  // `cwdInput` is the editor's working copy — it commits to `pickedCwd` (the
-  // pick) only on Enter, so Esc / Ctrl+O step back and discard the edit.
-  const [pickedCwd, setPickedCwd] = useState('')
-  const [cwdInput, setCwdInput] = useState('')
-  const [pickingWorkspace, setPickingWorkspace] = useState(false)
   // When non-null, the user pressed `d` on this (history) session and we await
   // a second `d` to confirm deletion. Tracked by session id (not row index) so
   // the 1.5s live-status poll re-indexing rows can't redirect the delete to a
   // different session. Any other key cancels the prompt.
   const [confirmDelete, setConfirmDelete] = useState<null | string>(null)
-  // `w` narrows the list to the TUI's workspace (repo root, else directory); see `session.list` cwd.
-  const [workspaceOnly, setWorkspaceOnly] = useState(false)
   const T = useT()
   const S = T.pickers.session
   const C = T.pickers.common
@@ -559,11 +335,6 @@ export function ActiveSessionSwitcher({
   // session that was hidden while live reappears in history once it closes —
   // without re-querying the DB. Only refreshed on a full (includeHistory) load.
   const rawHistoryRef = useRef<SessionListRow[]>([])
-  // The raw live list, same contract as `rawHistoryRef`: the displayed lists
-  // are re-derived from these through the active filter on every poll/keystroke.
-  const rawItemsRef = useRef<SessionActiveItem[]>([])
-  // Mirror of `query` for the async load/derive paths.
-  const queryRef = useRef('')
   // Mirror the displayed lists so the async poll can re-anchor the selection to
   // the *same* row (by session id) after live sessions appear/disappear, rather
   // than keeping a now-stale flat index.
@@ -584,54 +355,11 @@ export function ActiveSessionSwitcher({
   const total = listLen + 1
   const rowKind = useCallback((index: number) => sessionRowKindAt(index, liveCount), [liveCount])
 
-  // Derive the DISPLAYED lists from the raw rows through the active filter,
-  // store them, and re-anchor the selection to the same row by identity (the
-  // live list can grow/shrink between polls, which would otherwise drift a
-  // flat index). Shared by network loads and keystroke-time refiltering.
-  const commitLists = useCallback(
-    (nextRaw: readonly SessionActiveItem[], histRaw: readonly SessionListRow[], initializeSelection: boolean) => {
-      const hist = resumableHistory(histRaw, nextRaw)
-      const { items: next, history: histFiltered } = filterSessionLists(nextRaw, hist, queryRef.current)
-      const maxSel = next.length + histFiltered.length // == total - 1 (new row is index 0)
-
-      setItems(next)
-      setHistory(histFiltered)
-      setSel(s => {
-        if (initializeSelection) {
-          // Land on the current live session (shifted +1 past the pinned new
-          // row); with no live sessions, start on the new row itself.
-          return next.length ? Math.min(currentSessionSelectionIndex(next, currentSessionId) + 1, maxSel) : 0
-        }
-
-        if (s <= 0) {
-          return 0 // "+ new" row
-        }
-
-        const prevItems = itemsRef.current
-        const prevHist = historyDisplayRef.current
-        const clamp = () => Math.max(0, Math.min(s, maxSel))
-
-        if (s - 1 < prevItems.length) {
-          const id = prevItems[s - 1]?.id
-          const i = id ? next.findIndex(x => x.id === id) : -1
-
-          return i >= 0 ? i + 1 : clamp()
-        }
-
-        const id = prevHist[s - 1 - prevItems.length]?.id
-        const i = id ? histFiltered.findIndex(x => x.id === id) : -1
-
-        return i >= 0 ? 1 + next.length + i : clamp()
-      })
-    },
-    [currentSessionId]
-  )
-
   const load = useCallback(
     // `quiet` skips the loading spinner (used by the live-status poll);
     // `includeHistory` re-queries the resumable DB list (skipped on the 1.5s
     // poll, which only needs fresh live-session status).
-    async (quiet = false, includeHistory = true, workspace = workspaceOnly) => {
+    async (quiet = false, includeHistory = true) => {
       if (!quiet) {
         setLoading(true)
       }
@@ -642,8 +370,7 @@ export function ActiveSessionSwitcher({
         // resumable history degrades on its own.
         const canonicalList = gw.isCanonical
           ? gw.request<{ scope?: string; sessions?: (SessionListRow & { running?: boolean })[] }>('session.list', {
-              limit: 200,
-              ...sessionListWorkspaceParams(workspace, process.cwd())
+              limit: 200
             })
           : null
 
@@ -660,8 +387,7 @@ export function ActiveSessionSwitcher({
           includeHistory
             ? gw.request<SessionListResult>('session.list', {
                 limit: 200,
-                ...(canonicalList ? { scope: 'stored' } : {}),
-                ...sessionListWorkspaceParams(workspace, process.cwd())
+                ...(canonicalList ? { scope: 'stored' } : {})
               })
             : Promise.resolve(null)
         ])
@@ -675,8 +401,7 @@ export function ActiveSessionSwitcher({
           return []
         }
 
-        const nextRaw = r.sessions ?? []
-        rawItemsRef.current = nextRaw
+        const next = r.sessions ?? []
 
         // Surface a garbled/failed session.list rather than silently blanking
         // the resumable section; keep the last good raw history so a transient
@@ -697,13 +422,46 @@ export function ActiveSessionSwitcher({
           }
         }
 
+        const hist = resumableHistory(rawHistoryRef.current, next)
         const initializeSelection = !initialSelectionAppliedRef.current
         initialSelectionAppliedRef.current = true
-        commitLists(nextRaw, rawHistoryRef.current, initializeSelection)
+        const maxSel = next.length + hist.length // == total - 1 (new row is index 0)
+
+        setItems(next)
+        setHistory(hist)
+        // Re-anchor selection to the same row by identity (the live list can
+        // grow/shrink between polls, which would otherwise drift a flat index).
+        setSel(s => {
+          if (initializeSelection) {
+            // Land on the current live session (shifted +1 past the pinned new
+            // row); with no live sessions, start on the new row itself.
+            return next.length ? Math.min(currentSessionSelectionIndex(next, currentSessionId) + 1, maxSel) : 0
+          }
+
+          if (s <= 0) {
+            return 0 // "+ new" row
+          }
+
+          const prevItems = itemsRef.current
+          const prevHist = historyDisplayRef.current
+          const clamp = () => Math.max(0, Math.min(s, maxSel))
+
+          if (s - 1 < prevItems.length) {
+            const id = prevItems[s - 1]?.id
+            const i = id ? next.findIndex(x => x.id === id) : -1
+
+            return i >= 0 ? i + 1 : clamp()
+          }
+
+          const id = prevHist[s - 1 - prevItems.length]?.id
+          const i = id ? hist.findIndex(x => x.id === id) : -1
+
+          return i >= 0 ? 1 + next.length + i : clamp()
+        })
         setErr(histError)
         setLoading(false)
 
-        return nextRaw
+        return next
       } catch (e: unknown) {
         setErr(rpcErrorMessage(e))
         setLoading(false)
@@ -711,34 +469,13 @@ export function ActiveSessionSwitcher({
         return []
       }
     },
-    [commitLists, currentSessionId, gw, workspaceOnly]
+    [currentSessionId, gw]
   )
 
   useEffect(() => {
     itemsRef.current = items
     historyDisplayRef.current = history
   }, [items, history])
-
-  // While a switcher input (filter, workspace pick) owns the keys, main must
-  // not answer Esc with "close the overlay".
-  useEffect(() => {
-    $sessionsOverlayInputMode.set(filtering || pickingWorkspace)
-
-    return () => {
-      $sessionsOverlayInputMode.set(false)
-    }
-  }, [filtering, pickingWorkspace])
-
-  // Keystroke-time refilter: re-derive the displayed lists from the raw rows
-  // without a network round-trip; the selection re-anchors or clamps inside.
-  const applyFilter = useCallback(
-    (value: string) => {
-      queryRef.current = value
-      setQuery(value)
-      commitLists(rawItemsRef.current, rawHistoryRef.current, false)
-    },
-    [commitLists]
-  )
 
   useEffect(() => {
     void load()
@@ -756,9 +493,9 @@ export function ActiveSessionSwitcher({
       }
 
       setDraft('')
-      onNewPrompt(prompt, draftModel || undefined, pickedCwd || undefined)
+      onNewPrompt(prompt, draftModel || undefined)
     },
-    [pickedCwd, draftModel, onNewPrompt]
+    [draftModel, onNewPrompt]
   )
 
   const closeSelected = useCallback(async () => {
@@ -851,185 +588,20 @@ export function ActiveSessionSwitcher({
   const newSelected = selectedKind === 'new'
   const draftHasText = Boolean(draft.trim())
 
-  // Activation for Enter on the merged list (live switches, history resumes);
-  // shared by the plain flow and the filter-mode flow.
-  const activateListRow = useCallback(() => {
-    if (selectedKind === 'live' && items[sel - 1]) {
-      return onSelect(items[sel - 1]!.id)
-    }
-
-    if (selectedKind === 'history' && history[sel - 1 - items.length]) {
-      return onResume(history[sel - 1 - items.length]!.id)
-    }
-  }, [history, items, onResume, onSelect, sel, selectedKind])
-
-  // One activation ladder for Enter wherever it is handled (plain flow and
-  // filter mode): +new with no draft starts a blank session in the picked
-  // workspace, a live row switches, a history row resumes.
-  const activateSelected = useCallback(() => {
-    if (newSelected) {
-      if (!draftHasText) {
-        onNew(pickedCwd || undefined)
-      }
-
-      return
-    }
-
-    return activateListRow()
-  }, [activateListRow, draftHasText, newSelected, onNew, pickedCwd])
-
-  // Two-press history delete: once armed, only a second `d` deletes; any
-  // other key cancels the prompt (mirrors the standalone resume picker).
-  const handleConfirmDeleteKey = useCallback(
-    (ch: string | undefined) => {
-      const confirmed = ch?.toLowerCase() === 'd'
-
-      setConfirmDelete(null)
-
-      if (confirmed) {
-        performDelete(history.find(h => h.id === confirmDelete))
-      }
-    },
-    [confirmDelete, history, performDelete]
-  )
-
-  // `/` filter mode: the input owns printable keys, so only navigation and
-  // the two exits are handled here — every other switcher hotkey (d, w,
-  // Ctrl+N/R/D, Tab) is suppressed until the filter closes. Esc clears the
-  // query first, then leaves filter mode; the next Esc closes the overlay.
-  const handleFilterKey = useCallback(
-    (key: Key) => {
-      if (key.escape) {
-        if (query.trim()) {
-          applyFilter('')
-        } else {
-          setFiltering(false)
-        }
-
-        return
-      }
-
-      if (key.return) {
-        setFiltering(false)
-
-        if (newSelected) {
-          if (!draftHasText) {
-            onNew()
-          }
-
-          return
-        }
-
-        return activateListRow()
-      }
-
-      if (key.upArrow && sel > 0) {
-        return setSel(s => Math.max(0, s - 1))
-      }
-
-      if (key.downArrow && sel < total - 1) {
-        return setSel(s => Math.min(total - 1, s + 1))
-      }
-    },
-    [activateListRow, applyFilter, draftHasText, newSelected, onNew, query, sel, total]
-  )
-
-  // Workspace pick: the input owns printable keys; Esc / Ctrl+O discard the
-  // working copy and step back to the prompt, Enter commits it trimmed
-  // (empty clears back to the default workspace resolution).
-  const handleWorkspaceKey = useCallback(
-    (key: Key, isCtrl: (letter: string) => boolean) => {
-      if (key.escape || isCtrl('o')) {
-        setPickingWorkspace(false)
-
-        return
-      }
-
-      if (key.return) {
-        setPickedCwd(cwdInput.trim())
-        setPickingWorkspace(false)
-      }
-    },
-    [cwdInput]
-  )
-
-  // Default mode: an ordered action table — the first row whose test matches
-  // runs and dispatch stops (the row order mirrors the previous ladder, and a
-  // row whose action is contextual swallows the key without acting, as
-  // Tab / Ctrl+O / Ctrl+D do outside their context).
-  const dispatchMainKey = ({ ch, key, lower, isCtrl }: SwitcherKeyContext) => {
-    const actions: SwitcherKeyAction[] = [
-      { run: () => onCancel(), test: key.escape },
-      { run: () => onNew(), test: isCtrl('n') },
-      { run: () => void load(), test: isCtrl('r') },
-      {
-        run: () => {
-          if (newSelected) {
-            setPickingModel(true)
-          }
-        },
-        test: key.tab
-      },
-      {
-        run: () => {
-          if (newSelected) {
-            // Opening pre-fills the working copy from the stored pick; closing
-            // discards the edit (the pick itself only moves on Enter). This arm
-            // is only reachable with the editor closed: the pickingWorkspace
-            // branch above handles every key while it is open.
-            setCwdInput(pickedCwd)
-            setPickingWorkspace(true)
-          }
-        },
-        test: isCtrl('o')
-      },
-      {
-        run: () => {
-          const next = !workspaceOnly
-
-          setWorkspaceOnly(next)
-          void load(false, true, next)
-        },
-        test: !key.ctrl && lower === 'w' && !newSelected
-      },
-      {
-        run: () => setFiltering(true),
-        test: !key.ctrl && ch === '/' && !newSelected
-      },
-      {
-        run: () => {
-          if (selectedKind === 'live') {
-            void closeSelected()
-          }
-        },
-        test: isCtrl('d')
-      },
-      {
-        // `d` arms deletion on a resumable history row. (On the New row `d` is
-        // captured by the prompt's TextInput, so it never reaches here.)
-        run: () => setConfirmDelete(history[sel - 1 - items.length]?.id ?? null),
-        test: lower === 'd' && !key.ctrl && selectedKind === 'history'
-      },
-      { run: () => undefined, test: newSelected && draftHasText },
-      { run: () => setSel(s => Math.max(0, s - 1)), test: key.upArrow && sel > 0 },
-      { run: () => setSel(s => Math.min(total - 1, s + 1)), test: key.downArrow && sel < total - 1 },
-      { run: () => activateSelected(), test: key.return }
-    ]
-
-    for (const { run, test } of actions) {
-      if (test) {
-        return run()
-      }
-    }
-  }
-
   useInput((ch, key) => {
     if (pickingModel || deletePending()) {
       return
     }
 
+    // Two-press history delete: once armed, only a second `d` deletes; any
+    // other key cancels the prompt (mirrors the standalone resume picker).
     if (confirmDelete !== null) {
-      handleConfirmDeleteKey(ch)
+      if (ch?.toLowerCase() === 'd') {
+        setConfirmDelete(null)
+        performDelete(history.find(h => h.id === confirmDelete))
+      } else {
+        setConfirmDelete(null)
+      }
 
       return
     }
@@ -1037,15 +609,73 @@ export function ActiveSessionSwitcher({
     const lower = ch?.toLowerCase() ?? ''
     const isCtrl = (letter: string) => key.ctrl && (lower === letter || ch === ctrlChar(letter))
 
-    if (filtering) {
-      return handleFilterKey(key)
+    if (key.escape) {
+      return onCancel()
     }
 
-    if (pickingWorkspace) {
-      return handleWorkspaceKey(key, isCtrl)
+    if (isCtrl('n')) {
+      return onNew()
     }
 
-    return dispatchMainKey({ ch, isCtrl, key, lower })
+    if (isCtrl('r')) {
+      void load()
+
+      return
+    }
+
+    if (key.tab) {
+      if (newSelected) {
+        setPickingModel(true)
+      }
+
+      return
+    }
+
+    if (isCtrl('d')) {
+      if (selectedKind === 'live') {
+        void closeSelected()
+      }
+
+      return
+    }
+
+    // `d` arms deletion on a resumable history row. (On the New row `d` is
+    // captured by the prompt's TextInput, so it never reaches here.)
+    if (lower === 'd' && !key.ctrl && selectedKind === 'history') {
+      setConfirmDelete(history[sel - 1 - items.length]?.id ?? null)
+
+      return
+    }
+
+    if (newSelected && draftHasText) {
+      return
+    }
+
+    if (key.upArrow && sel > 0) {
+      return setSel(s => Math.max(0, s - 1))
+    }
+
+    if (key.downArrow && sel < total - 1) {
+      return setSel(s => Math.min(total - 1, s + 1))
+    }
+
+    if (key.return) {
+      if (newSelected) {
+        if (!draftHasText) {
+          return onNew()
+        }
+
+        return
+      }
+
+      if (selectedKind === 'live' && items[sel - 1]) {
+        return onSelect(items[sel - 1]!.id)
+      }
+
+      if (selectedKind === 'history' && history[sel - 1 - items.length]) {
+        return onResume(history[sel - 1 - items.length]!.id)
+      }
+    }
   })
 
   if (pickingModel) {
@@ -1076,6 +706,10 @@ export function ActiveSessionSwitcher({
   const visibleRows = Array.from({ length: visibleCount }, (_, k) => offset + k + 1)
 
   const newSelectedRow = sel === 0
+  const newRowStyle = newSelectedRow ? selectedSessionRowStyle(t) : null
+  const newRowTextColor = newRowStyle?.color
+  const newRowMarkerColor = newSessionMarkerColor(t, newSelectedRow)
+  const promptTitle = draftTitleFromPrompt(draft) || S.row.startNew
 
   return (
     <Box flexDirection="column" width={width}>
@@ -1086,18 +720,44 @@ export function ActiveSessionSwitcher({
 
       {(actionErr || err) && <Text color={t.color.label}>{C.error(actionErr || err)}</Text>}
 
-      <NewSessionRow
-        draft={draft}
-        draftModel={draftModel}
-        onClick={handleRowClick(0)}
-        selected={newSelectedRow}
-        t={t}
-      />
+      <Box backgroundColor={newRowStyle?.backgroundColor} flexDirection="row" onClick={handleRowClick(0)} width="100%">
+        <Text bold={newSelectedRow} color={newRowTextColor ?? t.color.muted}>
+          {newSelectedRow ? '▸ ' : '  '}
+        </Text>
+
+        <Box {...fixedSessionColumnStyle()} width={5}>
+          <Text bold={newSelectedRow} color={newRowMarkerColor}>
+            {'+'.padStart(2)}
+          </Text>
+        </Box>
+
+        <Box {...fixedSessionColumnStyle()} width={11}>
+          <Text bold={newSelectedRow} color={newRowMarkerColor} wrap="truncate-end">
+            {S.row.new}
+          </Text>
+        </Box>
+
+        <Box {...fixedSessionColumnStyle()} width={11}>
+          <Text color={newRowTextColor ?? t.color.muted} wrap="truncate-end">
+            {S.row.draft}
+          </Text>
+        </Box>
+
+        <Box {...fixedSessionColumnStyle()} width={18}>
+          <Text color={newRowTextColor ?? t.color.muted} wrap="truncate-end">
+            {draftModelDisplayLabel(draftModel)}
+          </Text>
+        </Box>
+
+        <Box flexGrow={1} flexShrink={1} minWidth={0}>
+          <Text bold={newSelectedRow} color={newRowTextColor ?? t.color.muted} wrap="truncate-end">
+            {promptTitle}
+          </Text>
+        </Box>
+      </Box>
 
       {offset > 0 && <Text color={t.color.muted}>{C.moreAbove(offset)}</Text>}
-      {!listLen && (
-        <Text color={t.color.muted}>{query.trim() ? S.noMatches(query.trim()) : S.noOtherSessions}</Text>
-      )}
+      {!listLen && <Text color={t.color.muted}>{S.noOtherSessions}</Text>}
 
       {visibleRows.map(i => {
         const selected = sel === i
@@ -1226,33 +886,23 @@ export function ActiveSessionSwitcher({
 
       {offset + VISIBLE < listLen && <Text color={t.color.muted}>{C.moreBelow(listLen - offset - VISIBLE)}</Text>}
 
-      {filtering ? (
+      {newSelected ? (
         <>
           <Box marginTop={1}>
-            <Text color={t.color.label}>{S.filterLabel}</Text>
+            <Text color={t.color.label}>{S.promptLabel}</Text>
             <TextInput
               color={t.color.text}
               columns={promptColumns}
-              ignoreVerticalArrows
-              onChange={applyFilter}
-              value={query}
+              onChange={setDraft}
+              onSubmit={submitDraft}
+              value={draft}
             />
           </Box>
-          <OrchestratorHintText segments={orchestratorFilterHintSegments(selectedKind === 'history')} t={t} />
+          <OrchestratorHintText segments={orchestratorContextHintSegments(true)} t={t} />
+          <Text color={t.color.muted} wrap="truncate-end">
+            {S.draftModel(draftModelDisplayLabel(draftModel))}
+          </Text>
         </>
-      ) : newSelected ? (
-        <NewSessionPromptFooter
-          cwdInput={cwdInput}
-          draft={draft}
-          draftModel={draftModel}
-          onCwdInputChange={setCwdInput}
-          onDraftChange={setDraft}
-          onDraftSubmit={submitDraft}
-          pickedCwd={pickedCwd}
-          pickingWorkspace={pickingWorkspace}
-          promptColumns={promptColumns}
-          t={t}
-        />
       ) : (
         <Box flexDirection="column" marginTop={1}>
           <OrchestratorHintText
@@ -1269,13 +919,7 @@ export function ActiveSessionSwitcher({
         </Box>
       )}
 
-      <OrchestratorHintText
-        segments={[
-          ...orchestratorGlobalHotkeyHintSegments(),
-          ...(newSelected ? [] : workspaceHintSegments(workspaceOnly))
-        ]}
-        t={t}
-      />
+      <OrchestratorHintText segments={orchestratorGlobalHotkeyHintSegments()} t={t} />
     </Box>
   )
 }
@@ -1285,28 +929,14 @@ interface OrchestratorHintTextProps {
   t: Theme
 }
 
-// The parsed key event handed to the default-mode dispatch table, plus the
-// derived lowercase input and the Ctrl+letter matcher built from it.
-interface SwitcherKeyContext {
-  ch: string | undefined
-  key: Key
-  lower: string
-  isCtrl: (letter: string) => boolean
-}
-
-interface SwitcherKeyAction {
-  test: boolean
-  run: () => void
-}
-
 interface ActiveSessionSwitcherProps {
   currentSessionId: null | string
   gw: GatewayClient
   maxWidth?: number
   onCancel: () => void
   onClose: (id: string) => Promise<null | SessionCloseResponse>
-  onNew: (cwd?: string) => void
-  onNewPrompt: (prompt: string, modelArg?: string, cwd?: string) => void
+  onNew: () => void
+  onNewPrompt: (prompt: string, modelArg?: string) => void
   onResume: (id: string) => void
   onSelect: (id: string) => void
   t: Theme

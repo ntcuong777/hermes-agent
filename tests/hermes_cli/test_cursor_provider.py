@@ -12,6 +12,7 @@ import json
 
 import pytest
 
+from agent.agent_runtimes import claim_runtime_api_mode
 from hermes_cli import runtime_provider as rp
 from hermes_cli.models import parse_model_input
 from providers import get_provider_profile
@@ -41,7 +42,7 @@ def test_a_user_can_still_pin_cursor_to_the_plain_chat_wire(monkeypatch):
 
 def test_other_providers_are_untouched(monkeypatch):
     monkeypatch.setattr(rp, "_get_model_config", dict)
-    assert rp._maybe_apply_cursor_sdk_runtime(
+    assert claim_runtime_api_mode(
         provider="anthropic", api_mode="anthropic_messages", model_cfg={}, requested_provider="anthropic"
     ) == "anthropic_messages"
 

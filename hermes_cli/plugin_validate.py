@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from hermes_cli.plugin_validate_core_override import check_core_override
+from hermes_cli.plugin_validate_core_patches import check_core_patches  # fork: core-patch registry
 from hermes_cli.plugin_validate_desktop import check_desktop_surface
 from hermes_cli.plugin_validate_private_imports import check_private_imports
 from hermes_cli.plugin_validate_locales import check_language_packs
@@ -600,6 +601,7 @@ def validate_plugin_dir(
     _check_trusted_inbound(report, recorded)
     _check_security_scan(report, plugin_dir)
     check_core_override(report, plugin_dir)
+    check_core_patches(report, manifest, plugin_dir)
     check_private_imports(report, plugin_dir)
     check_desktop_surface(report, plugin_dir)
     check_language_packs(report, manifest, plugin_dir)
@@ -666,7 +668,7 @@ def _check_security_scan(report: ValidationReport, plugin_dir: Path) -> None:
     """Run the install-time scanner at admission, so a pin a reviewer approves is one the
     installer will accept: ``dangerous`` fails the entry; ``caution`` findings surface as
     warnings for the reviewer (the installer trusts them once the pin is merged)."""
-    from tools.plugin_guard import scan_plugin
+    from hermes_cli.plugins_install_scan import scan_plugin
 
     result = scan_plugin(plugin_dir)
     flagged = [f for f in result.findings if f.severity in ("critical", "high")]

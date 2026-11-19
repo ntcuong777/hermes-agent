@@ -485,6 +485,9 @@ gateway:
     cache_unknown_route: "Cache du prompt : inconnu (ce fournisseur ne publie pas sa durée de rétention)."
     cache_unknown_runtime: "Cache du prompt : inconnu (ce runtime fixe ses propres options de cache, que Hermes ne peut pas observer)."
     cache_unknown_storage: "Cache du prompt : inconnu (le stockage de la session n'a pas pu être lu)."
+    cache_warming_off: "Keep-alives : désactivés (deux ratés)."
+    cache_tier_pending: "Niveau : 5m jusqu’à la première pause de plus de 5 minutes, puis 1h."
+    cache_learned: "Appris : {rule}."
     cache_confidence:
       proven: "prouvé"
       declared: "déclaré"
@@ -1172,35 +1175,6 @@ gateway:
     free_tier_remaining: |2-
 
       Certaines discussions sont encore sur l'offre gratuite ; utilisez /model dans ces discussions pour changer de modèle.
-  cwd:
-    current: "📁 Répertoire de travail : `{cwd}`"
-    set: "📁 Répertoire de travail défini sur `{cwd}`\nLes commandes de cette conversation s'exécutent désormais là (un `/new` revient au défaut)."
-    invalid: "❌ Le répertoire n'existe pas : `{path}`"
-    backend: "❌ Les espaces de travail ne sont disponibles que lorsque le backend de terminal est `local`."
-    unauthorized: "Vous n'êtes pas autorisé à utiliser /cwd sur ce bot."
-    failed: "❌ Impossible de définir le répertoire de travail. Consultez les journaux du gateway."
-    list_header: "📁 Espaces de travail candidats — choisissez avec `/cwd <number>` ou tapez davantage de chemin :"
-    list_item: "{index}. `{path}`"
-    list_footer: "Ou définissez n'importe quel répertoire avec `/cwd <path>`."
-    list_empty: "Aucun espace de travail connu pour l'instant — créez-en un avec `/cwd <path>` (les projets et dépôts récents apparaîtront ici)."
-    list_ambiguous: "❓ Plusieurs espaces de travail correspondent :\n{matches}\n\nTapez davantage de chemin."
-    no_chat_id: "Impossible de déterminer l'ID du chat."
-    mode_not_enabled: "Le mode sujet multi-sessions n'est pas activé actuellement pour ce chat."
-    disable_failed: "Échec de la désactivation du mode sujet : {error}"
-    mode_disabled: "Le mode sujet multi-sessions est maintenant DÉSACTIVÉ pour ce chat.\n\nLes sujets Telegram existants ne sont pas supprimés — ils ne sont simplement plus isolés comme sessions indépendantes. Le DM racine fonctionne à nouveau comme un chat Hermes normal. Exécutez /topic pour réactiver plus tard."
-    status_enabled: "Les sujets multi-sessions Telegram sont activés."
-    status_how_to: "Pour créer un nouveau chat Hermes, ouvrez « All Messages » en haut de cette interface du bot et envoyez-y un message. Telegram créera un nouveau sujet."
-    previous_unlinked: "Sessions précédentes non liées :"
-    restore_one: "Pour en restaurer une :"
-    restore_example: "Exemple : envoyez /topic {session_id} dans un sujet."
-    no_unlinked: "Aucune session Telegram précédente non liée trouvée."
-    restore_later: "Pour restaurer une session précédente plus tard :"
-    session_not_found: "Session introuvable : {session_id}"
-    not_telegram_session: "Cette session n'est pas une session Telegram et ne peut pas être restaurée dans ce sujet."
-    not_your_session: "Cette session n'appartient pas à cet utilisateur Telegram."
-    already_linked: "Cette session est déjà liée à un autre sujet Telegram."
-    restored: "Session restaurée : {title}"
-    restored_last_message: "\n\nDernier message Hermes :\n{text}"
 platform:
   whatsapp:
     clarify_other_title: "✏️ Autre"
@@ -1325,8 +1299,6 @@ platform:
       choice_error: "Erreur lors de l'application de la sélection : {error}"
       choice_expired: "⏱ Sélection expirée — aucune modification effectuée."
     command:
-      cwd:
-        arg_path: "Répertoire de l'espace de travail pour cette conversation (ex. ~/code/foo). Laissez vide pour afficher l'actuel."
       new:
         description: "Démarrer une nouvelle conversation"
         followup: "Nouvelle conversation démarrée~"
@@ -1799,8 +1771,6 @@ platform:
     prompt_other: "✏️ Autre (saisir)"
     prompt_expired: ⌛ Cette invite n'attend plus de réponse. Envoyez votre réponse comme un message normal.
 slash:
-  cwd:
-    description: "Affiche ou définit l'espace de travail terminal de cette conversation (jusqu'à /new)"
   rewind:
     description: "Rembobiner jusqu'à un prompt précédent pour le modifier et le renvoyer, ou bifurquer à partir de là (Esc Esc)"
   approve:
@@ -4380,7 +4350,7 @@ plan_usage:
   large_notice_limit_stops: "Grand modèle : votre limite {name} est atteinte ({resets}), il ne fonctionnera pas d'ici là."
   large_notice_percent: "Grand modèle : consomme davantage de votre forfait par message. Limite mensuelle des grands modèles : {percent} utilisé."
 shared:
-  # /undo's line naming the files the undone turns changed (tools/checkpoint_undo_hint.py).
+  # /undo's line naming the files the undone turns changed (agent/checkpoints/undo_hint.py).
   undo_rollback:
     list: "↶ Fichiers modifiés dans les tours annulés : {files}. Lancez /rollback pour lister les checkpoints et en restaurer un."
     more: "+{count} de plus"

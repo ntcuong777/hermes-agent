@@ -26,12 +26,6 @@ if TYPE_CHECKING:  # string annotations only; never imported at runtime (cycle)
 logger = logging.getLogger("gateway.run")
 
 
-def _command_text(event: Any) -> str:
-    """The command line as typed (``/goal clear``), one line, for the viewer's transcript."""
-    text = str(getattr(event, "text", "") or "").strip()
-    return text.splitlines()[0][:200] if text else ""
-
-
 class GatewayGoalsMixin:
     """Goal/heartbeat continuation, post-turn hooks and loop-wakeup watcher methods for GatewayRunner."""
 
@@ -407,61 +401,16 @@ class GatewayGoalsMixin:
                            run_generation=turn_run_generation(event))
             except Exception as exc:
                 logger.debug("%s hook failed: %s", label, exc)
-        await self._publish_local_control(source, only_if_present=True, session_id=session_entry.session_id)
+        await self._publish_local_control(source, only_if_present=True)
 
-    async def _publish_local_control(self, source: Any, *, only_if_present: bool = False,
-                                     session_id: Optional[str] = None) -> None:
-        """A session's goal or loop state just moved here: repaint its viewers' cards (a local
-        session's own, or a TUI/Desktop viewer a messaging lane is mirrored onto), whose loop countdown
-        runs off the snapshot's ``next_due_at``. A lane source names the session it is bound to
-        (*session_id*): its own chat id is the thread, not a session a viewer is subscribed to."""
-        if getattr(source, "platform", None) == Platform.LOCAL:
-            session_id = source.chat_id
-        if not session_id:
+    async def _publish_local_control(self, source: Any, *, only_if_present: bool = False) -> None:
+        """A local (Desktop/Ink) session's goal or loop state just moved here: repaint its viewers' cards,
+        whose loop countdown runs off the snapshot's ``next_due_at``."""
+        if getattr(source, "platform", None) != Platform.LOCAL:
             return
         from gateway.session_authorities import active_authority
         from gateway.session_control_actions import publish_async
-        await publish_async(active_authority(self), session_id, only_if_present=only_if_present)
-
-    async def _lane_session_id(self, event: Any) -> Optional[str]:
-        """The session a messaging-lane *event* runs in, or None for a local/unknown source (a local
-        session's own commands publish through ``execute_command``)."""
-        source = getattr(event, "source", None)
-        if source is None or getattr(source, "platform", None) == Platform.LOCAL:
-            return None
-        entry = await self.async_session_store.get_or_create_session(source, touch_activity=False)
-        return getattr(entry, "session_id", None)
-
-    async def _publish_lane_control(self, event: Any) -> None:
-        """After a goal/loop command a messaging lane ran: the bound local viewer's goal and loop bars
-        repaint (a ``/goal clear`` in the thread left the TUI's "goal paused" bar up). Never fails the
-        command."""
-        try:
-            if session_id := await self._lane_session_id(event):
-                await self._publish_local_control(event.source, session_id=session_id)
-        except Exception as exc:
-            logger.debug("lane control publish failed: %s", exc)
-
-    async def _publish_lane_info(self, event: Any, output: Optional[str] = None) -> None:
-        """After any command a messaging lane ran: the bound local viewer repaints its model, reasoning,
-        fast, yolo, title and cwd pills (``session.info``) and, when the command answered with text, shows
-        that answer too (``command.output``): the thread gets the reply as usual, and the TUI/Desktop
-        user who typed the command, or is following the session, is not left with only an
-        acknowledgement. Commands that changed nothing republish the same values; a session without a
-        live viewer costs one dict lookup. Never fails the command."""
-        try:
-            if session_id := await self._lane_session_id(event):
-                from gateway.session_authorities import active_authority
-                from gateway.session_control_actions import publish_command_output, publish_info_async
-                authority = active_authority(self)
-                await publish_info_async(authority, session_id)
-                # A command the TUI itself asked for runs in band under a command sink and returns its answer to
-                # that asker: publishing it as well would print it twice (and to every other viewer).
-                from gateway.session_command_sink import active_sink
-                if isinstance(output, str) and output.strip() and active_sink() is None:
-                    publish_command_output(authority, session_id, _command_text(event), output)
-        except Exception as exc:
-            logger.debug("lane info publish failed: %s", exc)
+        await publish_async(active_authority(self), source.chat_id, only_if_present=only_if_present)
 
     @staticmethod
     def _turn_failed() -> bool:
@@ -595,7 +544,7 @@ class GatewayGoalsMixin:
             with suppress(Exception):
                 mgr.abandon_tick()
         # Viewers swap the countdown for "running now" (or re-anchor it after a slash tick settled).
-        await self._publish_local_control(source, session_id=sid)
+        await self._publish_local_control(source)
 
     async def _loop_wakeup_watcher(self, interval: float = 15.0) -> None:
         """Fire due /loop wakeups for idle gateway sessions: a coarse ticker scans persisted loops

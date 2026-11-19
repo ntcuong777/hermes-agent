@@ -475,6 +475,7 @@ Payload fields below are the exact event-specific fields supplied by each call s
 | `on_stream_end` | Observer | Dispatched when a streaming response finishes or errors, after the stream closes; return ignored. | `final_text`, `finished`, `error`, `turn_id`, `iteration`, `session_id`, `model`, `provider`, `surface` | Full assembled response text; error text may include provider data. |
 | `on_interim_message` | Observer | Dispatched when a mid-loop assistant message is surfaced before the final answer (streaming or non-streaming); return ignored. | `text`, `already_streamed`, `turn_id`, `iteration`, `session_id`, `model`, `provider`, `surface` | Full interim assistant text. |
 | `transform_api_error_classification` | Transform | On each failed provider attempt, at the top of the built-in classifier; all callbacks run, then the first dict with a valid `reason` wins (run-all-then-pick-first), and skipped valid results log a runtime warning. Python plugins only. | `provider`, `model`, `status_code`, `error_type`, `error_code`, `error_message`, `error_body`, `error`, `approx_tokens`, `context_length`, `num_messages` | `error_message` and `error_body` may contain raw provider/user data. |
+| `transform_status_bar_fields` | Transform | Each time a `session.usage` frame is built (TUI embedded ticker and shared gateway) for a bar whose `display.status_bar.fields` lists names; never dispatched for the default bar. Chained: each callback gets the previous callback's rows. Core keeps only valid rows whose `id` is listed, strips control characters and caps the text. Must not block: read caches, never the network. | `fields` (running list), `session_id`, `agent` (read-only), `wanted` (listed names, lowercase) | Return a list of `{id, text, tone?, min_cols?}` (`tone`: `muted`, `good`, `warn`, `bad`). The TUI shows each row after the context bar. |
 | `on_session_start` | Observer | First turn of a new session; return ignored. | `session_id`, `model`, `platform` | Identifiers and routing metadata only. |
 | `on_session_open` | Observer | Once each time a client creates or opens a local session (CLI, TUI, Desktop, ACP, kanban/A2A workers), in the gateway under the session's profile, before its first turn; never for messaging chats. Timeout-bounded; return ignored. | `session_id`, `platform`, `reason` (`create` or `resume`) | Session identifiers only. |
 | `on_session_end` | Observer | Canonically at each turn finalization; CLI/TUI exits have additional reduced legacy shapes. Return ignored. | Canonical: `session_id`, `task_id`, `turn_id`, `completed`, `failed`, `interrupted`, `turn_exit_reason`, `model`, `platform`; exit paths may add `reason`/`api_request_id` and omit fields. | IDs, model/platform, and outcome; canonical payload has no message body. |
@@ -1158,7 +1159,7 @@ def my_callback(session_id: str, platform: str, **kwargs):
 
 ### `on_session_delete`
 
-Fires **once per operation, after the transaction commits**, when a session actually went away: deleted (single, bulk, the empty-session sweep, retention prune, ghost-prune maintenance, profile repair) or deliberately archived. Every surface ends in the same `SessionDB` methods, so CLI (`hermes sessions delete|prune|archive`, `/exit --delete`), TUI, Desktop/dashboard (single and bulk delete, archive) and the gateway API server are all covered. Plugins that keep per-session state on disk can clean up without polling the session store.
+Fires **once per operation, after the transaction commits**, when a session actually went away: deleted (single, bulk, the empty-session sweep, retention prune, ghost-prune maintenance, profile repair) or deliberately archived. Every surface ends in the same session-store operations, so CLI (`hermes sessions delete|prune|archive`, `/exit --delete`), TUI, Desktop/dashboard (single and bulk delete, archive) and the gateway API server are all covered. Plugins that keep per-session state on disk can clean up without polling the session store.
 
 **Callback signature:**
 
@@ -1277,6 +1278,7 @@ def my_callback(parent_session_id: str | None,
                 child_subagent_id: str,
                 child_role: str,
                 child_goal: str,
+                child_profile: str | None = None,
                 **kwargs):
 ```
 
@@ -1289,6 +1291,7 @@ def my_callback(parent_session_id: str | None,
 | `child_subagent_id` | `str` | Stable subagent ID used by delegation observability and controls. |
 | `child_role` | `str` | Effective child role after delegation policy is applied, for example `"leaf"` or `"orchestrator"`. |
 | `child_goal` | `str` | Delegated goal/prompt that the child agent will execute. |
+| `child_profile` | `str \| None` | The `child_profile` a delegation provider's route named for this child (`None` when it named none); see [Delegation provider plugins](../../developer-guide/delegation-provider-plugin.md). |
 
 **Fires:** In `tools/delegate_tool.py`, inside `_build_child_agent()`, after the child `AIAgent` has been constructed and annotated with subagent identity metadata, and before `_run_single_child()` runs the child.
 

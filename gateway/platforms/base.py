@@ -448,7 +448,6 @@ from gateway.platforms.base_exec_approval import (
 from gateway.platforms.base_streaming_tts import (
     AudioFormat, StreamingTTSHandle, streaming_tts_should_skip_whole_file, streaming_tts_turn_key)
 from gateway.platforms.event import MessageEvent, MessageType, ProcessingOutcome
-from gateway.platforms.base_plaintext_command import coerce_plaintext_gateway_command
 from gateway.warning_notifications import diagnostic_wake_muted
 from hermes_cli.observability.shared_metrics_gateway import records_delivery, stop_reply_clock
 from hermes_cli.home_data_layout import CREDENTIAL_STORE_DIRS, HOME_ENV_FILES, SECRET_CACHE_STORES
@@ -1524,6 +1523,28 @@ class _ExtractedResponse:
     pre_extract: str
 
 
+_PLAINTEXT_GATEWAY_RESTART_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^(?:please\s+)?restart\s+(?:the\s+)?gateway[.!?\s]*$", re.IGNORECASE),
+    re.compile(r"^(?:please\s+)?restart\s+(?:the\s+)?hermes\s+gateway[.!?\s]*$", re.IGNORECASE),
+    re.compile(r"^(?:please\s+)?restart\s+hermes[.!?\s]*$", re.IGNORECASE))
+
+
+def coerce_plaintext_gateway_command(event: MessageEvent) -> None:
+    """Rewrite a tiny set of DM plaintext admin phrases (exact matches only) into slash commands so
+    ``restart gateway`` never reaches the LLM/tool path (a self-restart from inside the running
+    agent leaves the gateway stuck in ``draining`` waiting on that agent)."""
+    with contextlib.suppress(Exception):
+        if event is None or event.message_type != MessageType.TEXT:
+            return
+        text = (event.text or "").strip()
+        if not text or text.startswith("/"):
+            return
+        if getattr(getattr(event, "source", None), "chat_type", None) != "dm":
+            return
+        if any(pattern.match(text) for pattern in _PLAINTEXT_GATEWAY_RESTART_PATTERNS):
+            event.text = "/restart"
+
+
 @dataclass
 class ExecApprovalPrompt:
     """One exec-approval prompt, ready for a platform to render natively (see
@@ -1913,17 +1934,6 @@ class BasePlatformAdapter(_SessionModelSettingsMixin, ABC):
         delivery, so the no-allowlist default-deny would be wrong. Authorization DELEGATED, not
         ABSENT — every network-exposed direct adapter leaves it False."""
         return False
-
-    accepts_local_forward = False
-
-    async def forward_local_submit(self, *, session_id: str, text: str, submission_id: str,
-                                   command: bool = False) -> Optional[dict]:
-        """Relay a local surface's prompt to *session_id*'s messaging lane on the adapter's own
-        terms (a bound thread, a bot chat…), or return None to keep the caller's refusal. The
-        canonical submit path consults :attr:`accepts_local_forward` before calling; adapters
-        that opt in implement both (Discord: the session mirror's bound thread). ``command``: the
-        text is a slash command the lane runs as a command, not a prompt."""
-        return None
 
     def supports_draft_streaming(
         self, chat_type: Optional[str] = None, metadata: Optional[dict[str, Any]] = None,

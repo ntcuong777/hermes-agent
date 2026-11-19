@@ -1079,6 +1079,7 @@ class GatewayStartupMixin:
             from hermes_cli.plugins_cmd_remove import sweep_pending_plugin_deletes
             sweep_pending_plugin_deletes()  # trees a previous life still held when they were uninstalled
             discover_plugins()
+        __import__("hermes_cli.core_patches_safe").core_patches_safe.gateway_apply()  # fork: core-patch registry
         # Relay entrypoints share the effective profile opt-out, including when a
         # deployment injects a URL. No URL or explicitly disabled -> no side effects.
         try:

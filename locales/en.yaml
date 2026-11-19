@@ -449,6 +449,9 @@ gateway:
     cache_unknown_route: "Prompt cache: unknown (this provider does not publish its cache retention)."
     cache_unknown_runtime: "Prompt cache: unknown (this runtime sets its own cache options, which Hermes cannot observe)."
     cache_unknown_storage: "Prompt cache: unknown (the session store could not be read)."
+    cache_warming_off: "Keep-alives: off (missed twice)."
+    cache_tier_pending: "Tier: 5m until the first pause over 5 minutes, then 1h."
+    cache_learned: "Learned: {rule}."
     cache_confidence:
       proven: "proven"
       declared: "declared"
@@ -527,35 +530,6 @@ gateway:
     new_header: "Started a new Hermes session in this topic.\n\nTip: for parallel work, open All Messages and send a message there to create a separate topic instead of using /new here. /new replaces the session attached to the current topic."
     help: "/topic — enable multi-session DM mode (one bot, many parallel chats)\n\nUsage:\n  /topic             Enable topic mode, or show status if already on\n  /topic help        Show this message\n  /topic off         Disable topic mode and clear topic bindings\n  /topic <id>        Inside a topic: restore a previous session by ID\n\nHow it works:\n1. Run /topic once in this DM — Hermes checks BotFather Threads\n   Settings are enabled and flips on multi-session mode.\n2. Tap All Messages at the top of the bot and send any message.\n   Telegram creates a new topic for that message; each topic is\n   an independent Hermes session (fresh history, fresh context).\n3. The root DM becomes a system lobby — send /topic, /status,\n   /help, /usage there. Normal prompts go in a topic.\n4. /new inside a topic resets just that topic's session.\n5. /topic <id> inside a topic restores an old session into it."
     setup_image_caption: "BotFather → Bot Settings → Threads Settings"
-  cwd:
-    current: "📁 Working directory: `{cwd}`"
-    set: "📁 Working directory set to `{cwd}`\nCommands in this conversation now run there (a `/new` returns to the default)."
-    invalid: "❌ Directory does not exist: `{path}`"
-    backend: "❌ Workspaces are only available while the terminal backend is `local`."
-    unauthorized: "You are not authorized to use /cwd on this bot."
-    failed: "❌ Could not set the working directory. Check the gateway logs."
-    list_header: "📁 Candidate workspaces — pick with `/cwd <number>`, or type more of the path:"
-    list_item: "{index}. `{path}`"
-    list_footer: "Or set any directory with `/cwd <path>`."
-    list_empty: "No known workspaces yet — set one with `/cwd <path>` (projects and recently used repos will be listed here)."
-    list_ambiguous: "❓ Several workspaces match:\n{matches}\n\nType more of the path."
-    no_chat_id: "Could not determine chat ID."
-    mode_not_enabled: "Multi-session topic mode is not currently enabled for this chat."
-    disable_failed: "Failed to disable topic mode: {error}"
-    mode_disabled: "Multi-session topic mode is now OFF for this chat.\n\nExisting topics in Telegram aren't removed — they'll just stop being gated as independent sessions. The root DM works as a normal Hermes chat again. Run /topic to re-enable later."
-    status_enabled: "Telegram multi-session topics are enabled."
-    status_how_to: "To create a new Hermes chat, open All Messages at the top of this bot interface and send any message there. Telegram will create a new topic for it."
-    previous_unlinked: "Previous unlinked sessions:"
-    restore_one: "To restore one:"
-    restore_example: "Example: Send /topic {session_id} inside a topic."
-    no_unlinked: "No previous unlinked Telegram sessions found."
-    restore_later: "To restore a previous session later:"
-    session_not_found: "Session not found: {session_id}"
-    not_telegram_session: "That session is not a Telegram session and cannot be restored into this topic."
-    not_your_session: "That session does not belong to this Telegram user."
-    already_linked: "That session is already linked to another Telegram topic."
-    restored: "Session restored: {title}"
-    restored_last_message: "\n\nLast Hermes message:\n{text}"
   undo:
     nothing: "Nothing to undo."
     removed: "↩️ Undid {turns} turn(s) ({count} message(s)).\nBacked up to: \"{preview}\"\nCopy/edit the text above and send it to re-prompt from here."
@@ -1219,8 +1193,6 @@ platform:
       title:
         description: "Set or show the session title"
         arg_name: "Session title. Leave empty to show current."
-      cwd:
-        arg_path: "Workspace directory for this conversation (e.g. ~/code/foo). Leave empty to show current."
       resume:
         arg_name: "Session name to resume. Leave empty to list sessions."
       usage:
@@ -1636,8 +1608,6 @@ slash:
     description: "Resume a previously-named session"
   sethome:
     description: "Set this chat as the home channel"
-  cwd:
-    description: "Show or set this conversation's terminal workspace (until /new)"
   update:
     description: "Update Hermes Agent to the latest version"
   category:
@@ -4174,7 +4144,7 @@ plan_usage:
   large_notice_limit_stops: "Large model: your {name} limit is reached ({resets}), so it won't run until then."
   large_notice_percent: "Large model: uses more of your plan's usage per message. Monthly large-model limit: {percent} used."
 shared:
-  # /undo's line naming the files the undone turns changed (tools/checkpoint_undo_hint.py).
+  # /undo's line naming the files the undone turns changed (agent/checkpoints/undo_hint.py).
   undo_rollback:
     list: "↶ Files changed in the undone turns: {files}. Run /rollback to see checkpoints and restore them."
     more: "+{count} more"

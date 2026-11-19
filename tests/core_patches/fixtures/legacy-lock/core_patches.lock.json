@@ -1,0 +1,11 @@
+{
+  "patches": {
+    "shout": {
+      "ast_sha": "8ac9a553d27b157324c2b1e0477f32ed396d2195aec4e09bb1a95cca39ff219a",
+      "python": "3.14.9",
+      "source": "def greet(name: str) -> str:\n    \"\"\"Say hello.\"\"\"\n    return f\"hello {name}\"\n",
+      "target": "cpdemo_target:greet"
+    }
+  },
+  "version": 1
+}

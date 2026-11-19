@@ -2,7 +2,7 @@
 (handlers in ``tui_gateway/methods_tools.py``, browser helpers in ``methods_browser.py``).
 
 Several results here are pass-throughs of dicts another module owns (``tools/process_registry.py``,
-``tools/checkpoint_manager.py``, ``tools/cronjob_tools.py``): those declare every key the producer is
+``agent/checkpoints/manager.py``, ``tools/cronjob_tools.py``): those declare every key the producer is
 known to emit plus ``extra="allow"`` so a new upstream key never trips the strict gate.
 """
 
@@ -243,6 +243,8 @@ class CommandsCatalogResult(Result):
     # Every plugin command (name without ``/`` -> description), also one a display row such as Ink's
     # ``/logs`` hides from ``categories``: route on this, not on the display list.
     plugin_commands: dict[str, str] = Field(default_factory=dict)
+    # Default TUI key chords plugins declared (``alt+s`` -> ``/stash toggle``); ``display.tui_keybinds`` overrides.
+    keybinds: dict[str, str] = Field(default_factory=dict)
 
 
 method("commands.catalog", params=CommandsCatalogParams, result=CommandsCatalogResult,
@@ -273,7 +275,16 @@ class DispatchType(WireEnum):
     send = "send"
     skill = "skill"
     prefill = "prefill"
-    stash_saved = "stash-saved"
+    composer_clear = "composer-clear"
+    choices = "choices"
+
+
+class ChoiceItem(Result):
+    """One row of a ``choices`` directive: ``select`` (and ``drop``, on ``x``) is a slash command the client runs."""
+
+    label: str
+    select: str
+    drop: str | None = None
 
 
 class CommandDispatchParams(Params):
@@ -295,8 +306,13 @@ class CommandDispatchResult(Result):
     display: str | None = None
     name: str | None = None
     status: str | None = None
-    count: int | None = None
-    max: int | None = None
+    # ``prefill``: a slash command the client runs once it has actually put ``message`` in the composer.
+    ack: str | None = None
+    # ``choices``: a picker (title, rows, preselected row index, optional ``notice`` line); a row's
+    # ``select``/``drop`` command answers with any directive again. ``composer-clear`` carries only ``notice``.
+    title: str | None = None
+    items: list[ChoiceItem] | None = None
+    selected: int | None = None
 
 
 method("command.dispatch", params=CommandDispatchParams, result=CommandDispatchResult,
@@ -307,6 +323,8 @@ class SlashExecParams(Params):
     session_id: str
     command: str
     profile: str | None = None
+    # A keybind's live composer text, offered to a plugin command as its ``composer_text`` keyword.
+    composer_text: str | None = None
 
 
 class SlashExecResult(Result):
@@ -322,8 +340,13 @@ class SlashExecResult(Result):
     display: str | None = None
     name: str | None = None
     status: str | None = None
-    count: int | None = None
-    max: int | None = None
+    # ``prefill``: a slash command the client runs once it has actually put ``message`` in the composer.
+    ack: str | None = None
+    # ``choices``: a picker (title, rows, preselected row index); a row's ``select``/``drop`` command answers
+    # with any directive again. ``composer-clear`` carries only ``notice``.
+    title: str | None = None
+    items: list[ChoiceItem] | None = None
+    selected: int | None = None
 
 
 method("slash.exec", params=SlashExecParams, result=SlashExecResult,
@@ -373,7 +396,7 @@ method("config.show", params=ConfigShowParams, result=ConfigShowResult,
 class RollbackListParams(Params):
     session_id: str
     profile: str | None = None
-    # Epoch seconds an /undo's span began (``tools/checkpoint_undo_hint.py::undo_span_start``): the result
+    # Epoch seconds an /undo's span began (``agent/checkpoints/undo_hint.py::undo_span_start``): the result
     # then carries ``undo_hint`` naming the files that span changed.
     undo_since: float | None = None
     # The rewound user row's id (``session.mutate`` rewind's ``target_message.id``): the kept rows before it
@@ -408,7 +431,7 @@ class RollbackRestoreParams(Params):
 
 
 class RollbackRestoreResult(_Open):
-    """``tools/checkpoint_manager.py::restore`` outcome; ``history_removed`` is added for a full
+    """``agent/checkpoints/manager.py::restore`` outcome; ``history_removed`` is added for a full
     (non-file) restore that also rewound the live transcript."""
 
     success: bool
@@ -469,7 +492,7 @@ class CronManageParams(Params):
 
 
 class CronJobRow(_Open):
-    """``tools/cronjob_job_args.py::_format_job``."""
+    """``cron/job_args.py::_format_job``."""
 
     job_id: str
     name: str = ""

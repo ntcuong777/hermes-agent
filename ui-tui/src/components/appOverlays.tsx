@@ -7,8 +7,9 @@ import type { AppOverlaysProps } from '../app/interfaces.js'
 import { $overlayState, hasFloatingPanel, patchOverlayState } from '../app/overlayStore.js'
 import { $uiSessionId, $uiTheme } from '../app/uiStore.js'
 import { NATIVE_MODE } from '../config/env.js'
+import { slotComponent } from '../sdk/ext/slotReact.js' // fork: tui slot
 
-import { ActiveSessionSwitcher } from './activeSessionSwitcher.js'
+import { ActiveSessionSwitcher as StockSessionSwitcher } from './activeSessionSwitcher.js'
 import { FloatBox } from './appChrome.js'
 import { BillingOverlay } from './billingOverlay.js'
 import { ConnectionSetupOverlay } from './connectionSetupOverlay.js'
@@ -19,12 +20,14 @@ import { OverlayHint } from './overlayControls.js'
 import { listRowStyle } from './overlayPrimitives.js'
 import { PetPicker } from './petPicker.js'
 import { PluginsHub } from './pluginsHub.js'
-import { ApprovalPrompt, ClarifyPrompt, ConfirmPrompt } from './prompts.js'
+import { ApprovalPrompt as StockApprovalPrompt, ClarifyPrompt, ConfirmPrompt } from './prompts.js'
 import { RewindBrowse } from './rewindBrowse.js'
 import { SkillsHub } from './skillsHub.js'
 import { SubscriptionOverlay } from './subscriptionOverlay.js'
 import { WidgetGrid, type WidgetGridWidget } from './widgetGrid.js'
 
+const ActiveSessionSwitcher = slotComponent('sessionSwitcher', StockSessionSwitcher) // fork: tui slot
+const ApprovalPrompt = slotComponent('approvalPrompt', StockApprovalPrompt) // fork: tui slot
 const COMPLETION_WINDOW = 16
 
 /**

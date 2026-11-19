@@ -47,11 +47,21 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.SYNC_PAT }}
 
+      # Python for scripts/fork/sync-finish.sh, which regenerates the gateway contract.
+      - name: Set up the locked Python toolchain
+        uses: ./.github/actions/setup-pm
+        with:
+          toolchain: python
+          extras: '["all"]'
+          test-environment: 'true'
+
       - id: merge
         run: |
           set -euo pipefail
           git config user.name "upstream-sync"
           git config user.email "upstream-sync@users.noreply.github.com"
+          # rerere + the keep-ours driver for the generated gateway-contract files
+          scripts/fork/sync-setup.sh
           git remote add upstream "$UPSTREAM_URL"
           git fetch --no-tags upstream main
           # Tags carry the release identity: canary tags embed the stable core
@@ -66,6 +76,10 @@ jobs:
 
           git checkout -B "$SYNC_BRANCH"
           if git merge --no-edit -m "Merge upstream main into personal" upstream/main; then
+            # The driver kept our copy of the generated contract; rebuild it from the
+            # merged Python. A failure here leaves it stale and fork-check goes red
+            # (tests/tui_gateway/contracts/test_generated.py), which raises the alert.
+            scripts/fork/sync-finish.sh || echo "::warning::gateway contract regeneration failed"
             # Stamp the release this merge carries, from the nearest semver-shaped tag
             # reachable from the merge (major of 1-3 digits: the CalVer scheme can never
             # match). The stable core is what lands: the canary suffix is dropped.
@@ -80,6 +94,13 @@ jobs:
                 git add hermes-upstream-release
                 git commit -m "chore: stamp upstream release $base"
               fi
+            fi
+            # Stamp the upstream commit this merge carries. A Nix store build has no git history, so
+            # core-patch provenance (status.json, the patch lock records) reads this file instead.
+            scripts/fork/upstream-ref.sh --stamp . > /dev/null
+            if [ -n "$(git status --porcelain -- hermes-upstream-commit)" ]; then
+              git add hermes-upstream-commit
+              git commit -m "chore: stamp upstream commit"
             fi
             git push --force origin "$SYNC_BRANCH"
             echo "state=merged" >> "$GITHUB_OUTPUT"
@@ -109,21 +130,68 @@ jobs:
       FILES: ${{ needs.merge.outputs.files }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
+      # The core-patch report (which patched upstream function changed, against which upstream commit
+      # it was written, and why it exists) goes into the PR or issue body. The plugins live in the
+      # nix-darwin repo, so this reads the fork-side pins (.github/core-patch-pins.json); the
+      # function-level diff comes from scripts/fork/sync-report.sh --plugins-root run there. Never
+      # fails the job: a report problem is a note in the report.
+      - name: Check out the branch the report describes
+        if: needs.merge.outputs.state == 'merged' || needs.merge.outputs.state == 'conflict'
+        continue-on-error: true
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
+        with:
+          ref: ${{ needs.merge.outputs.state == 'merged' && 'sync/upstream' || 'personal' }}
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_PAT }}
+
+      - name: Core patch report
+        id: patches
+        continue-on-error: true
+        env:
+          FILES: ${{ needs.merge.outputs.files }}
+        run: |
+          report="$RUNNER_TEMP/core-patch-report.md"
+          : > "$report"
+          if [ "${{ needs.merge.outputs.state }}" = merged ] && [ -x scripts/fork/sync-report.sh ]; then
+            scripts/fork/sync-report.sh > "$report" || true
+          elif [ "${{ needs.merge.outputs.state }}" = conflict ] && [ -f .github/core-patch-pins.json ]; then
+            hit="$(python3 -I - "$FILES" <<'PY'
+          import json, sys
+          files = set(sys.argv[1].split())
+          pins = json.load(open(".github/core-patch-pins.json")).get("pins", {})
+          print(", ".join(sorted({p.get("target_file", "") for p in pins.values()} & files)))
+          PY
+          )" || hit=""
+            [ -z "$hit" ] || printf '%s\n' "Patched files in conflict (core patches live there): $hit" > "$report"
+          fi
+          cat "$report" >> "$GITHUB_STEP_SUMMARY" || true
+          echo "path=$report" >> "$GITHUB_OUTPUT"
+
       - name: Report
+        env:
+          PATCH_REPORT: ${{ steps.patches.outputs.path }}
         run: |
           set -euo pipefail
           gh label create "$ALERT_LABEL" --color B60205 --force \
             --description "Upstream sync needs the person" >/dev/null
+
+          with_report() { # $1 text: the text, then the core-patch report (capped: a body is limited to 65536 chars)
+            printf '%s\n' "$1"
+            if [ -n "${PATCH_REPORT:-}" ] && [ -s "$PATCH_REPORT" ]; then
+              printf '\n'
+              head -c 40000 "$PATCH_REPORT"
+            fi
+          }
 
           open_alert=$(gh issue list --label "$ALERT_LABEL" --state open \
             --json number --jq '.[0].number // empty')
 
           raise_alert() { # $1 title, $2 body
             if [ -n "$open_alert" ]; then
-              gh issue edit "$open_alert" --title "$1" --body "$2" >/dev/null
+              gh issue edit "$open_alert" --title "$1" --body "$(with_report "$2")" >/dev/null
               gh issue comment "$open_alert" --body "Still failing: $RUN_URL" >/dev/null
             else
-              gh issue create --label "$ALERT_LABEL" --title "$1" --body "$2" >/dev/null
+              gh issue create --label "$ALERT_LABEL" --title "$1" --body "$(with_report "$2")" >/dev/null
             fi
           }
 
@@ -133,7 +201,7 @@ jobs:
             if [ -z "$existing" ]; then
               # shellcheck disable=SC2086
               gh pr create --head "$SYNC_BRANCH" --base personal --title "$1" \
-                --body "Automated merge of upstream main. Run: $RUN_URL" $2 >/dev/null
+                --body "$(with_report "Automated merge of upstream main. Run: $RUN_URL")" $2 >/dev/null
             fi
           }
 

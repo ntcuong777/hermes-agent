@@ -12,10 +12,12 @@ def invoke_plugin_command(handler: Callable, raw_args: str, **context: Any) -> A
     """Call *handler* once with *raw_args* plus the *context* keywords it declares.
 
     Every surface passes the same context (``source``, ``session_id``, ``session_key``,
-    ``platform``); a handler opts in by naming any of them as keyword-capable parameters, or
-    takes them all with ``**kwargs``. Legacy ``fn(raw_args)`` handlers and opaque signatures keep
+    ``platform``; a TUI key chord adds ``composer_text``); a handler opts in by naming any of them
+    as keyword-capable parameters, or takes them all with ``**kwargs``. Legacy ``fn(raw_args)`` handlers and opaque signatures keep
     the one-argument call. Handler exceptions propagate; they are never retried as a legacy call.
     """
+    from hermes_cli.plugin_composer import composer_context
+    context = {**composer_context(handler), **context}
     try:
         parameters = list(inspect.signature(handler).parameters.values())
     except (TypeError, ValueError):

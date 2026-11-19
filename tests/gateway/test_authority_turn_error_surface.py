@@ -1,6 +1,7 @@
 """A turn that fails on the session authority completes with the same ``error_surface`` the TUI
 path sends, so the Desktop renders the failure's own card (free tier at capacity, rate limit)
 instead of the generic one."""
+import contextvars
 import io
 from types import SimpleNamespace
 
@@ -123,8 +124,11 @@ def test_a_managed_worker_auth_failure_offers_the_agents_key_action(tmp_path, mo
             vars(self).update(_OPENROUTER)
 
     sent = []
-    _execute(_minimax_frame(tmp_path, monkeypatch), monkeypatch, base=Identity, sent=sent,
-             result={'final_response': '', 'failed': True, 'completed': False, **_AUTH_FAILED})
+    # worker.execute sets session and scope contextvars for the child process it normally runs in; run it in a
+    # copied context so they do not leak into later tests on this thread (approval and scope pins).
+    contextvars.copy_context().run(
+        _execute, _minimax_frame(tmp_path, monkeypatch), monkeypatch, base=Identity, sent=sent,
+        result={'final_response': '', 'failed': True, 'completed': False, **_AUTH_FAILED})
     frame = next(payload['result'] for kind, payload in sent if kind == 'result')
     accepted, usage = accept_result(frame)
     _assert_update_key_card(_complete('', {'result': {**accepted, 'local_viewer': True}, 'usage': usage}))

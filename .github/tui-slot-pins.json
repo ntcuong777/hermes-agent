@@ -1,0 +1,92 @@
+{
+  "slots": {
+    "approvalPrompt": {
+      "plugin": "tui-approval",
+      "reason": "expand/scroll, description title and the structured MCP body on the approval panel (rule 6.9)",
+      "sha": "ab0fd7fa7721cb224ddf85360929f4a7bd62041f86ec3c74e78c40af7a4edc36",
+      "symbols": [],
+      "target_file": "ui-tui/src/components/prompts.tsx",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
+    },
+    "canonical.mutate": {
+      "plugin": "tui-lane",
+      "reason": "reasoning efforts on the model picker, the modelPayload effort split and the compress timeout on the canonical controls",
+      "sha": "1bbd3a4a476d1624669a6c22f19313cd6098fdf30c0ccbf0a21adf255fed3c0d",
+      "symbols": [],
+      "target_file": "ui-tui/src/app/slash/canonicalSessionControls.ts",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
+    },
+    "completion.request": {
+      "plugin": "tui-ports",
+      "reason": "mid-prompt @file and inline /skill completion at the caret; replaceTo keeps the text after it",
+      "sha": "4a2425e69fa36218c9248d8b8bcf6b727eebb531d1a5efdd20af7a63dafbfe4d",
+      "symbols": [
+        "TAB_PATH_RE",
+        "completionRequestForInput"
+      ],
+      "target_file": "ui-tui/src/hooks/useCompletion.ts",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
+    },
+    "gateway.event": {
+      "plugin": "tui-lane",
+      "reason": "a command that ran on the session's bound thread echoes its output into the local transcript",
+      "sha": "3907c1b1c415cd15bd2711fce5d7e1c8099d365e7ecad031ac95a288ed94d979",
+      "snapshot_commit": "921a2db03c476c2a6a1fa089836a6d4669464b8a",
+      "snapshot_kind": "fork-core",
+      "symbols": [],
+      "target_file": "ui-tui/src/app/createGatewayEventHandler.ts",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
+    },
+    "inputHandlers": {
+      "plugin": "tui-input",
+      "reason": "Ctrl+C order with the compress hold, double-Esc doc, Ctrl+G raw on macOS, sessions Esc guard and completion apply at the caret end",
+      "sha": "d84a7128317f50a15446dc5080993b7e4680439e6641ba3e364e517807d01497",
+      "symbols": [],
+      "target_file": "ui-tui/src/app/useInputHandlers.ts",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
+    },
+    "sessionSwitcher": {
+      "plugin": "tui-switcher",
+      "reason": "workspace filter, + new row with prompt and model draft, reasoning in the model picker, Esc modes",
+      "sha": "b10a2d624a1916843822936273b6a6ae43887dae758b60f82306a34a8e6aacb2",
+      "symbols": [],
+      "target_file": "ui-tui/src/components/activeSessionSwitcher.tsx",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
+    },
+    "slash.refused": {
+      "plugin": "tui-lane",
+      "reason": "a lane_owned refusal is resent as typed through slash.exec, which relays it to the session's bound thread",
+      "sha": "09829b8051166b35e159d44ed0c0df7f742fc46952abd133f841857f7bebb03c",
+      "snapshot_commit": "921a2db03c476c2a6a1fa089836a6d4669464b8a",
+      "snapshot_kind": "fork-core",
+      "symbols": [],
+      "target_file": "ui-tui/src/app/createSlashHandler.ts",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
+    },
+    "statusRule": {
+      "plugin": "tui-chrome",
+      "reason": "medium effort shown, opt-in plugin segments (cost/quota) and the stash count on the status bar",
+      "sha": "43a8ab0f67d86c665f6482737ed8f6268edef0b5ed9c0e96344446d561f5ba79",
+      "symbols": [],
+      "target_file": "ui-tui/src/components/appChrome.tsx",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
+    },
+    "submission": {
+      "plugin": "tui-input",
+      "reason": "completion apply keeps the text after the caret end on submit",
+      "sha": "712c2e9a61ce8b281c00986e40e0ba42856875efea6f2fa23e993d47a40012a0",
+      "symbols": [],
+      "target_file": "ui-tui/src/app/useSubmission.ts",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
+    },
+    "textInput": {
+      "plugin": "tui-input",
+      "reason": "Alt-letters typing fix, kitty Ctrl+V paste hotkey, caretRef plumbing and the typed-text/backspace guards on the composer input",
+      "sha": "9597f019001cd14b41ab5b171839992d9086b2f2f995b66d1fe94599634fcb46",
+      "symbols": [],
+      "target_file": "ui-tui/src/components/textInput.tsx",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5"
+    }
+  },
+  "version": 1
+}

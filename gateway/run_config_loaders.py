@@ -267,12 +267,12 @@ class GatewayConfigLoadersMixin:
     ) -> str:
         """Resolve model for this channel: channel_overrides else global default.
 
-        Precedence lives in :func:`hermes_cli.model_switch_model_ids.resolve_effective_model` (shared with the
+        Precedence lives in :func:`hermes_cli.model_switch.resolve_effective_model` (shared with the
         API server so the surfaces cannot diverge). No session tier here: session /model overrides
         are applied later by ``_apply_session_model_override``.
         """
         from gateway.run import _resolve_gateway_model
-        from hermes_cli.model_switch_model_ids import resolve_effective_model
+        from hermes_cli.model_switch import resolve_effective_model
         return resolve_effective_model(
             None,  # session tier applied downstream (_apply_session_model_override)
             self._channel_override(platform, chat_id, thread_id, parent_id, source),
@@ -354,20 +354,12 @@ class GatewayConfigLoadersMixin:
         if (policy := local_policy(self, source)) is not None:
             # A local session runs its frozen (or followed) level, not the profile's.
             return policy.current_reasoning_config(self, resolved_session_key)
-        from gateway.session_lane_model import carried_reasoning, persisted_reasoning
-        if (picked := persisted_reasoning(self, resolved_session_key)) is not None:
-            return picked  # the lane's own pick, durable: the in-memory override above is gone after a restart
-        if (carried := carried_reasoning(self, resolved_session_key, model)) is not None:
-            return carried  # the level its local session ran, until a typed /reasoning replaces it
         return self._load_reasoning_config(model)
 
     def _set_session_reasoning_override(self, session_key: str, reasoning_config: Optional[dict]) -> None:
         """Set or clear the session-scoped reasoning override."""
         if not session_key:
             return
-        from gateway.session_lane_model import forget_carried_reasoning, persist_reasoning
-        forget_carried_reasoning(self, session_key)
-        persist_reasoning(self, session_key, reasoning_config)
         # Per-session field write: a lazy ``_session_reasoning_overrides = {}`` init replaced the
         # WHOLE dict, racing concurrent sessions; a SessionState field reset cannot cross sessions.
         self._session_state(session_key).conversation.reasoning_override = (

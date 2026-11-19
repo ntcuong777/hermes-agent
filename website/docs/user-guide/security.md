@@ -447,7 +447,7 @@ file bridge, background jobs with no human channel) fail closed. Private keys,
 
 ### System deny prefixes and `security.write_allow_roots`
 
-Beyond the protected-path denylist, `write_file` and `patch` refuse any path under a system config prefix (`/etc`, `/private/etc`) — there is no approval for these. A checkout that legitimately lives under one (a Nix configuration repo at `/etc/nix-darwin`, for example) could never be edited, so `security.write_allow_roots` lists absolute directories that are exempt from the prefix rule alone:
+Beyond the protected-path denylist, `write_file` and `patch` refuse any path under a system config prefix (`/etc`, `/private/etc`): there is no approval for these. A checkout that legitimately lives under one (a Nix configuration repo at `/etc/nix-darwin`, for example) could never be edited, so the `config-seams` plugin (`hermes/plugins/config-seams` in the user's nix-darwin repo, not core) reads `security.write_allow_roots`, absolute directories that are exempt from the prefix rule alone, and answers the fork's `resolve_write_policy` hook with them (only that plugin's allow counts; any plugin's deny wins). Without the plugin the key is ignored:
 
 ```yaml
 security:

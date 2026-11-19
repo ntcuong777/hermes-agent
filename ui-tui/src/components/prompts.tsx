@@ -1,4 +1,4 @@
-import { Box, Text, useInput, useStdout, wrapAnsi } from '@hermes/ink'
+import { Box, Text, useInput, wrapAnsi } from '@hermes/ink'
 import { useEffect, useState } from 'react'
 
 import { messages } from '../i18n/runtime.js'
@@ -22,6 +22,18 @@ const approvalLabels = (): Record<ApprovalChoice, string> => {
 }
 
 const CMD_PREVIEW_LINES = 10
+
+/**
+ * The page of wrapped command lines on screen. A command longer than one page
+ * is paged with `v` (wrapping back to the top), so every line of what will run
+ * can be read in the panel before a choice is made.
+ */
+export function commandPage(total: number, page: number, size = CMD_PREVIEW_LINES) {
+  const pages = Math.max(1, Math.ceil(total / size))
+  const start = (page % pages) * size
+
+  return { end: Math.min(total, start + size), pages, start }
+}
 
 // `tell` is local to this prompt: it answers the gateway with a plain deny, after steering the typed
 // instruction into the running turn (#25693).
@@ -48,16 +60,14 @@ export function approvalRows(req: ApprovalReq): readonly ApprovalChoice[] {
 }
 
 type ApprovalKey = {
-  ctrl?: boolean
   downArrow?: boolean
-  pageDown?: boolean
-  pageUp?: boolean
   escape?: boolean
   return?: boolean
   upArrow?: boolean
 }
 
-type ApprovalAction = { kind: 'choose'; choice: ApprovalChoice } | { kind: 'move'; delta: -1 | 1 } | { kind: 'toggle' } | { kind: 'scroll'; dir: -1 | 1 } | { kind: 'noop' }
+type ApprovalAction =
+  { kind: 'choose'; choice: ApprovalChoice } | { kind: 'move'; delta: -1 | 1 } | { kind: 'noop' } | { kind: 'page' }
 
 /**
  * Pure key-dispatch for the approval prompt — exported so the regression
@@ -69,6 +79,7 @@ type ApprovalAction = { kind: 'choose'; choice: ApprovalChoice } | { kind: 'move
  * with the global Ctrl+C handler that already calls cancelOverlayFromCtrlC
  * for approvals).  Numbers 1..opts.length pick the labelled choice.  Enter
  * confirms the current selection.  ↑/↓ moves the selection within bounds.
+ * `v` pages a long command (a no-op when it fits on one page).
  */
 export function approvalAction(
   ch: string,
@@ -76,18 +87,6 @@ export function approvalAction(
   sel: number,
   opts: readonly ApprovalChoice[] = APPROVAL_OPTS
 ): ApprovalAction {
-  if (ch === 'v') {
-    return { kind: 'toggle' }
-  }
-
-  if (key.pageDown || (key.ctrl && ch === 'd')) {
-    return { kind: 'scroll', dir: 1 }
-  }
-
-  if (key.pageUp || (key.ctrl && ch === 'u')) {
-    return { kind: 'scroll', dir: -1 }
-  }
-
   if (key.escape) {
     return { kind: 'choose', choice: 'deny' }
   }
@@ -102,6 +101,10 @@ export function approvalAction(
     return { kind: 'choose', choice: opts[sel]! }
   }
 
+  if (ch === 'v' || ch === 'V') {
+    return { kind: 'page' }
+  }
+
   if (key.upArrow && sel > 0) {
     return { kind: 'move', delta: -1 }
   }
@@ -113,61 +116,15 @@ export function approvalAction(
   return { kind: 'noop' }
 }
 
-/**
- * The lines an approval shows: the first few when collapsed, all of them when the person asks for the full text (v),
- * so a long script is never cut from the one prompt the person must read before approving (B16).
- */
-export function approvalPreview(rawLines: readonly string[], expanded: boolean): { shown: readonly string[]; overflow: number } {
-  const shown = expanded ? rawLines : rawLines.slice(0, CMD_PREVIEW_LINES)
-
-  return { shown, overflow: rawLines.length - shown.length }
-}
-
-/** The slice of the full text on screen: `size` lines from `offset`, the offset clamped so the last page stays full.
- *  The expanded panel pages through it, since a long script is taller than the terminal. */
-export function approvalWindow(
-  lines: readonly string[],
-  offset: number,
-  size: number
-): { above: number; below: number; offset: number; shown: readonly string[] } {
-  const start = Math.max(0, Math.min(offset, lines.length - size))
-
-  return { above: start, below: Math.max(0, lines.length - start - size), offset: start, shown: lines.slice(start, start + size) }
-}
-
-/** What the expanded panel tells the person to press. Ctrl+U/Ctrl+D scroll on every keyboard; PgUp/PgDn work too
- *  but are not on every laptop or terminal, so they are not what the panel advertises (B27). */
-export function approvalScrollHints(): { above: string; below: string; keys: string } {
-  return { above: '(Ctrl+U)', below: '(Ctrl+D)', keys: 'Ctrl+U/Ctrl+D scroll' }
-}
-
-/** A description's first line is the panel title; the rest says what the call is about (a plugin approval's command,
- *  path or URL, C168) and joins the body, so the preview cap and `v` apply to it too. */
-export function approvalSplit(description: string): { detail: string[]; title: string } {
-  const [title = '', ...detail] = description.split('\n')
-
-  return { detail, title }
-}
-
-/** An MCP tool-call approval's body: why it was flagged, what the tool does, then the call's
- *  arguments — instead of the command text (which duplicates the same arguments, truncated). */
-export function approvalMcpBody(mcp: NonNullable<ApprovalReq['mcp']>, description: string, argsLabel: string): string[] {
-  const lead = [description, mcp.tool_description ?? ''].filter(part => part.trim().length > 0)
-
-  return [...lead, ...(mcp.arguments ? [argsLabel, ...mcp.arguments.split('\n')] : [])]
-}
-
 export function ApprovalPrompt({ cols = 80, onChoice, onTell, req, t }: ApprovalPromptProps) {
   const T = useT()
   const [sel, setSel] = useState(0)
-  const [expanded, setExpanded] = useState(false)
-  const [offset, setOffset] = useState(0)
+  const [page, setPage] = useState(0)
   const [telling, setTelling] = useState(false)
   const [instruction, setInstruction] = useState('')
-  const { stdout } = useStdout()
-  // The panel needs ~12 rows for title, options and hint; the rest is the page.
-  const page = Math.max(5, (stdout?.rows ?? 30) - 14)
   const opts = approvalRows(req)
+
+  useEffect(() => setPage(0), [req])
 
   useInput((ch, key) => {
     if (telling) {
@@ -186,13 +143,10 @@ export function ApprovalPrompt({ cols = 80, onChoice, onTell, req, t }: Approval
       setTelling(true)
     } else if (action.kind === 'choose') {
       onChoice(action.choice)
-    } else if (action.kind === 'toggle') {
-      setExpanded(e => !e)
-      setOffset(0)
-    } else if (action.kind === 'scroll') {
-      setOffset(o => Math.max(0, o + action.dir * (page - 1)))
     } else if (action.kind === 'move') {
       setSel(s => s + action.delta)
+    } else if (action.kind === 'page') {
+      setPage(p => p + 1)
     }
   })
 
@@ -201,41 +155,28 @@ export function ApprovalPrompt({ cols = 80, onChoice, onTell, req, t }: Approval
   // reviewable before approving). Border + paddingX + inner padding ≈ 8 cols.
   const innerWidth = Math.max(20, cols - 8)
 
-  const { detail, title } = approvalSplit(req.description)
-  // MCP tool calls title themselves with server/tool and show the structured context (tool
-  // description + fuller arguments) instead of the command text's truncated copy of it.
-  const mcpTitle = req.mcp ? T.prompt.approval.mcpTitle(req.mcp.server, req.mcp.tool) : title
+  const rawLines = req.command
+    .split('\n')
+    .flatMap(line => wrapAnsi(line, innerWidth, { hard: true, trim: false }).split('\n'))
 
-  const bodyLines = req.mcp
-    ? approvalMcpBody(req.mcp, req.description, T.prompt.approval.arguments)
-    : [...detail, ...req.command.split('\n')]
-
-  const rawLines = bodyLines.flatMap(line =>
-    wrapAnsi(line, innerWidth, { hard: true, trim: false }).split('\n')
-  )
-
-  const preview = approvalPreview(rawLines, expanded)
-  const win = expanded ? approvalWindow(rawLines, offset, page) : null
-  const scrollHints = approvalScrollHints()
-  const shown = win ? win.shown : preview.shown
-  const overflow = win ? 0 : preview.overflow
+  const { end, pages, start } = commandPage(rawLines.length, page)
+  const shown = rawLines.slice(start, end)
+  const pager = end < rawLines.length ? T.prompt.approval.pageMore : T.prompt.approval.pageEnd
 
   return (
     <Box borderColor={t.color.warn} borderStyle="double" flexDirection="column" paddingX={1}>
       <Text bold color={t.color.warn}>
-        {T.prompt.approval.title} · {mcpTitle}
+        {T.prompt.approval.title} · {req.description}
       </Text>
 
       <Box flexDirection="column" paddingLeft={1}>
-        {win && win.above > 0 ? <Text color={t.color.muted}>… {win.above} line{win.above === 1 ? '' : 's'} above {scrollHints.above}</Text> : null}
         {shown.map((line, i) => (
           <Text color={t.color.text} key={i} wrap="truncate-end">
             {line || ' '}
           </Text>
         ))}
 
-        {win && win.below > 0 ? <Text color={t.color.muted}>… {win.below} line{win.below === 1 ? '' : 's'} below {scrollHints.below}</Text> : null}
-        {overflow > 0 ? <Text color={t.color.muted}>{T.prompt.approval.moreLines(overflow)}</Text> : null}
+        {pages > 1 ? <Text color={t.color.warn}>{pager(start + 1, end, rawLines.length)}</Text> : null}
       </Box>
 
       <Text />
@@ -265,7 +206,7 @@ export function ApprovalPrompt({ cols = 80, onChoice, onTell, req, t }: Approval
       <Text color={t.color.muted}>
         {telling
           ? T.prompt.approval.tellHint
-          : `↑/↓ select · Enter confirm · 1-${opts.length} quick pick · v ${expanded ? `collapse · ${scrollHints.keys}` : 'full text'} · Esc/Ctrl+C deny`}
+          : `↑/↓ select · Enter confirm · 1-${opts.length} quick pick · Esc/Ctrl+C deny`}
       </Text>
     </Box>
   )

@@ -26,7 +26,6 @@ from typing import Any, Dict, Optional
 
 from hermes_cli.timeouts import get_provider_request_timeout, get_provider_stale_timeout
 from hermes_constants import PARTIAL_STREAM_STUB_ID, FINISH_REASON_LENGTH
-from agent.chat_completion_helpers_estimate import _estimate_chunk_bytes, _payload_chars
 from agent.error_classifier import (
     FailoverReason, PROVIDER_STREAM_EMPTY_FRAME_ERROR_CODE, PROVIDER_STREAM_NON_JSON_ERROR_CODE,
     _extract_status_code)
@@ -42,7 +41,7 @@ from agent.gemini_native_adapter import is_native_gemini_base_url
 # Never fingerprint a remote endpoint: Ollama-compat routes misidentify and 401 without a key (#89863).
 from agent.model_metadata import is_local_endpoint
 from agent.process_transport import waits_like_local
-from agent.message_content import flatten_message_text
+from session_rules.turns import flatten_message_text
 from agent.message_metadata import PERSISTENCE_ONLY_MESSAGE_FIELDS, append_message, data_use_requirement, stamp_message_timestamp
 from agent.message_sanitization import (
     _sanitize_messages_surrogates, _sanitize_surrogates, _repair_tool_call_arguments,
@@ -55,6 +54,7 @@ from agent.repetition_guard import RunawayStreamWatch, is_repetition_dominated
 from agent.stream_single_writer import claim_stream_writer, stream_writer_is_current
 from tools.terminal_tool_lifecycle import is_persistent_env
 from utils import base_url_host_matches, base_url_hostname, env_float, env_int
+from session_rules.turns import _IMAGE_PART_TYPES
 
 logger = logging.getLogger(__name__)
 _OPENROUTER_PROVIDER_SORT_VALUES = {"throughput", "latency", "price"}
@@ -368,6 +368,30 @@ def _provider_stream_error_from_text(text: str, finish_reason: Optional[str], *,
     return None
 
 
+def _image_part_chars(part: dict[str, Any], image_cost: int) -> int:
+    """Char-equivalent of one image content part: the per-image cost learned from provider usage
+    (x4 chars/token), never the base64 payload length. A single native screenshot priced as text
+    read as ~100K+ tokens and selected the giant-conversation watchdog tiers (#63871, #76411)."""
+    text = part.get("text")
+    return image_cost * 4 + (len(text) if isinstance(text, str) else 0)
+
+
+def _payload_chars(value: Any, image_cost: int) -> int:
+    """``len(str(value))`` with image content parts priced at ``image_cost`` tokens each."""
+    if value is None:
+        return 0
+    if isinstance(value, dict):
+        part_type = value.get("type")
+        # JSON-Schema nodes may hold a sub-schema (``properties.type``) or a multi-type list
+        # under the "type" key; only scalar content-part types can ever match (#104793).
+        if isinstance(part_type, str) and part_type in _IMAGE_PART_TYPES and any(k in value for k in ("image_url", "image", "source", "file_id")):
+            return _image_part_chars(value, image_cost)
+        return sum(len(str(k)) + 6 + _payload_chars(v, image_cost) for k, v in value.items())
+    if isinstance(value, list):
+        return sum(_payload_chars(item, image_cost) for item in value) + 2 * len(value)
+    return len(str(value))
+
+
 def estimate_request_context_tokens(api_payload: Any) -> int:
     """Cheap char/4 context estimate for the stale-call detectors. Handles both
     wire shapes so Codex turns don't report ~0 tokens: list -> Chat ``messages``;
@@ -485,6 +509,34 @@ def _merge_nous_portal_messages_extra_body(agent, anthropic_kwargs: dict, api_me
     except Exception as exc:
         logger.debug("Nous Portal extra_body merge failed: %s", exc)
     return anthropic_kwargs
+
+
+def _estimate_chunk_bytes(chunk: Any) -> int:
+    """Cheap per-chunk size estimate for the stream diagnostic counters: delta
+    string lengths plus a framing floor (~3x cheaper than ``len(repr(chunk))``
+    in the agent's hottest loop). Unknown shapes just keep the floor."""
+    size = 40  # SSE/JSON framing floor per chunk
+
+    def _add(obj, *attrs):
+        nonlocal size
+        for attr in attrs:
+            v = getattr(obj, attr, None)
+            if isinstance(v, str):
+                size += len(v)
+
+    with contextlib.suppress(Exception):
+        choices = getattr(chunk, "choices", None)
+        if choices:
+            delta = getattr(choices[0], "delta", None)
+            if delta is not None:
+                _add(delta, "content", "reasoning_content", "reasoning")
+                for tc in getattr(delta, "tool_calls", None) or ():
+                    fn = getattr(tc, "function", None)
+                    if fn is not None:
+                        _add(fn, "arguments", "name")
+        else:
+            _add(getattr(chunk, "delta", None), "text", "partial_json")
+    return size
 
 
 # ── Cross-turn stale-call circuit breaker (#58962) ─────────────────────
@@ -1319,34 +1371,12 @@ def _consume_ephemeral_max_output(agent):
     return ephemeral_out
 
 
-def _reply_capped_max_tokens(agent, base):
-    """P46: clamp the request's output cap to `agent.reply_max_tokens` (config; None/0 = off).
-
-    Pi's per-call output discipline (the harness-leaderboard's Pi runs cap replies at 16384,
-    which is a large share of why its cost per call is the board's lowest): without it the
-    OpenAI-compatible routes send no cap at all and Anthropic sends the catalog max. Never
-    RAISES the cap above the model's own; the one-shot ephemeral cap (the truncation-retry
-    ladder) is applied by the caller before this, so a boosted retry still wins."""
-    cap = getattr(agent, "reply_max_tokens", None)
-    try:
-        cap = int(cap) if cap is not None else 0
-    except (TypeError, ValueError):
-        return base
-    if cap <= 0:
-        return base
-    if base is None or base > cap:
-        # base None = the model's own limit is unknown; builders pass None through and the
-        # adapters fall back to the catalog — the cap must reach the wire instead.
-        return cap
-    return base
-
-
 def _build_anthropic_kwargs(agent, api_messages, tools_for_api, reasoning_config, request_overrides):
     ctx_len = getattr(agent, "context_compressor", None)
     ephemeral_out = _consume_ephemeral_max_output(agent)
     anthropic_kwargs = agent._get_transport().build_kwargs(model=agent.model,
         messages=agent._prepare_anthropic_messages_for_api(api_messages), tools=tools_for_api,
-        max_tokens=ephemeral_out if ephemeral_out is not None else _reply_capped_max_tokens(agent, agent.max_tokens),
+        max_tokens=ephemeral_out if ephemeral_out is not None else __import__("agent.reply_cap").reply_cap.capped(agent, agent.max_tokens),
         reasoning_config=reasoning_config, is_oauth=agent._is_anthropic_oauth,
         preserve_dots=agent._anthropic_preserve_dots(),
         context_length=ctx_len.context_length if ctx_len else None,
@@ -1361,7 +1391,7 @@ def _build_anthropic_kwargs(agent, api_messages, tools_for_api, reasoning_config
 def _build_bedrock_kwargs(agent, api_messages, tools_for_api, reasoning_config):
     # Bedrock Converse — the adapter converts messages/tools and calls boto3 directly.
     return agent._get_transport().build_kwargs(model=agent.model, messages=api_messages, tools=tools_for_api,
-        max_tokens=_reply_capped_max_tokens(agent, agent.max_tokens), region=getattr(agent, "_bedrock_region", None) or "us-east-1",
+        max_tokens=__import__("agent.reply_cap").reply_cap.capped(agent, agent.max_tokens), region=getattr(agent, "_bedrock_region", None) or "us-east-1",
         guardrail_config=getattr(agent, "_bedrock_guardrail_config", None), reasoning_config=reasoning_config)
 
 
@@ -1390,7 +1420,7 @@ def _build_codex_kwargs(agent, api_messages, tools_for_api, reasoning_config, re
         messages=agent._prepare_messages_for_non_vision_model(api_messages), tools=tools_for_api,
         reasoning_config=reasoning_config, session_id=getattr(agent, "session_id", None),
         cache_scope_id=cache_scope_id, base_url=agent.base_url,
-        max_tokens=ephemeral_out if ephemeral_out is not None else _reply_capped_max_tokens(agent, agent.max_tokens),
+        max_tokens=ephemeral_out if ephemeral_out is not None else __import__("agent.reply_cap").reply_cap.capped(agent, agent.max_tokens),
         timeout=agent._resolved_api_call_timeout(), request_overrides=request_overrides,
         provider=getattr(agent, "provider", None),
         is_codex_backend=is_codex_backend, is_xai_responses=is_xai_responses,
@@ -1425,7 +1455,7 @@ def _build_chat_completions_kwargs(agent, api_messages, tools_for_api, reasoning
     # providers with profiles used to bypass it).
     _common = dict(model=agent.model, messages=agent._prepare_messages_for_non_vision_model(api_messages),
         tools=tools_for_api, base_url=agent.base_url, timeout=agent._resolved_api_call_timeout(),
-        max_tokens=_reply_capped_max_tokens(agent, agent.max_tokens), ephemeral_max_output_tokens=_ephemeral_out,
+        max_tokens=__import__("agent.reply_cap").reply_cap.capped(agent, agent.max_tokens), ephemeral_max_output_tokens=_ephemeral_out,
         max_tokens_param_fn=agent._max_tokens_param, reasoning_config=reasoning_config,
         request_overrides=request_overrides, session_id=getattr(agent, "session_id", None),
         cache_scope_id=cache_scope_id, ollama_num_ctx=agent._ollama_num_ctx,
@@ -1726,40 +1756,6 @@ def _fallback_entry_unavailable_without_network(agent, fb: dict) -> Optional[str
     return None if has_token else "nous_token_missing"
 
 
-_FALLBACK_REASON_LABELS = {
-    FailoverReason.auth: "authentication failed",
-    FailoverReason.auth_permanent: "authentication permanently failed",
-    FailoverReason.billing: "billing or quota exhausted",
-    FailoverReason.rate_limit: "rate limit",
-    FailoverReason.upstream_rate_limit: "upstream model rate limit",
-    FailoverReason.overloaded: "provider overloaded",
-    FailoverReason.server_error: "provider server error",
-    FailoverReason.timeout: "request timeout",
-    FailoverReason.ssl_cert_verification: "TLS certificate verification failed",
-    FailoverReason.context_overflow: "context window exceeded",
-    FailoverReason.payload_too_large: "request payload too large",
-    FailoverReason.image_too_large: "image payload too large",
-    FailoverReason.model_not_found: "model not found",
-    FailoverReason.provider_policy_blocked: "provider policy blocked the request",
-    FailoverReason.content_policy_blocked: "content policy blocked the request",
-    FailoverReason.format_error: "request format rejected",
-    FailoverReason.role_alternation: "adjacent same-role messages rejected",
-    FailoverReason.invalid_encrypted_content: "encrypted reasoning state rejected",
-    FailoverReason.multimodal_tool_content_unsupported: "multimodal tool content unsupported",
-    FailoverReason.thinking_signature: "thinking signature rejected",
-    FailoverReason.long_context_tier: "long-context tier unavailable",
-    FailoverReason.oauth_long_context_beta_forbidden: "OAuth long-context beta unavailable",
-    FailoverReason.llama_cpp_grammar_pattern: "grammar pattern rejected",
-    FailoverReason.unknown: "provider failure",
-}
-
-
-def _fallback_reason_text(reason: FailoverReason | None) -> str:
-    """Return a concise operator-facing explanation for a fallback switch."""
-    label = _FALLBACK_REASON_LABELS.get(reason)
-    return label or str(getattr(reason, "value", None) or reason or "provider failure").replace("_", " ")
-
-
 def _is_anthropic_wire_url(url: str) -> bool:
     """Same Messages-only host match as determine_api_mode() / _detect_api_mode_for_url(): api.anthropic.com,
     a /anthropic suffix, or Kimi Code's api.kimi.com/coding (its /chat/completions 404s — #77256)."""
@@ -2005,22 +2001,12 @@ def _rescope_fallback_extra_body(agent, old_model: str, old_provider: str, old_b
         logger.debug("Failed to resolve extra_body for fallback %s; keeping current: %s", agent.model, _eb_err)
 
 
-def _buffer_fallback_notice(agent, notice: str) -> None:
-    """Buffer the switch notice for terminal failure AND retain it as a durable one-shot for
-    _emit_pending_fallback_notice (a successful fallback clears retry chatter)."""
-    agent._buffer_diagnostic_status(notice)
-    pending = getattr(agent, "_pending_fallback_notice", None)
-    if isinstance(pending, list):
-        pending.append(notice)
-    else:
-        agent._pending_fallback_notice = [str(pending), notice] if pending else [notice]
-
-
 def try_activate_fallback(agent, reason: FailoverReason | None = None, reset_at=None) -> bool:
     """Switch to the next fallback model/provider in the chain; False when exhausted. Swaps client,
     model slug and provider in place so the retry loop continues on the new backend; client
     construction goes through resolve_provider_client (no duplicated provider→key mappings)."""
     from agent.fallback_cooldown import _arm_rate_limit_cooldown, switch_deferred_by_reset
+    from agent.fallback_notice import announce_fallback_switch, fallback_trigger_text
     if switch_deferred_by_reset(agent, reason, reset_at):
         return False
     cooldown_seconds = _arm_rate_limit_cooldown(agent, reason, reset_at=reset_at)
@@ -2050,12 +2036,12 @@ def try_activate_fallback(agent, reason: FailoverReason | None = None, reset_at=
             rewrite_prompt_model_identity(agent, fb_model, fb_provider)
 
             notice = (
-                f"⚠️ Model fallback: {old_model} via {old_provider} unavailable "
-                f"({_fallback_reason_text(reason)}); using {fb_model} via {fb_provider}.")
+                f"⚠️ Model fallback: {old_model} via {old_provider} could not respond "
+                f"({fallback_trigger_text(agent, reason)}); using {fb_model} via {fb_provider}.")
             if cooldown_seconds is not None:
                 remaining = max(0, math.ceil(agent._rate_limited_until - time.monotonic()))
                 notice += f" Primary retry eligible in ~{remaining} s; recovery is not guaranteed."
-            _buffer_fallback_notice(agent, notice)
+            announce_fallback_switch(agent, notice)
             # ``_fallback_activated`` is also reused by `/model --once` restoration; separate
             # provenance so the restore path only emits a recovery notice after a real fallback.
             agent._provider_fallback_active = True
@@ -2206,7 +2192,7 @@ def _codex_summary_attempt(agent, api_messages: list, api_request_id: str):
 def _anthropic_summary_attempt(agent, api_messages: list, api_request_id: str):
     def _attempt(retry_count: int) -> str:
         ant_kw = agent._get_transport().build_kwargs(
-            model=agent.model, messages=api_messages, tools=None, max_tokens=_reply_capped_max_tokens(agent, agent.max_tokens),
+            model=agent.model, messages=api_messages, tools=None, max_tokens=__import__("agent.reply_cap").reply_cap.capped(agent, agent.max_tokens),
             reasoning_config=agent.reasoning_config, is_oauth=agent._is_anthropic_oauth,
             preserve_dots=agent._anthropic_preserve_dots(), base_url=getattr(agent, "_anthropic_base_url", None))
         ant_kw = _merge_nous_portal_messages_extra_body(agent, ant_kw, api_messages)

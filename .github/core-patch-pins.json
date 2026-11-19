@@ -1,0 +1,405 @@
+{
+  "pins": {
+    "chat-workspaces/cwd-help": {
+      "ast_sha": "382de1c8527252af535006380950dd861c057b700cf6aa5a88426875d941c357",
+      "kind": "wrap",
+      "plugin": "chat-workspaces",
+      "reason": "A gateway /help or /commands listing keeps the /cwd line the pre-B9 core printed (spec 08b fix F1: /cwd left core)",
+      "target": "hermes_cli.commands:gateway_help_lines",
+      "target_file": "hermes_cli/commands.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "chat-workspaces/workspace-slash": {
+      "ast_sha": "b6e48dcacb5f131e37c9ab9c3a6710d9d5822769a75de43c01f4fabd1d372966",
+      "kind": "wrap",
+      "plugin": "chat-workspaces",
+      "reason": "The Discord /cwd autocomplete registration on the core that removed /cwd (spec 08b B11)",
+      "target": "plugins.platforms.discord.adapter:DiscordAdapter._register_slash_commands",
+      "target_file": "plugins/platforms/discord/adapter.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "config-seams/p27-load-config": {
+      "ast_sha": "203c096032b996c4f69b75f9f10a4dbf6cd1d38cfb99e442c32f6d1500357919",
+      "kind": "wrap",
+      "plugin": "config-seams",
+      "reason": "A new TUI or Desktop session created through the gateway launches from host.yaml laid over the shared config, never from the phone's gateway.model (local sessions run the CLI model)",
+      "target": "gateway.session_local:load_profile_config",
+      "target_file": "gateway/session_local.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "config-seams/p27-profile-config": {
+      "ast_sha": "ed67e8491b8108e3f9b71d4f96d48fbab09b9138751e864e65b1e672989796df",
+      "kind": "replace",
+      "plugin": "config-seams",
+      "reason": "A local session's frozen profile config follows the CLI model: host.yaml laid over the profile config (local sessions run the CLI model; 7-line copy of a 4-line function)",
+      "target": "gateway.session_policy:profile_config",
+      "target_file": "gateway/session_policy.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "core-fixes/checkpoint-stale-lock": {
+      "ast_sha": "36df092499e414dc1b775e0b55b8e6f922ffae427e69bac085c6711cef00a887",
+      "kind": "wrap",
+      "plugin": "core-fixes",
+      "reason": "A checkpoint git killed past its timeout left a store index lock behind and every later checkpoint of that workspace failed; clear a stale lock inside the store (older than 600 s) and retry once (fork 565d63a2ee3).",
+      "target": "agent.checkpoints.manager:_run_git",
+      "target_file": "agent/checkpoints/manager.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "core-fixes/cron-external-interpreter": {
+      "ast_sha": "78ee4345821471d9864f0969bce7af7ed644c140cf384cb913a82d48e6f6dc88",
+      "kind": "wrap",
+      "plugin": "core-fixes",
+      "reason": "Cron script jobs on an external Nix install run on that install's own interpreter instead of a missing store venv (fork f52195c165d, P26).",
+      "target": "cron.scheduler_script:_posix_cron_script_argv",
+      "target_file": "cron/scheduler_script.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "core-fixes/deferred-tool-hint-scope": {
+      "ast_sha": "25e261a40ce4fe6946d160045d82b65bffd539e2e6598dce443d42e1aba2859c",
+      "kind": "wrap",
+      "plugin": "core-fixes",
+      "reason": "Remember the agent of the running tool round in a ContextVar so the unknown-name error can tell which deferred tools are reachable through tool_call (fork 5e94a2c2fd1, P16).",
+      "target": "agent.turn_tool_round:run_tool_round",
+      "target_file": "agent/turn_tool_round.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "core-fixes/deferred-tool-hint-text": {
+      "ast_sha": "207bbdd9b49c1d67a4771f6fd75599dc061a96944b8e2f8353d898d7b73d9760",
+      "kind": "wrap",
+      "plugin": "core-fixes",
+      "reason": "A call to a deferred tool by its own name is told to use tool_call instead of the does-not-exist error (fork 5e94a2c2fd1, P16).",
+      "target": "agent.conversation_loop:_invalid_tool_name_error_content",
+      "target_file": "agent/conversation_loop.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "core-fixes/edit-diff-host-backend": {
+      "ast_sha": "de2d8bcb51cb5a1d4133c23e6dd0ac4a5e74776b8afdf5a688dd5c39155c6134",
+      "kind": "wrap",
+      "plugin": "core-fixes",
+      "reason": "The inline edit diff shows for a host plugin backend that declares is_remote=False, such as nono (fork e6f7bfe0989, P12).",
+      "target": "agent.display:_resolve_local_edit_paths",
+      "target_file": "agent/display.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "core-fixes/edit-diff-text-patch": {
+      "ast_sha": "7dd0389f4e634d30ad2d9c9a492c0c8ff8f7368f600700fee2dc9e8aa25125db",
+      "kind": "wrap",
+      "plugin": "core-fixes",
+      "reason": "The inline edit diff shows for a patch whose result is plain text, diffed from the before-snapshot (fork e6f7bfe0989, P12).",
+      "target": "agent.display:extract_edit_diff",
+      "target_file": "agent/display.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "core-fixes/patch-mode-targets": {
+      "ast_sha": "edf9c54fcfe3f3de12545787d73b2c34c708609107bb246685425749761ae7d6",
+      "kind": "wrap",
+      "plugin": "core-fixes",
+      "reason": "A patch call with mode patch and no V4A body targets its path instead of an empty parallel-write scope (fork fd118ea2512, P14).",
+      "target": "agent.tool_dispatch_helpers:_extract_file_mutation_targets",
+      "target_file": "agent/tool_dispatch_helpers.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "core-fixes/sandbox-deferred-tools": {
+      "ast_sha": "97207370ba83ac1aabba63d292bdbcb69b24e05796ed74a64a6931240a3e8793",
+      "kind": "wrap",
+      "plugin": "core-fixes",
+      "reason": "execute_code hermes_tools offers the deferred tools the session can reach through tool_call, so from hermes_tools import web_extract works (fork a2ac9e421c8, P9).",
+      "target": "model_tools:handle_function_call",
+      "target_file": "model_tools.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "core-fixes/tmux-notify-passthrough": {
+      "ast_sha": "2e7938bce95211493252d66e02289bba0dc3039f0e515e50024cb2e94b5604e6",
+      "kind": "wrap",
+      "plugin": "core-fixes",
+      "reason": "OSC 9 and Warp OSC 777 desktop notifications are dropped by tmux; DCS-wrap the sequence when TMUX is set so they reach the outer terminal (fork 38836268730, P47).",
+      "target": "hermes_cli.terminal_notify:notification_sequence",
+      "target_file": "hermes_cli/terminal_notify.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/forward-list-titled": {
+      "ast_sha": "3a407cd28c63c8e755d77b58c728215db8b4cb34662803b3358c81bd875d33db",
+      "kind": "replace",
+      "plugin": "lane-mirror",
+      "reason": "An admin's /resume <id> --all lists titled sessions without the platform filter, so the mirror can bind a machine-local session (lane forward)",
+      "target": "gateway.slash_commands_session:GatewaySessionCommandsMixin._list_titled_sessions",
+      "target_file": "gateway/slash_commands_session.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/forward-submit": {
+      "ast_sha": "791efbaec2840917db1021f692b2f055b1cf7d896d2dcbaa067b1edf918d18c9",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A prompt.submit to a session a Discord thread owns is relayed into the thread as the mirror admin instead of refused (lane forward)",
+      "target": "gateway.session_controls:AuthorityConnection.submit",
+      "target_file": "gateway/session_controls.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/gates-attach": {
+      "ast_sha": "64799edcc6148d0d541b2fca67c5490570853f283bf1154720c33a0d9445e941",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A file dropped in the TUI on a lane-bound session is staged in the folder the session recorded, under its viewer policy (lane takeover, gates)",
+      "target": "gateway.session_ancillary:attach_file",
+      "target_file": "gateway/session_ancillary.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/gates-local-source": {
+      "ast_sha": "ffb861abf42680adee48fdac8774d3591cb628286285ce44d60a23d35ae60d35",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "The subscribed operator's own client may run a shell command in a lane-bound session: the local-source gate is open for that one call (lane takeover, gates)",
+      "target": "gateway.session_local:authorize_local_source",
+      "target_file": "gateway/session_local.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/gates-mutate": {
+      "ast_sha": "bff7a8aa033b8d7e2fb653b0b4bc83ae54048f2e5dd2c0245034c0b5755b93b0",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "Compress, rewind, reset and branch never commit on a session a Discord thread writes: lane_owned, the TUI relays the typed command (lane takeover, gates). The target also carries the fork's mutation_guard call (not drift).",
+      "target": "gateway.session_mutations:mutate_session",
+      "target_file": "gateway/session_mutations.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/gates-shell": {
+      "ast_sha": "ee5cd8dbf8f95d9a917f7a9fa665087c7b608adc2285c98d6b5a345a77d0ca9e",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A !cmd typed in the TUI on a lane-bound session runs in the folder the session recorded, for the subscribed operator only (lane takeover, gates)",
+      "target": "gateway.session_shell:shell_exec",
+      "target_file": "gateway/session_shell.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/gates-side": {
+      "ast_sha": "9e2d0e5aab862590d6cd281fe6f883f4d3388cd339ae5cd7db0c70d1530a8de3",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "/bg and /btw on a lane-bound session are lane_owned: the thread runs the side agent, never a second writer here (lane takeover, gates)",
+      "target": "gateway.session_tui_side:_admit",
+      "target_file": "gateway/session_tui_side.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/model-adopt-rehydrate": {
+      "ast_sha": "5d40b8b2bb2eaf6fe6978f5ef24f3d486c6bd59cd5ff910244c158115cee2e14",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A local conversation a messaging lane took over adopts the route it ran as the lane chat's /model pick, once (lane model carry)",
+      "target": "gateway.run_agent_cache:GatewayAgentCacheMixin._rehydrate_session_model_override",
+      "target_file": "gateway/run_agent_cache.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/model-resolve-reasoning": {
+      "ast_sha": "c8d57e4858503f95ad069d43c534ac316d56dd8f08ba6580cae44aeb27b2493c",
+      "kind": "replace",
+      "plugin": "lane-mirror",
+      "reason": "A lane chat's effort is its own durable pick, else the level its local session ran, before the profile default (lane model carry; 20-line copy)",
+      "target": "gateway.run_config_loaders:GatewayConfigLoadersMixin._resolve_session_reasoning_config",
+      "target_file": "gateway/run_config_loaders.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/model-retire": {
+      "ast_sha": "b3cc610a23f5f8f4259f3b8bb013f0d50105f3a72ffd74dc9801481f7df4c3c9",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "Deleting a session also deletes its hand-off route record, in the same connection (lane model carry)",
+      "target": "persistence.sqlite.conversation._store.local:retire_local_receipts",
+      "target_file": "persistence/sqlite/conversation/_store/local.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/model-route-info": {
+      "ast_sha": "9a9cbdf25392157c50e739d46a6c49d5413be072eb3e78496ed75c7dd248ef64",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A handed-off local chat shows the route it keeps in the model and effort pills (lane model carry)",
+      "target": "gateway.session_messaging_picks:messaging_route_info",
+      "target_file": "gateway/session_messaging_picks.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/model-set-reasoning": {
+      "ast_sha": "71eba9c65dafed38593bdb2a4aa059093ee456d95ba8db938c425d9e31e45afd",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A typed /reasoning or a viewer's effort pick replaces the carried level and is persisted for the lane so it survives a restart (lane model carry)",
+      "target": "gateway.run_config_loaders:GatewayConfigLoadersMixin._set_session_reasoning_override",
+      "target_file": "gateway/run_config_loaders.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/repaint-goal": {
+      "ast_sha": "723da958f25a2bae72f869d32486d37153905d6a42432d0aab293f00e2dc7fd2",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A /goal command run in a Discord thread bound to a TUI session repaints the viewer's goal and loop bars (lane viewer repaint)",
+      "target": "gateway.slash_commands_goals:GatewayGoalCommandsMixin._handle_goal_command",
+      "target_file": "gateway/slash_commands_goals.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/repaint-handler-table": {
+      "ast_sha": "e8312cc6efd74ec3cbec315057d839db737107740cc8b97e56dff07823632bf4",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A slash command run in a Discord thread bound to a TUI session republishes the viewer's session.info pills and the command output (lane viewer repaint)",
+      "target": "gateway.run_busy:GatewayBusySessionMixin._command_handler_table",
+      "target_file": "gateway/run_busy.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/repaint-heartbeat": {
+      "ast_sha": "90015d162704f29ba509d6f3b33d31dc021d60c57275edc8399ac18574075c55",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A /heartbeat command run in a Discord thread bound to a TUI session repaints the viewer's goal and loop bars (lane viewer repaint)",
+      "target": "gateway.slash_commands_goals:GatewayGoalCommandsMixin._handle_heartbeat_command",
+      "target_file": "gateway/slash_commands_goals.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/repaint-loop": {
+      "ast_sha": "cb34578c477cabf903ae32e5a2acd48cc266255f9c4eb63b932c711f18e3c422",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A /loop command run in a Discord thread bound to a TUI session repaints the viewer's goal and loop bars (lane viewer repaint)",
+      "target": "gateway.slash_commands_goals:GatewayGoalCommandsMixin._handle_loop_command",
+      "target_file": "gateway/slash_commands_goals.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/repaint-refine": {
+      "ast_sha": "8ad4f72136866ee64787e3eed6cf0c43c1febea37c0ebbfff803857258be65d1",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A /refine command run in a Discord thread bound to a TUI session repaints the viewer's goal and loop bars (lane viewer repaint)",
+      "target": "gateway.slash_commands_goals:GatewayGoalCommandsMixin._handle_refine_command",
+      "target_file": "gateway/slash_commands_goals.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/repaint-review": {
+      "ast_sha": "b9bac5bd999e36a2e418ae541136379cfffcb195f04f15601eaa598b58a3b1d9",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A /review command run in a Discord thread bound to a TUI session repaints the viewer's goal and loop bars (lane viewer repaint)",
+      "target": "gateway.slash_commands_goals:GatewayGoalCommandsMixin._handle_review_command",
+      "target_file": "gateway/slash_commands_goals.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/repaint-subgoal": {
+      "ast_sha": "0653f5e280896f74f8148cf2c44742010032a99f1a97569d7c602e7505c3a1d7",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A /subgoal command run in a Discord thread bound to a TUI session repaints the viewer's goal and loop bars (lane viewer repaint)",
+      "target": "gateway.slash_commands_goals:GatewayGoalCommandsMixin._handle_subgoal_command",
+      "target_file": "gateway/slash_commands_goals.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/rescue-policy": {
+      "ast_sha": "df82964b4ae03ada1ba890de07f400df22f33d8f959c30a1d5893b3d00d6e35a",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A non-LOCAL source has no launch policy except while a read of a lane-bound session is re-run under its viewer policy (lane takeover, gates); upstream 31ce88f8 (0.23.2 canary) added field and detail to the policy refusals",
+      "target": "gateway.session_policy:policy_for_source",
+      "target_file": "gateway/session_policy.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "lane-mirror/residue-lane-reasoning": {
+      "ast_sha": "d01de9f17026ed86c7dd800ccea1ecd5e444778c330f145f07f0f6d1eda9da5a",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A lane's own effort pick follows a non-boundary repoint (a compression tip) onto the new routing entry, like terminal_cwd (lane residue)",
+      "target": "gateway.session:SessionStore.switch_session",
+      "target_file": "gateway/session.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/residue-pick-stamp": {
+      "ast_sha": "d242459f01578b4454dbfffc19f2044ed3a3e0db43f37113f5bc596be71743bb",
+      "kind": "replace",
+      "plugin": "lane-mirror",
+      "reason": "A model or effort pick on a messaging chat repaints the bound viewer's pills with the owner stamp (authority_epoch, execution_generation) its lifecycle fence needs (lane residue; 38-line copy)",
+      "target": "gateway.session_messaging_picks:apply_chat_pick",
+      "target_file": "gateway/session_messaging_picks.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/residue-publish-control": {
+      "ast_sha": "49eed5949be6d2d24662cce72e7bd8b36ec5e2ce6d87922076df04343bc07c54",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A goal or loop command a messaging lane ran repaints the goal and loop cards of the TUI bound to it, from the session the lane is bound to (lane residue)",
+      "target": "gateway.run_goals:GatewayGoalsMixin._publish_local_control",
+      "target_file": "gateway/run_goals.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/settle-register": {
+      "ast_sha": "679b32defaac5579bbf8f0e7dc9e48d2abf59c486f7acc34b30fa81ff978ca70",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "An approval answered anywhere (a platform card tap, /approve in the thread, a timeout) is withdrawn from every attached viewer at once (approval settle). The target also carries the fork's MCP card and idle-approval lines (not drift).",
+      "target": "gateway.session_pending_controls:PendingControls.register",
+      "target_file": "gateway/session_pending_controls.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/wake-retarget-enrich": {
+      "ast_sha": "2e42a94be9edb38befaf1e95847adc117d469974bb7416aed8b69cc2edcf2a1d",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A frozen completion notice is re-keyed in place (spec 08b B13)",
+      "target": "gateway.run_notifications:GatewayNotificationsMixin._enrich_async_delegation_routing",
+      "target_file": "gateway/run_notifications.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/wake-retarget-inject": {
+      "ast_sha": "56132761776db500b46e1cfda2ed17b9dba1d36330952cbeb770041300cab4aa",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A frozen watch notice follows the conversation to its route (spec 08b B13)",
+      "target": "gateway.run_notifications:GatewayNotificationsMixin._inject_watch_notification",
+      "target_file": "gateway/run_notifications.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    },
+    "lane-mirror/wake-snapshot": {
+      "ast_sha": "5f7c77138e89f370c07a02ac3fe799a722fe7cd085a4514dac9f78eeba94be4f",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "A route woken as its stored origin when upstream refuses not_found (spec 08b B13)",
+      "target": "gateway.session_automation:snapshot_automation",
+      "target_file": "gateway/session_automation.py",
+      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_release": "0.22.5"
+    }
+  },
+  "version": 2
+}

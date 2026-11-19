@@ -8,6 +8,7 @@ call and at turn end of a local-viewer turn, and returned by the ``session.stats
 """
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import dataclasses
 import time
@@ -98,27 +99,11 @@ def usage_stats(agent) -> dict:
                  model=str(getattr(agent, "model", "") or ""), provider=str(getattr(agent, "provider", "") or ""),
                  fallback_model=(str(getattr(agent, "model", "") or "") or None)
                  if getattr(agent, "_fallback_activated", False) is True else None)
-    stats.update(_bar_fields(agent))
+    from tui_gateway.status_bar_fields import status_bar_fields  # plugin segments listed in display.status_bar.fields
+    stats.update(status_bar_fields(agent))
     if (gauge := plan_gauge(agent)) is not None:  # absent off a window plan, as on the embedded path
         stats["plan_gauge"] = gauge
     return stats
-
-
-def _bar_fields(agent) -> dict:
-    """The status bar's opt-in read-outs (``display.status_bar.fields``: ``cost``, ``quota``), as ``tui_gateway.
-    usage_status`` builds them for the embedded ticker. A viewer of the shared gateway reads this module instead of
-    ``server._get_usage``, so without this the listed fields never reached its bar. Nothing is added, and no quota
-    is polled, for a bar that does not list them."""
-    out: dict = {}
-    with contextlib.suppress(Exception):  # a status-bar read-out must never break usage reporting
-        from hermes_cli.config import load_config_readonly
-        from tui_gateway.usage_status import bar_wants, cost_fields, quota_fields
-        cfg = load_config_readonly()
-        if bar_wants(cfg, "cost"):
-            out.update(cost_fields(agent))
-        if bar_wants(cfg, "quota"):
-            out.update(quota_fields(agent))
-    return out
 
 
 def carried_compression_count(live, agent=None) -> int:
@@ -172,7 +157,7 @@ def tui_usage(stats: dict) -> dict:
             usage[key] = round(float(stats[source_key]), 1)
     if isinstance(stats.get("active_subagents"), int):
         usage["active_subagents"] = stats["active_subagents"]
-    usage.update({key: stats[key] for key in ("cost_usd", "cost_status", "quota") if key in stats})
+    usage.update({key: stats[key] for key in ("status_fields",) if key in stats})  # plugin status-bar segments
     if isinstance(stats.get("plan_gauge"), dict):
         usage["plan_gauge"] = stats["plan_gauge"]
     return usage
@@ -242,8 +227,9 @@ def snapshot_usage(authority, ref, agent) -> dict | None:
         result = usage_stats(agent)
         result["compression_count"] = carried_compression_count(authority.sessions.get(ref.session_id), agent)
         return tui_usage(result)
-    row = authority.db.get_session(ref.session_id)
-    return tui_usage(_stored_stats(row)) if row else None
+    from gateway.session_persistence import authority_persistence
+    row = authority_persistence(authority).sessions.get(ref.session_id)
+    return tui_usage(_stored_stats(row.as_session_row())) if row else None
 
 
 async def account_usage(connection, ref, params):
@@ -282,11 +268,11 @@ async def account_usage(connection, ref, params):
 
 async def stats(connection, ref, params):
     """``session.stats {session_id}``: the same dict ``session.usage`` carries."""
-    from hermes_state_runtime import RuntimeStoreError
+    from persistence.core.errors import AuthorityRefusal
     if set(params) - {"session_id", "profile"}:
-        raise RuntimeStoreError("invalid_params")
+        raise AuthorityRefusal("invalid_params")
     await connection.authority.resolve(connection.actor, ref)
     agent = connection.authority.agent(ref)
-    result = usage_stats(agent)
+    result = await asyncio.to_thread(usage_stats, agent)  # off the loop: a plugin's status-bar hook runs inside
     result["compression_count"] = carried_compression_count(connection.authority.sessions.get(ref.session_id), agent)
     return result

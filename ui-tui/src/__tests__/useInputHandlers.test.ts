@@ -4,7 +4,6 @@ import { getOverlayState, patchOverlayState, resetOverlayState } from '../app/ov
 import { rememberServerRequest, resetServerRequestsForTests } from '../app/serverRequestStore.js'
 import {
   applyVoiceRecordResponse,
-  composerDraftText,
   composerHasDraft,
   dismissSensitivePrompt,
   handleIdleHotkeyExit,
@@ -63,22 +62,6 @@ describe('composerHasDraft — Ctrl+D exits only from an empty composer (#116443
   })
 })
 
-describe('composerDraftText — the stash captures the whole composer (review S-S)', () => {
-  it('joins the accepted lines and the line being typed the way submit does', () => {
-    expect(composerDraftText(['first', 'second'], 'third')).toBe('first\nsecond\nthird')
-  })
-
-  it('is the bare input when nothing was accepted with a backslash', () => {
-    expect(composerDraftText([], 'only line')).toBe('only line')
-  })
-
-  it('keeps a trailing empty line, so a continuation draft loses no line break', () => {
-    // Alt+S right after `first\` + Enter: the composer is `inputBuf: ['first']`, input
-    // 'a'. Joining with `inputBuf.join('\n')` instead would stash only 'first'.
-    expect(composerDraftText(['first'], '')).toBe('first\n')
-  })
-})
-
 describe('shouldDetachEditedHistoryInput', () => {
   const history = ['older message', 'line one\nline two']
 
@@ -95,9 +78,9 @@ describe('shouldDetachEditedHistoryInput', () => {
   })
 })
 
-describe('resolveCtrlCComposerAction — a running turn wins over the draft', () => {
-  it('interrupts the turn mid-stream and leaves the draft untouched', () => {
-    expect(resolveCtrlCComposerAction({ busy: true, hasDraft: true, hasSession: true })).toBe('interrupt')
+describe('resolveCtrlCComposerAction — draft wins over interrupt', () => {
+  it('clears a non-empty composer even while the agent is streaming', () => {
+    expect(resolveCtrlCComposerAction({ busy: true, hasDraft: true, hasSession: true })).toBe('clear')
   })
 
   it('interrupts a running turn when the composer is empty', () => {
@@ -114,24 +97,6 @@ describe('resolveCtrlCComposerAction — a running turn wins over the draft', ()
 
   it('does not interrupt a busy session that has no sid yet', () => {
     expect(resolveCtrlCComposerAction({ busy: true, hasDraft: false, hasSession: false })).toBe('exit')
-  })
-
-  it('holds the reflex chord while a manual compress is in flight, instead of exiting', () => {
-    expect(
-      resolveCtrlCComposerAction({ busy: false, hasDraft: false, hasSession: true, compressPending: true })
-    ).toBe('hold')
-  })
-
-  it('still clears a draft typed during a pending manual compress', () => {
-    expect(
-      resolveCtrlCComposerAction({ busy: false, hasDraft: true, hasSession: true, compressPending: true })
-    ).toBe('clear')
-  })
-
-  it('still interrupts a running turn over a pending manual compress', () => {
-    expect(resolveCtrlCComposerAction({ busy: true, hasDraft: false, hasSession: true, compressPending: true })).toBe(
-      'interrupt'
-    )
   })
 })
 

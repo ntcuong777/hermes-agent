@@ -358,13 +358,15 @@ def _serve():
     # so it must start BEFORE the sweep.
     for start, what in (
             (server._start_backend_heartbeat_refresher, "backend heartbeat refresher start"),
-            (server._schedule_startup_orphan_sweep, "startup orphan sweep scheduling")):
+            (server._schedule_startup_orphan_sweep, "startup orphan sweep scheduling"),
+            (server._start_cache_expiry_compactor, "cache-expiry compactor start")):
         try:
             start()
         except Exception:
             logger.warning("%s failed", what, exc_info=True)
 
     # Backgrounded so a dead MCP server can't freeze startup; _make_agent briefly joins it.
+    __import__("hermes_cli.core_patches_safe").core_patches_safe.apply("tui_gateway")  # fork: core-patch registry
     ensure_mcp_discovery_started()
 
     # change_events: clients demote legacy polls; replay_epoch: WS restart detection.

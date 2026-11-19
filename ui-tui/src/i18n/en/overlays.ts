@@ -6,6 +6,10 @@ export const overlaysEn = {
   prompt: {
     approval: {
       title: '⚠ approval required',
+      pageMore: (from: number, to: number, total: number) =>
+        `lines ${from}–${to} of ${total} · press v to see the rest before choosing`,
+      pageEnd: (from: number, to: number, total: number) =>
+        `lines ${from}–${to} of ${total} (end) · press v to go back to the top`,
       // "above" was never true: the tool row above is a one-line preview. execute_code names a file with the whole
       // script on this panel's first line (tools/approval.py, P21).
       moreLines: (count: number) => `… +${count} more line${count === 1 ? '' : 's'} (press v for the full text)`,

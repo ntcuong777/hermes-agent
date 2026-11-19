@@ -45,6 +45,7 @@ import { terminalParityHints } from '../lib/terminalParity.js'
 import { formatAbandonedClarify, sameToolTrailGroup, toolTrailLabel } from '../lib/text.js'
 import { estimatedMsgHeight, messageHeightKey } from '../lib/virtualHeights.js'
 import { onUserWidgets } from '../sdk/userWidgets.js'
+import { useExtensionHost } from '../sdk/ext/useExtensionHost.js' // fork: tui extension host
 import type { Msg, PanelSection } from '../types.js'
 
 import { applyAgentSnapshot } from './agentRoster.js'
@@ -63,7 +64,10 @@ import { $goodVibesTick } from './petFlashStore.js'
 import { applyProcessSnapshot, type ProcessEntry } from './processRoster.js'
 import { scrollWithSelectionBy } from './scroll.js'
 import { respondToServerRequest } from './serverRequestStore.js'
-import { mutateCanonicalSession } from './slash/canonicalSessionControls.js'
+import { mutateCanonicalSession as StockMutateCanonicalSession } from './slash/canonicalSessionControls.js' // fork: tui slot
+import { slotFn } from '../sdk/ext/slotReact.js' // fork: tui slot
+import { extensionHost as canonicalExtensionHost } from '../sdk/ext/host.js' // fork: tui slot
+const mutateCanonicalSession = slotFn('canonical.mutate', StockMutateCanonicalSession, canonicalExtensionHost, (r) => r === undefined || (typeof r === 'object' && r !== null)) // fork: tui slot
 import { setSlashCatalog, useSlashCatalog } from './slashCatalog.js'
 import { captureDestination, isCurrentDestination, type SubmissionDestination } from './submissionDestination.js'
 import { turnController } from './turnController.js'
@@ -73,7 +77,10 @@ import { useApprovalAnswers } from './useApprovalAnswers.js'
 import { useBatteryPoll } from './useBatteryPoll.js'
 import { useComposerState } from './useComposerState.js'
 import { useConfigSync } from './useConfigSync.js'
-import { shouldDetachEditedHistoryInput, useInputHandlers } from './useInputHandlers.js'
+import { shouldDetachEditedHistoryInput } from './useInputHandlers.js'
+import { useInputHandlers as StockUseInputHandlers } from './useInputHandlers.js' // fork: tui slot
+import { slotHook } from '../sdk/ext/slotReact.js' // fork: tui slot
+const useInputHandlers = slotHook('inputHandlers', StockUseInputHandlers) // fork: tui slot
 import { useLongRunToolCharms } from './useLongRunToolCharms.js'
 import {
   backendGaveUp,
@@ -85,7 +92,8 @@ import {
   lastStderrLine
 } from './userMessages.js'
 import { useSessionLifecycle } from './useSessionLifecycle.js'
-import { useSubmission } from './useSubmission.js'
+import { useSubmission as StockUseSubmission } from './useSubmission.js'
+const useSubmission = slotHook('submission', StockUseSubmission) // fork: tui slot (reuses the stage 5b-2 slotHook import)
 
 const BRACKET_PASTE_ON = '\x1b[?2004h'
 const BRACKET_PASTE_OFF = '\x1b[?2004l'
@@ -215,14 +223,7 @@ export async function startPromptLiveSession({
 
   if (requestedModel) {
     const applyModel = async (confirm?: string) => {
-      const mutation = await mutateCanonicalSession(
-        { request: (method, params, timeoutMs) => rpc(method, params, { timeoutMs }) },
-        sid,
-        'model',
-        requestedModel,
-        undefined,
-        confirm
-      )
+      const mutation = await mutateCanonicalSession({ request: rpc }, sid, 'model', requestedModel, undefined, confirm)
 
       const refusal = mutation?.result
 
@@ -673,6 +674,7 @@ export function useMainApp(gw: GatewayClient) {
   )
 
   const gateway = useMemo(() => ({ gw, rpc }), [gw, rpc])
+  useExtensionHost(gw, sys) // fork: tui extension host
   const catalog = useSlashCatalog(rpc)
 
   const { die, dieWithCode, exitClose } = useDie(gw, exit)

@@ -11,11 +11,12 @@ whole-file overwrite of content this task never saw or that changed since.
 """
 
 import fnmatch
-import logging
 import os
+import unicodedata
 from pathlib import Path
 
 from agent.file_safety import deny_key, get_nt_namespace_error
+from hermes_constants import get_hermes_home, named_profile_home
 from tools import file_state
 from tools.binary_extensions import (
     has_binary_extension,
@@ -28,8 +29,6 @@ from tools.file_tools_paths import (
 from tools.file_tools_read_tracking import _has_full_write_baseline, _is_own_blind_patch, _read_mtime_drifted
 import itertools
 
-logger = logging.getLogger(__name__)
-
 # Prefixes matched after realpath. macOS: /private/var mirrors /var — block the
 # sensitive subtrees only; a blanket "/private/var/" refuses every temp-file
 # write because $TMPDIR, /tmp and /var/folders all realpath there.
@@ -39,80 +38,31 @@ _SENSITIVE_PATH_PREFIXES = (
     "/private/var/db/", "/private/var/root/")
 _SENSITIVE_EXACT_PATHS = {"/var/run/docker.sock", "/run/docker.sock"}
 
-# NOTE: these four are a TEST-OVERRIDE surface, not a process cache. Both getters
-# resolve per call in production (below) because ``get_hermes_home()`` /
-# ``get_config_path()`` are per-turn contextvar-scoped: a multiplexed gateway
-# (``gateway.multiplex_profiles: true``) serves many profiles in one process, and
-# a process-wide memo would freeze whichever profile's home/config ran first —
-# making the protected-instruction gate and the ``config.yaml`` hard-block
-# order-dependent, up to letting a later profile rewrite its own ``config.yaml``
-# the block exists to protect (#107327). A test can still pin a value by setting
-# the slot and its ``_loaded`` flag.
-_hermes_config_resolved: str | None = None
-_hermes_config_resolved_loaded = False
-_real_hermes_home_cached: str | None = None
-_real_hermes_home_loaded = False
-
-
-def _config_path_resolved() -> str:
-    from hermes_cli.config import get_config_path
-    return str(get_config_path().resolve())
-
-
-def _hermes_home_real() -> str:
-    from hermes_constants import get_hermes_home
-    return os.path.realpath(str(get_hermes_home()))
-
-
 def _get_hermes_config_resolved() -> str | None:
     """Resolved absolute path of the Hermes config file for the ACTIVE profile.
 
-    Resolved per call so it tracks the per-turn ``HERMES_HOME`` scope (#107327);
-    a test may pin it via ``_hermes_config_resolved`` + ``_hermes_config_resolved_loaded``."""
-    if _hermes_config_resolved_loaded:
-        return _hermes_config_resolved
+    Resolved per call, never memoised: a multiplexed gateway serves many profiles
+    in one process, and a memo would let a later profile rewrite its own
+    ``config.yaml`` (#107327). ``None`` when the home cannot be resolved: no
+    unrelated home is ever substituted."""
     try:
-        return _config_path_resolved()
+        return str((get_hermes_home() / "config.yaml").resolve())
     except Exception:
-        # Resolver failure must stay bound to the ACTIVE profile's home, not the
-        # subprocess HOME. ``_expand_tilde("~/...")`` follows the subprocess-HOME
-        # contract, which under host ``auto`` mode can be the real/default user
-        # home rather than the active multiplex ``HERMES_HOME`` — comparing
-        # beta's ``config.yaml`` against the default/root config would let the
-        # hard-block fail open on the exception path. Re-derive from the same
-        # ``get_hermes_home()`` key the happy path uses, and substitute no
-        # unrelated home if even that is gone (#107327 follow-up; PR #107335).
-        try:
-            from hermes_constants import get_hermes_home
-            return str((Path(str(get_hermes_home())) / "config.yaml").resolve())
-        except Exception:
-            return None
+        return None
 
 
 def _get_real_hermes_home() -> str | None:
     """Realpath of the authoritative Hermes home for the ACTIVE profile.
 
-    Resolved per call so it tracks the per-turn ``HERMES_HOME`` scope (#107327);
-    a test may pin it via ``_real_hermes_home_cached`` + ``_real_hermes_home_loaded``.
-    Consumers exempting a whole TREE want ``_hermes_exempt_homes()``: under a named
-    profile this home is ``<root>/profiles/<name>`` and the root is exempt too."""
-    if _real_hermes_home_loaded:
-        return _real_hermes_home_cached
+    Resolved per call so it tracks the per-turn ``HERMES_HOME`` scope (#107327).
+    ``None`` fails closed at the consumer: the ``~/.hermes`` exemption is skipped,
+    so the gate runs. Consumers exempting a whole TREE want ``_hermes_exempt_homes()``:
+    under a named profile this home is ``<root>/profiles/<name>`` and the root is
+    exempt too."""
     try:
-        return _hermes_home_real()
+        return os.path.realpath(str(get_hermes_home()))
     except Exception:
-        # Same active-profile binding on the exception path (see
-        # ``_get_hermes_config_resolved``): re-derive from ``get_hermes_home()``
-        # rather than ``_expand_tilde("~/.hermes")`` so the protected-instruction
-        # exemption resolves against the active profile — not the subprocess /
-        # default home — and substitute no unrelated home if the active security
-        # path cannot be established (PR #107335). A ``None`` here fails closed at
-        # the consumer: the ``~/.hermes`` exemption is skipped, so the gate runs.
-        try:
-            from hermes_constants import get_hermes_home
-            return os.path.realpath(str(get_hermes_home()))
-        except Exception:
-            return None
+        return None
 
 
 def _hermes_exempt_homes() -> tuple[str, ...]:
@@ -131,7 +81,6 @@ def _hermes_exempt_homes() -> tuple[str, ...]:
     if not home:
         return ()
     try:
-        from hermes_constants import named_profile_home
         profile_home = named_profile_home(home)
     except Exception:
         profile_home = None
@@ -149,44 +98,6 @@ def _resolved_or_raw(filepath: str, task_id: str) -> str:
         return filepath
 
 
-def _system_path_allow_roots() -> tuple[str, ...]:
-    """Realpaths of ``security.write_allow_roots``: directories exempt from the system-path PREFIX rule
-    only (P20). A repo that lives under /etc (a nix-darwin checkout at /etc/nix-darwin, realpath
-    /private/etc/nix-darwin) could otherwise never be written by write_file/patch, whatever the sandbox
-    allowed. Absolute entries only; a root that is, or contains, a whole deny prefix (``/``, ``/etc``) is
-    ignored; any config read failure means no roots (fail closed)."""
-    try:
-        from hermes_cli.config import load_config, cfg_get
-        raw = cfg_get(load_config(), "security", "write_allow_roots", default=[])
-    except Exception:
-        logger.debug("write_allow_roots config read failed; no roots (fail closed)", exc_info=True)
-        return ()
-    if not isinstance(raw, list):
-        return ()
-    roots = []
-    for item in raw:
-        text = os.path.expanduser(str(item or "").strip())
-        if not text or not os.path.isabs(text):
-            continue
-        root = os.path.realpath(text)
-        lifts_a_prefix = any(
-            p.rstrip("/") == root or p.startswith(root.rstrip("/") + "/")
-            for p in _SENSITIVE_PATH_PREFIXES)
-        if not lifts_a_prefix:
-            roots.append(root)
-    return tuple(roots)
-
-
-def _inside_allow_roots(paths: list[str]) -> bool:
-    """True only when EVERY path (after realpath, so ``..`` and symlinks cannot leave) is inside a root."""
-    roots = _system_path_allow_roots()
-    if not roots:
-        return False
-    for path in paths:
-        real = os.path.realpath(path)
-        if not any(real == r or real.startswith(r.rstrip("/") + "/") for r in roots):
-            return False
-    return True
 def _writes_host_filesystem(task_id: str) -> bool:
     """Whether this task's writes land on THIS host's disk: only then may a guard stat the target.
     A hosted path names the tenant's sandbox and an SSH/container path the backend's filesystem;
@@ -224,9 +135,7 @@ def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None
             f"Refusing to write to {filepath}: it climbs above the SSH home and the remote "
             "home could not be detected, so its target cannot be checked. Pass an absolute path.")
     keys = [deny_key(c) for c in candidates]
-    exact = any(k in _SENSITIVE_EXACT_PATHS for k in keys)
-    under_prefix = [c for c, k in zip(candidates, keys) if k.startswith(_SENSITIVE_PATH_PREFIXES)]
-    if exact or (under_prefix and not _inside_allow_roots(under_prefix)):
+    if any(k in _SENSITIVE_EXACT_PATHS for k in keys) or __import__("tools.write_path_policy").write_path_policy.system_path_denied(filepath, candidates, keys, _SENSITIVE_PATH_PREFIXES, task_id):  # fork: resolve_write_policy hook
         return (
             f"Refusing to write to sensitive system path: {filepath}\n"
             "Use the terminal tool with sudo if you need to modify system files.")
@@ -264,6 +173,12 @@ def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None
 # probe common case variants too, so the stricter behavior is kept uniform.
 _PROTECTED_INSTRUCTION_BASENAMES = frozenset({
     "agents.md", "claude.md", "soul.md", ".cursorrules"})
+
+
+def _name_key(name: str) -> str:
+    """``name`` as APFS compares it: NFC, then full Unicode case folding. ``.lower()`` keeps ``ſ`` and
+    ``ß``, which APFS folds to ``s``/``ss``, so ``AGENTſ.md`` opens ``AGENTS.md`` (CERT/CC VU#604762)."""
+    return unicodedata.normalize("NFC", unicodedata.normalize("NFC", name).casefold())
 
 
 def _protected_instruction_config() -> tuple[bool, list[str]]:
@@ -319,9 +234,12 @@ def _protected_instruction_reason(filepath: str, task_id: str = "default",
     # no other file-tool guard covers them (#92146).
     for candidate in (normalized, resolved):
         base = os.path.basename(candidate)
-        base_lower = base.lower()
-        if base_lower in _PROTECTED_INSTRUCTION_BASENAMES or any(
-                fnmatch.fnmatch(base_lower, pattern.lower()) for pattern in extra_patterns):
+        # Folded keys only ADD matches: the lowercase pair stays, since a glob's ``?`` or ``[ß]`` matches the
+        # one-char ``ß`` but not its folded ``ss``.
+        keys = (base.lower(), _name_key(base))
+        if keys[1] in _PROTECTED_INSTRUCTION_BASENAMES or any(
+                fnmatch.fnmatch(key, norm(pattern)) for pattern in extra_patterns
+                for key, norm in zip(keys, (str.lower, _name_key))):
             return base
 
     # The ``.hermes`` component rule below targets PROJECT-LOCAL config, and the home

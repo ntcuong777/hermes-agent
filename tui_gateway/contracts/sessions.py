@@ -223,6 +223,7 @@ class SessionListParams(ProfileParams):
     limit: int | None = None
     include_hidden: bool = False
     # The caller's directory: list only sessions in its workspace (repo root, else the directory).
+    # Served by the chat-workspaces plugin (B11): without it, a cwd on session.list is silently ignored.
     cwd: str | None = None
 
 
@@ -555,6 +556,12 @@ class PromptCacheWindow(Result):
     reason: str
     refreshed_at: float | None = None
     coverage: dict[str, float] = {}
+    #: Keep-alives missed on this route (two real misses in a row): nothing is warmed again this session.
+    warming_off: bool = False
+    #: ``cache_ttl: auto`` on a person's chat still on 5m: it moves to 1h at its first pause over 5 minutes.
+    tier_pending: bool = False
+    #: A rule learned from this route's own usage (``no-cache`` | ``write-on-hit`` | ``short-lived``).
+    learned: str | None = None
 
 
 class SessionContextBreakdownResult(Result):

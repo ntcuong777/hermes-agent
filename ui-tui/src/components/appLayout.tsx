@@ -32,7 +32,10 @@ import { ActiveWidgetSlot, AmbientDock, AmbientRail, useAmbientRailWidth } from 
 
 import { AgentsOverlay } from './agentsOverlay.js'
 import { LiveAgentsPanel } from './agentsPanel.js'
-import { GoodVibesHeart, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
+import { GoodVibesHeart, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
+import { StatusRule as StockStatusRule } from './appChrome.js' // fork: tui slot
+const StatusRule = slotComponent<Parameters<typeof StockStatusRule>[0] & { stashCounts?: { global: number; session: number } }>('statusRule', StockStatusRule) // fork: tui slot. The fork's kept glue passes stashCounts, which upstream's StatusRuleProps lacks; the slot contract admits it as an optional field (adding an optional field is not a props bump, master spec 6.6).
+import { slotComponent } from '../sdk/ext/slotReact.js' // fork: tui slot
 import { FloatingOverlays, PromptZone } from './appOverlays.js'
 import { Banner, Panel, SessionPanel } from './branding.js'
 import { HalfBlockImage, KittyImage } from './cellImage.js'
@@ -46,7 +49,9 @@ import { PasteHint } from './pasteSections.js'
 import { QueuedMessages } from './queuedMessages.js'
 import { RewindFocusScroller, useBacktrackHint, useRewindFocusIndex } from './rewindFocus.js'
 import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
-import { type InputCursorSnapshot, TextInput, type TextInputMouseApi } from './textInput.js'
+import { type InputCursorSnapshot, TextInputMouseApi } from './textInput.js'
+import { TextInput as StockTextInput } from './textInput.js' // fork: tui slot
+const TextInput = slotComponent<Parameters<typeof StockTextInput>[0] & { caretRef?: MutableRefObject<InputCursorSnapshot | null> }>('textInput', StockTextInput) // fork: tui slot. The kept glue passes caretRef, which upstream's TextInputProps lacks; the slot contract admits it as an optional field (adding an optional field is not a props bump, master spec 6.6).
 
 // Box geometry, kept here so the transcript's reservation math matches the
 // rendered overlay exactly.

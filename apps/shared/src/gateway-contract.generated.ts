@@ -606,15 +606,16 @@ export interface Usage {
   dev_credits_spent_micros?: number | null
   cost_usd?: number | null
   cost_status?: string | null
-  quota?: QuotaWindow[] | null
+  status_fields?: StatusField[] | null
   plan_gauge?: PlanGauge | null
   [key: string]: unknown
 }
-/** ``tui_gateway/usage_status.py::quota_fields``: one subscription window of the active account. */
-export interface QuotaWindow {
-  label?: string
-  used_percent?: number
-  [key: string]: unknown
+/** ``tui_gateway/status_bar_fields.py``: one plugin-supplied status-bar segment (hook ``transform_status_bar_fields``). ``tone`` colours the text (default muted); ``min_cols`` is the narrowest terminal that shows it. */
+export interface StatusField {
+  id: string
+  text: string
+  tone?: 'muted' | 'good' | 'warn' | 'bad' | null
+  min_cols?: number | null
 }
 /** ``gateway/session_usage.py::plan_gauge``: a window plan's allowance for the status bar. */
 export interface PlanGauge {
@@ -3635,7 +3636,7 @@ export interface SessionUsageResult {
   dev_credits_spent_micros?: number | null
   cost_usd?: number | null
   cost_status?: string | null
-  quota?: QuotaWindow[] | null
+  status_fields?: StatusField[] | null
   plan_gauge?: PlanGauge | null
   credits_lines?: string[] | null
   credits_usage_window?: boolean | null
@@ -3947,6 +3948,7 @@ export interface CommandsCatalogResult {
   warning?: string
   plugin_discovery_error?: string
   plugin_commands?: Record<string, string>
+  keybinds?: Record<string, string>
 }
 export interface CommandCatalogMeta {
   argument_mode?: ArgumentMode | null
@@ -3987,15 +3989,24 @@ export interface CommandDispatchResult {
   display?: string | null
   name?: string | null
   status?: string | null
-  count?: number | null
-  max?: number | null
+  ack?: string | null
+  title?: string | null
+  items?: ChoiceItem[] | null
+  selected?: number | null
 }
 /** ``apps/shared/src/slash.ts::parseCommandDispatch`` branches on this. */
-export type DispatchType = 'exec' | 'alias' | 'plugin' | 'send' | 'skill' | 'prefill' | 'stash-saved'
+export type DispatchType = 'exec' | 'alias' | 'plugin' | 'send' | 'skill' | 'prefill' | 'composer-clear' | 'choices'
+/** One row of a ``choices`` directive: ``select`` (and ``drop``, on ``x``) is a slash command the client runs. */
+export interface ChoiceItem {
+  label: string
+  select: string
+  drop?: string | null
+}
 export interface SlashExecParams {
   session_id: string
   command: string
   profile?: string | null
+  composer_text?: string | null
 }
 /** Plain worker/plugin text in ``output`` (+ ``warning``), or — when the command was rerouted to ``command.dispatch`` — that method's directive fields with ``type`` set. */
 export interface SlashExecResult {
@@ -4008,8 +4019,10 @@ export interface SlashExecResult {
   display?: string | null
   name?: string | null
   status?: string | null
-  count?: number | null
-  max?: number | null
+  ack?: string | null
+  title?: string | null
+  items?: ChoiceItem[] | null
+  selected?: number | null
 }
 export interface InsightsGetParams {
   days?: number | null

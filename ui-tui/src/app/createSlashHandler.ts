@@ -5,16 +5,17 @@ import { scoreSlashMenuItem } from '@hermes/shared/slash-score'
 import type { GatewayClient } from '../gatewayClient.js'
 import { rpcErrorMessage } from '../lib/rpc.js'
 import { launchWidget } from '../sdk/host.js'
+import { slotFn } from '../sdk/ext/slotReact.js' // fork: tui slot
 import { getWidgetApp } from '../sdk/registry.js'
 
 import type { SlashHandler, SlashHandlerContext, SlashSubmission } from './interfaces.js'
+import { typedDirectives } from './keybinds.js'
 import { findSlashCommand } from './slash/registry.js'
 import type { SlashRunCtx } from './slash/types.js'
 import { captureDestination, isCurrentDestination } from './submissionDestination.js'
 import { getUiState } from './uiStore.js'
 import {
   describeSlashExecError,
-  isLaneOwned,
   isUnsupportedCommand,
   RPC_UNKNOWN_METHOD,
   shouldFallbackToDispatch
@@ -89,30 +90,15 @@ export function createSlashHandler(ctx: SlashHandlerContext): SlashHandler {
         }
       }
 
-    // A command whose own RPC the owner refused as `lane_owned` (a session bound to a Discord thread):
-    // the command as typed goes to `slash.exec`, which relays it to the thread, and its one-line ack
-    // ("... sent to the session's bound thread") is what the user sees.
-    const relayToLane = () =>
-      gw
-        .request<SlashExecResponse>('slash.exec', { command: `${parsed.name}${argTail}`, session_id: sid })
-        .then(r => {
-          if (!stale()) {
-            sys(r?.output || `/${parsed.name}${argTail}: sent to the session's bound thread`)
-          }
-        })
-        .catch((e: unknown) => {
-          if (!stale()) {
-            sys(`error: ${describeSlashExecError(parsed.name, e)}`)
-          }
-        })
-
     const guardedErr = (e: unknown) => {
       if (stale()) {
         return
       }
 
-      if (isLaneOwned(e)) {
-        return void relayToLane()
+      // fork: tui slot. A slot handler may answer a refusal (the lane relay resends a `lane_owned`
+      // command as typed through `slash.exec`); the stock answer is "not handled".
+      if (slotFn('slash.refused', (_err: unknown, _ctx: unknown) => false)(e, { argTail, gw, name: parsed.name, sid, stale, sys })) {
+        return
       }
 
       sys(isUnsupportedCommand(e) ? describeSlashExecError(parsed.name, e) : `error: ${rpcErrorMessage(e)}`)
@@ -231,6 +217,10 @@ export function createSlashHandler(ctx: SlashHandlerContext): SlashHandler {
         }
 
         return d.message?.trim() ? sendDispatch(d.display, d.message) : sys(`/${parsed.name}: empty message`)
+      }
+
+      if (d.type === 'choices' || d.type === 'composer-clear') {
+        return void (sid && typedDirectives(gw, ctx.composer.setInput, sys, sid, stale).apply(raw))
       }
 
       if (d.type === 'prefill') {

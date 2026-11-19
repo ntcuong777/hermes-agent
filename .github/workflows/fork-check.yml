@@ -28,9 +28,13 @@ concurrency:
 
 env:
   FORK_PYTEST_FILES: >-
+    tests/core_patches
+    tests/agent/test_core_fixes_reverted.py
     tests/gateway/test_complete_path_host_plugin_backend.py
     tests/gateway/test_complete_path_at_filter.py
     tests/tui_gateway
+    tests/fork_hooks
+    tests/session_lane_seam
   FORK_VITEST_FILTER: src/__tests__/textInput
 
 jobs:
@@ -58,6 +62,28 @@ jobs:
           OPENROUTER_API_KEY: ''
           OPENAI_API_KEY: ''
           NOUS_API_KEY: ''
+
+      - name: Core patch pins (an upstream change to a function a plugin patches, or a patch without provenance)
+        run: |
+          # .github/core-patch-pins.json mirrors every nix-darwin plugin's core_patches.lock.json
+          # (target, fingerprint, reason, the upstream commit it was written against). It fails on
+          # drift AND on a pin without a reason or an upstream commit. While no plugin patches core
+          # the pins are {} and this step verifies nothing: it prints 'no pins recorded (nothing
+          # verified)' and passes. This is a CI check only: it can never stop the agent.
+          "$HERMES_PYTHON" -I hermes_cli/core_patches_ast.py --verify-pins .github/core-patch-pins.json --source-root .
+
+      - name: Core patch locks of the plugins checked out in this fork
+        run: |
+          # Same verification, plus the snapshot files, for any plugin that keeps a
+          # core_patches.lock.json inside this repository (none today: prints 'no locks found').
+          "$HERMES_PYTHON" -I hermes_cli/core_patches_ast.py --verify-locks plugins --source-root .
+
+      - name: TUI slot pins (an upstream change to a component a plugin copies, or a copy without provenance)
+        run: |
+          # .github/tui-slot-pins.json mirrors every nix-darwin plugin's tui_slots.lock.json (written by
+          # scripts/fork/tui-slot-check --write-pins). It fails on drift AND on a slot without a reason or an upstream
+          # commit. With no slot recorded it verifies nothing and passes. CI only: it can never stop a running Hermes.
+          "$HERMES_PYTHON" -I scripts/fork/tui-slot-check --verify-pins .github/tui-slot-pins.json --fork-root .
 
       - name: Install JS workspace
         run: npm ci --ignore-scripts

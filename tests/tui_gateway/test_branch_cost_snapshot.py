@@ -8,7 +8,12 @@ may keep spending after the fork; the branch must not inherit that.
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
+
+import pytest
 from pathlib import Path
+
+from tests.fixtures.storage_seed import seed_session, seed_usage
 
 
 def _home(tmp_path, monkeypatch) -> Path:
@@ -34,59 +39,63 @@ def _branch(server, db, child, parent, tmp_path):
 
 
 def _config(db, key) -> dict:
-    raw = db.get_session(key)["model_config"]
-    return json.loads(raw) if isinstance(raw, str) else raw
+    raw = db.sessions.get(key).model_config
+    return json.loads(raw) if isinstance(raw, str) else dict(raw)
+
+
+def _rows(db):
+    """The row reader ``lineage_cost`` takes: a dict per session, as the old store returned it."""
+    return SimpleNamespace(get_session=lambda sid: (
+        record.as_session_row() if (record := db.sessions.get(sid)) is not None else None))
 
 
 def test_the_branch_row_records_the_parents_cost_at_the_fork(tmp_path, monkeypatch):
-    from hermes_state import SessionDB
+    from persistence_assembly import open_persistence, profile_scope
     from tui_gateway import server
 
     home = _home(tmp_path, monkeypatch)
-    with SessionDB(home / "state.db") as db:
-        db.create_session("parent", source="desktop", model="test-model")
-        db.queue_token_counts("parent", estimated_cost_usd=1.5, api_call_count=1)
+    with open_persistence(profile_scope(home=home)) as db:
+        seed_session(db, "parent", "desktop", model="test-model")
+        seed_usage(db, "parent", estimated_cost_usd=1.5, api_call_count=1)
         _branch(server, db, "child", "parent", tmp_path)
 
         config = _config(db, "child")
         assert config["_branched_from"] == "parent"
         assert config["_cost_at_fork_usd"] == 1.5
         # The snapshot is not spend: the column that analytics sum stays the branch's own.
-        assert not db.get_session("child")["estimated_cost_usd"]
+        assert not db.sessions.get("child").estimated_cost_usd
 
 
 def test_the_snapshot_includes_the_parents_compression_ancestors(tmp_path, monkeypatch):
-    from hermes_state import SessionDB
+    from persistence_assembly import open_persistence, profile_scope
     from tui_gateway import server
 
     home = _home(tmp_path, monkeypatch)
-    with SessionDB(home / "state.db") as db:
-        db.create_session("p1", source="desktop", model="test-model")
-        db.queue_token_counts("p1", estimated_cost_usd=1.0, api_call_count=1)
-        db.end_session("p1", "compression")
-        db.create_session(
-            "p2", source="desktop", model="test-model", parent_session_id="p1"
-        )
-        db.queue_token_counts("p2", estimated_cost_usd=0.5, api_call_count=1)
+    with open_persistence(profile_scope(home=home)) as db:
+        seed_session(db, "p1", "desktop", model="test-model")
+        seed_usage(db, "p1", estimated_cost_usd=1.0, api_call_count=1)
+        db.sessions.end("p1", "compression")
+        seed_session(db, "p2", "desktop", model="test-model", parent_session_id="p1")
+        seed_usage(db, "p2", estimated_cost_usd=0.5, api_call_count=1)
         _branch(server, db, "child", "p2", tmp_path)
 
         assert _config(db, "child")["_cost_at_fork_usd"] == 1.5
 
 
 def test_a_parent_that_has_cost_nothing_records_no_snapshot(tmp_path, monkeypatch):
-    from hermes_state import SessionDB
+    from persistence_assembly import open_persistence, profile_scope
     from tui_gateway import server
 
     home = _home(tmp_path, monkeypatch)
-    with SessionDB(home / "state.db") as db:
-        db.create_session("parent", source="desktop", model="test-model")
+    with open_persistence(profile_scope(home=home)) as db:
+        seed_session(db, "parent", "desktop", model="test-model")
         _branch(server, db, "child", "parent", tmp_path)
 
         assert _config(db, "child") == {"_branched_from": "parent"}
 
 
 def test_a_parent_that_cannot_be_read_still_gets_a_branch(tmp_path, monkeypatch):
-    from hermes_state import SessionDB
+    from persistence_assembly import open_persistence, profile_scope
     from tui_gateway import server, usage_status
 
     def boom(*_a, **_k):
@@ -94,41 +103,26 @@ def test_a_parent_that_cannot_be_read_still_gets_a_branch(tmp_path, monkeypatch)
 
     monkeypatch.setattr(usage_status, "lineage_cost", boom)
     home = _home(tmp_path, monkeypatch)
-    with SessionDB(home / "state.db") as db:
-        db.create_session("parent", source="desktop", model="test-model")
+    with open_persistence(profile_scope(home=home)) as db:
+        seed_session(db, "parent", "desktop", model="test-model")
         _branch(server, db, "child", "parent", tmp_path)
 
         assert _config(db, "child") == {"_branched_from": "parent"}
 
 
-def test_the_bar_shows_the_branch_at_the_parents_cost_then_counts_on(
+def test_a_resumed_branch_carries_the_parents_cost_at_the_fork_then_counts_on(
     tmp_path, monkeypatch
 ):
     """Fork, let the parent spend more, then resume the branch: it carries the snapshot."""
-    from hermes_state import SessionDB
+    from persistence_assembly import open_persistence, profile_scope
     from tui_gateway import server, usage_status
 
     home = _home(tmp_path, monkeypatch)
-    with SessionDB(home / "state.db") as db:
-        db.create_session("parent", source="desktop", model="test-model")
-        db.queue_token_counts(
-            "parent", estimated_cost_usd=2.0, cost_status="estimated", api_call_count=1
-        )
+    with open_persistence(profile_scope(home=home)) as db:
+        seed_session(db, "parent", "desktop", model="test-model")
+        seed_usage(db, "parent", estimated_cost_usd=2.0, cost_status="estimated", api_call_count=1)
         _branch(server, db, "child", "parent", tmp_path)
-        db.queue_token_counts(
-            "parent", estimated_cost_usd=7.0, cost_status="estimated", api_call_count=1
-        )
-        db.queue_token_counts(
-            "child", estimated_cost_usd=0.25, cost_status="estimated", api_call_count=1
-        )
+        seed_usage(db, "parent", estimated_cost_usd=7.0, cost_status="estimated", api_call_count=1)
+        seed_usage(db, "child", estimated_cost_usd=0.25, cost_status="estimated", api_call_count=1)
 
-        class Agent:
-            _session_db = db
-            session_id = "child"
-            session_estimated_cost_usd = 0.0
-            session_cost_status = "unknown"
-
-        assert usage_status.cost_fields(Agent()) == {
-            "cost_usd": 2.25,
-            "cost_status": "estimated",
-        }
+        assert usage_status.lineage_cost(_rows(db), "child")[0] == pytest.approx(2.25)

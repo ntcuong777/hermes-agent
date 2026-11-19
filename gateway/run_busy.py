@@ -468,12 +468,11 @@ class GatewayBusySessionMixin:
             return False
         except Exception:
             return _assume_active("session", session_key)
-        session_db = getattr(self, "_session_db", None)
-        if not session_id or session_db is None:
+        store = getattr(self, "persistence", None)
+        if not session_id or store is None:
             return False
-        raw_db = getattr(session_db, "_db", session_db)
         try:
-            holder = await asyncio.to_thread(raw_db.get_compression_lock_holder, str(session_id))
+            holder = await asyncio.to_thread(store.coordination.get_compression_lock_holder, session_id=str(session_id))
             # Production returns Optional[str]. Reject non-strings so a MagicMock auto-attr (or any
             # unexpected truthy) cannot look like a held lock and skip hygiene.
             # See #96953.
@@ -1060,7 +1059,7 @@ class GatewayBusySessionMixin:
     )
     # Dispatched only on the idle path (busy dispatch has its own allowlist).
     _IDLE_COMMANDS = (
-        "topic", "cwd", "whoami", "platform", "stop", "reasoning", "memory", "skills", "fast",
+        "topic", "whoami", "platform", "stop", "reasoning", "memory", "skills", "fast",
         "approvals", "model", "codex-runtime", "personality", "suggestions", "save", "retry",
         "sethome", "compress", "usage", "topup", "insights", "reload-mcp", "reload-skills",
         "bundles", "debug", "title", "resume", "sessions", "branch", "rollback", "diff", "goal",
@@ -1069,29 +1068,11 @@ class GatewayBusySessionMixin:
 
     def _command_handler_table(self, names) -> dict[str, Any]:
         return {
-            name: self._repainting_viewer(getattr(
+            name: getattr(
                 self, self._COMMAND_HANDLER_ALIASES.get(name, f"_handle_{name.replace('-', '_')}_command"),
-            ))
+            )
             for name in names
         }
-
-    def _repainting_viewer(self, handler):
-        """Every slash command a messaging lane runs may change what a local viewer bound to the same
-        session shows (its model, reasoning, fast, yolo, title, cwd pills): republish ``session.info`` after
-        it, for every command in the table and any added to it later, so no command has to remember to."""
-        import functools
-
-        @functools.wraps(handler)
-        async def run(event, *args, **kwargs):
-            result = await handler(event, *args, **kwargs)
-            # Off the reply's path: the thread gets its answer without waiting for a state.db read.
-            import asyncio
-            tasks = self.__dict__.setdefault("_lane_publish_tasks", set())
-            task = asyncio.ensure_future(self._publish_lane_info(event, result if isinstance(result, str) else None))
-            tasks.add(task)
-            task.add_done_callback(tasks.discard)
-            return result
-        return run
 
     def _gateway_plain_command_handlers(self):
         """Return ordinary slash handlers shared by idle and busy dispatch."""

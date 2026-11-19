@@ -9,6 +9,10 @@ behaviour, provided by the bundled ``plugins/delegation/default`` plugin). Core 
 background units, stop fan-out, results, ``output_schema``, progress); a provider only answers
 "which route does this task take".
 
+A provider that only needs the route fields above never touches the lifecycle. ``check_tasks`` may refuse a whole
+call before any route is resolved or child built (a task naming a profile nobody declared, say); every other
+refusal is per task.
+
 Everything crossing this interface is plain JSON data (no live agent objects), so a provider runs
 unchanged in-process and under ``plugins.isolation: host``.
 
@@ -27,6 +31,15 @@ Route vocabulary (:meth:`DelegationProvider.route_task` returns a dict with any 
   scope helpers a multiplexed gateway uses for a routed turn. A profile route ignores the other
   route keys; the profile's own config decides them.
 * ``label`` - short text shown with the child's progress and result (e.g. the option title).
+* ``toolsets`` - the toolsets the child may use. Core INTERSECTS them with the parent's (a toolset the parent lacks is
+  dropped, never added); empty or absent = the parent's whole set.
+* ``instructions`` - text added to the child's system prompt, headed with the ``child_profile`` name.
+* ``child_profile`` - a name the child carries (``child._delegate_profile``) and the ``subagent_start`` hook reports
+  as ``child_profile``, so a plugin can tell which of its profiles a child runs as (e.g. to grade its tool calls).
+* ``confirm`` - ``{"question": ..., "approve": ..., "deny": ..., "refusal": ...}`` (or just the question text): the
+  parent's human must approve this task's launch through the parent's ``clarify`` surface before any child is built.
+  Anything but an explicit approval (deny, timeout, no human surface) refuses the WHOLE call with ``refusal``.
+  Approvals are never cached.
 
 A backend's own settings live under ``delegation.backends.<backend name>`` (:meth:`DelegationProvider.settings`),
 never beside the core ``delegation`` keys.
@@ -35,7 +48,7 @@ never beside the core ``delegation`` keys.
 from __future__ import annotations
 
 import abc
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from agent.provider_base import ProviderBase
 
@@ -43,15 +56,21 @@ from agent.provider_base import ProviderBase
 #: refused at schema-build time: plugins add parameters, they never redefine core ones, and the
 #: raw route fields (``provider``/``model``/``base_url``/``api_key``) never become model-facing.
 RESERVED_TASK_PARAMETERS = frozenset({
-    "goal", "context", "index", "output_schema", "images", "group", "role", "toolsets",
+    "goal", "context", "index", "parent", "output_schema", "images", "group", "role", "toolsets",
     "acp_command", "acp_args", "provider", "model", "base_url", "api_key", "api_mode",
-    "model_rationale",  # fork: the reason a role-declared launch asks to change its model (delegate_model_override)
 })
+
+#: Reserved names a provider MAY still declare in :meth:`DelegationProvider.task_parameters`, because it owns their
+#: meaning: ``role`` (the profile a task runs as; core's own per-task ``role`` is a legacy no-op) and the model-facing
+#: ``model``/``provider`` of a launch whose route the provider confirms with the human (the ``confirm`` route key).
+#: A backend that does not declare them still sees them dropped, as before.
+PROVIDER_DECLARABLE_PARAMETERS = frozenset({"role", "model", "provider"})
 
 #: Keys a route may carry; anything else in a provider's answer is ignored.
 ROUTE_KEYS = frozenset({
     "model", "provider", "base_url", "api_key", "api_mode", "request_overrides",
     "reasoning_effort", "service_tier", "fallback_providers", "profile", "label",
+    "toolsets", "instructions", "child_profile", "confirm",
 })
 
 
@@ -108,11 +127,17 @@ class DelegationProvider(ProviderBase):
         as :meth:`task_parameters`)."""
         return ""
 
+    def check_tasks(self, tasks: Sequence[Mapping[str, Any]], config: Mapping[str, Any]) -> None:
+        """Refuse the WHOLE call before any route is resolved or child built: raise :class:`DelegationRouteError`
+        (its message is the tool error the model reads). ``tasks`` are the payloads :meth:`route_task` will get,
+        in order. Return normally to let each task be routed, and refused, on its own."""
+
     @abc.abstractmethod
     def route_task(self, task: Mapping[str, Any], config: Mapping[str, Any]) -> dict[str, Any]:
         """Return the route for one task (vocabulary in the module docstring).
 
-        ``task`` carries ``goal``, ``context``, ``index`` and the values the model supplied for
-        this provider's :meth:`task_parameters` (absent when omitted). Raise
+        ``task`` carries ``goal``, ``context``, ``index``, ``parent`` (``{"model", "provider"}`` the delegating agent
+        runs on, each ``None`` when unknown) and the values the model supplied for this provider's
+        :meth:`task_parameters` (absent when omitted). Raise
         :class:`DelegationRouteError` to refuse the task.
         """

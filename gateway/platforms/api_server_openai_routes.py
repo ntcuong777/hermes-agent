@@ -18,19 +18,6 @@ from typing import Any, Dict, List, Optional
 
 from agent.i18n import t
 
-_USAGE_TOKEN_KEYS = ("input_tokens", "output_tokens", "total_tokens")
-
-
-def _chat_usage_payload(usage: dict[str, Any]) -> dict[str, int]:
-    """OpenAI Chat Completions ``usage`` block (prompt/completion/total) from the agent's usage."""
-    values = (usage.get(key, 0) for key in _USAGE_TOKEN_KEYS)
-    return dict(zip(("prompt_tokens", "completion_tokens", "total_tokens"), values))
-
-
-def _responses_usage_payload(usage: dict[str, Any]) -> dict[str, int]:
-    """OpenAI Responses ``usage`` block from the agent's usage dict."""
-    return {key: usage.get(key, 0) for key in _USAGE_TOKEN_KEYS}
-
 try:
     from aiohttp import web
 except ImportError:  # pragma: no cover - mirrors api_server's optional import
@@ -382,7 +369,7 @@ class _ResponsesStream:
         if error is not None:
             env["error"] = ({"code": "agent_error", "message": error} if self.durable_key
                             else {"message": error, "type": "server_error"})
-        env["usage"] = _responses_usage_payload(self.usage)
+        env["usage"] = self._api._responses_usage_payload(self.usage)
         return env
 
     def _history_with_user(self) -> list[dict[str, Any]]:
@@ -878,7 +865,7 @@ class OpenAICompatRoutesMixin:
     async def _handle_chat_completions(self, request: web.Request) -> web.Response:
         """POST /v1/chat/completions — OpenAI Chat Completions format."""
         from gateway.platforms.api_server import (
-            ThreadSafeAsyncQueue, _api_request_profile, _coerce_request_bool,
+            ThreadSafeAsyncQueue, _api_request_profile, _chat_usage_payload, _coerce_request_bool,
             _content_has_visible_payload, _derive_chat_session_id, _error_response, _invalid_request,
             _openai_error, _redact_api_error_text, _resolve_media_to_data_urls)
         # Bound total in-flight agent runs (configurable; #7483).
@@ -928,8 +915,8 @@ class OpenAICompatRoutesMixin:
                 return _invalid_request("Session ID too long")
             session_id = provided_session_id
             try:
-                db = await self._ensure_session_db_async()
-                if db is not None:
+                store = self._store_beside(await self._ensure_store_async())
+                if store is not None:
                     # #98619/#13437: a client-addressed id from before a compression rotation
                     # must adopt the live continuation tip — history loads from it, the turn and
                     # the wake target bind it, and a detached delegation delivery row persisted
@@ -937,7 +924,7 @@ class OpenAICompatRoutesMixin:
                     # the delivery writer (gateway/wake.py) and /v1/runs use; fails open.
                     from gateway.platforms.api_server_runs import _resolve_live_session_id
                     session_id = await _resolve_live_session_id(self, provided_session_id)
-                    history = await asyncio.to_thread(db.get_messages_as_conversation, session_id)
+                    history = [m.as_openai_message() for m in await store.aio.messages.read_conversation(session_id)]
             except Exception as e:
                 logger.warning("Failed to load session history for %s: %s", session_id, e)
                 history = []
@@ -1102,11 +1089,11 @@ class OpenAICompatRoutesMixin:
         if authority is None:
             return session_id, None  # admission refuses the unserved profile with its own verdict
         import sqlite3
-        from hermes_state_runtime import RuntimeStoreError
+        from persistence import STORE_FAILURES, AuthorityRefusal
         try:
-            return await asyncio.to_thread(implicit_api_session, authority.db, session_id,
+            return await asyncio.to_thread(implicit_api_session, authority.persistence, session_id,
                                            self._chat_request_id(request)), None
-        except (RuntimeStoreError, sqlite3.Error, OSError) as exc:
+        except (AuthorityRefusal, sqlite3.Error, OSError, *STORE_FAILURES) as exc:
             from gateway.platforms.api_server import _openai_error
             from gateway.platforms.api_server_authority_runs import store_error_response
             return session_id, store_error_response(_openai_error, exc)
@@ -1129,7 +1116,7 @@ class OpenAICompatRoutesMixin:
         route), folded into the key because the store keeps the fingerprint only as the slot's value.
         """
         from gateway.platforms.api_server import _error_response, _idem_cache, _make_request_fingerprint
-        from hermes_state_runtime import RuntimeStoreError
+        from persistence import AuthorityRefusal
         idempotency_key = request.headers.get("Idempotency-Key")
         try:
             # Durable /v1/runs admissions own idempotency under session authority; the in-memory
@@ -1142,7 +1129,7 @@ class OpenAICompatRoutesMixin:
             else:
                 result, usage = await compute()
             return (result, usage), None
-        except RuntimeStoreError as exc:
+        except AuthorityRefusal as exc:
             from gateway.platforms.api_server import _openai_error
             from gateway.platforms.api_server_authority_runs import store_error_response
             return None, store_error_response(_openai_error, exc)
@@ -1172,7 +1159,7 @@ class OpenAICompatRoutesMixin:
         """Stream ``chat.completion.chunk`` frames from the agent's delta queue. On client
         disconnect the agent is interrupted (stops LLM calls), then its task wrapper cancelled."""
         from gateway.platforms.api_server import (
-            _abandon_agent_task, _redact_api_error_text, _resolve_media_to_data_urls,
+            _abandon_agent_task, _chat_usage_payload, _redact_api_error_text, _resolve_media_to_data_urls,
             _sse_frame)
         response = await self._prepare_sse_response(request, session_id, gateway_session_key)
 
@@ -1385,7 +1372,7 @@ class OpenAICompatRoutesMixin:
         from gateway.platforms.api_server import (
             ThreadSafeAsyncQueue, _coerce_request_bool,
             _error_response, _invalid_request, _redact_api_error_text,
-            _resolve_media_to_data_urls)
+            _resolve_media_to_data_urls, _responses_usage_payload)
         # Bound total in-flight agent runs (configurable; #7483).
         limited = self._concurrency_limited_response()
         if limited is not None:
@@ -1412,11 +1399,11 @@ class OpenAICompatRoutesMixin:
         if replayed is not None:
             return replayed
         from gateway.platforms.api_server_response_admissions import prepare_context
-        from hermes_state_runtime import RuntimeStoreError
+        from persistence import AuthorityRefusal
         try:
             context, error = await prepare_context(
                 self, request, body, gateway_session_key, durable_key, idempotency_scope, idempotency_key)
-        except RuntimeStoreError as exc:
+        except AuthorityRefusal as exc:
             from gateway.platforms.api_server import _openai_error
             from gateway.platforms.api_server_authority_runs import store_error_response
             return store_error_response(_openai_error, exc)

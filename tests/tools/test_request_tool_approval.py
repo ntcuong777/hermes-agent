@@ -3,8 +3,10 @@
 
 These verify that a plugin-driven approval reuses the SAME machinery as a
 Tier-2 dangerous-command match: session/permanent allowlist, the CLI prompt,
-the gateway submit_pending path, cron_mode, and fail-closed timeouts.
+the gateway pending path, cron_mode, and fail-closed timeouts.
 """
+
+import contextvars
 
 import pytest
 
@@ -13,6 +15,12 @@ from tools import approval_prompt
 import tools.approval_context as tools_approval_context
 from tools import approval_context
 from tools.approval import request_tool_approval
+
+
+def _api_server_plugin_request():
+    from gateway.session_context import set_session_vars
+    set_session_vars(platform="api_server")
+    return request_tool_approval("home_lock", "unlock the front door", rule_key="unlock")
 
 
 @pytest.fixture(autouse=True)
@@ -211,7 +219,9 @@ class TestRequestToolApproval:
         monkeypatch.delenv("HERMES_EXEC_ASK", raising=False)
         monkeypatch.setenv("HERMES_SESSION_PLATFORM", "api_server")
 
-        res = request_tool_approval("home_lock", "unlock the front door", rule_key="unlock")
+        # The gateway binds the platform per turn. A session context cleared by an earlier test holds "" and
+        # would mask the env var, so the turn runs in its own context with the platform bound.
+        res = contextvars.copy_context().run(_api_server_plugin_request)
 
         assert res["approved"] is False
         assert "unattended platform" in res["message"].lower()

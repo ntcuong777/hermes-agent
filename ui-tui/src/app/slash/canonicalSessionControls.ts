@@ -4,42 +4,24 @@ import { CANONICAL_REASONING_EFFORTS, TUI_SESSION_MODEL_FLAG } from '@hermes/sha
 
 import { introMsg, toTranscriptMessages } from '../../domain/messages.js'
 import { t } from '../../i18n/runtime.js'
-import { asRpcResult, rpcErrorMessage, SESSION_COMPRESS_TIMEOUT_MS } from '../../lib/rpc.js'
+import { asRpcResult, rpcErrorMessage } from '../../lib/rpc.js'
 import { patchOverlayState } from '../overlayStore.js'
 import { getUiState, patchUiState } from '../uiStore.js'
 
 import type { SlashRunCtx } from './types.js'
 
 interface MutationGateway {
-  request: (method: string, params?: Record<string, unknown>, timeoutMs?: number) => Promise<unknown>
+  request: (method: string, params?: Record<string, unknown>) => Promise<unknown>
 }
 
 // Keep the original CAS tuple after a lost reply. Reissuing the same command
 // must query that receipt, not silently authorize another write at a new revision.
 const pending = new WeakMap<MutationGateway, Map<string, Record<string, unknown>>>()
 
-// The levels `hermes_constants.parse_reasoning_effort` accepts; the display words are config.yaml writes.
-export const REASONING_EFFORTS = new Set([
-  'none',
-  'false',
-  'disabled',
-  'minimal',
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'max',
-  'ultra'
-])
-
-/** `<model> [--provider <p>] [--reasoning <level>] [--session]`. The owner's `model` mutation carries the model
- *  and provider only; the level is its own `reasoning` mutation, so it is split out here. The model picker's
- *  third step emits `--reasoning`, so refusing it refused every pick that chose a level. */
 function modelPayload(arg: string) {
   const parts = arg.trim().split(/\s+/)
   const model = parts.shift()!
   const payload: Record<string, string> = { model }
-  let effort = ''
 
   if (model.startsWith('--')) {
     throw new Error(t('canonical.controls.modelUsage'))
@@ -69,7 +51,7 @@ function modelPayload(arg: string) {
     throw new Error(t('canonical.controls.unsupportedModelOption', flag))
   }
 
-  return { effort, payload }
+  return payload
 }
 
 export type CanonicalOperation = 'model' | 'branch' | 'compress' | 'delete' | 'rename' | 'rewind' | 'reasoning'
@@ -119,8 +101,7 @@ export async function mutateCanonical(
   operation: CanonicalOperation,
   payload: Record<string, unknown> | ((snapshot: MutationSnapshot) => null | Record<string, unknown>),
   stale: () => boolean = () => false,
-  onRead?: (snapshot: MutationSnapshot) => void,
-  timeoutMs?: number
+  onRead?: (snapshot: MutationSnapshot) => void
 ) {
   let requests = pending.get(gw)
 
@@ -166,13 +147,7 @@ export async function mutateCanonical(
   let result
 
   try {
-    // Defined-only passthrough keeps the two-argument call shape every existing
-    // consumer (and mock) of `request` sees for the fast mutations.
-    result = asRpcResult(
-      await (timeoutMs === undefined
-        ? gw.request('session.mutate', params)
-        : gw.request('session.mutate', params, timeoutMs))
-    )
+    result = asRpcResult(await gw.request('session.mutate', params))
 
     if (!result) {
       throw new Error(t('session.common.invalidResponse', 'session.mutate'))
@@ -197,48 +172,18 @@ export async function mutateCanonicalSession(
   operation: 'model' | 'branch' | 'compress',
   arg: string,
   stale: () => boolean = () => false,
-  confirm?: string,
-  timeoutMs?: number
+  confirm?: string
 ) {
   // `confirm`: the owner's one-time token for a guarded model target the user accepted. It keys a
   // separate retained request, so an ambiguous reply to the confirmed send retries that exact one.
-  const { effort, payload: body } =
-    operation === 'model'
-      ? modelPayload(arg)
-      : { effort: '', payload: arg ? { [operation === 'branch' ? 'title' : 'focus']: arg } : {} }
-
-  const payload = { ...body, ...(confirm ? { confirm } : {}) }
-  const mutation = await mutateCanonical(gw, sid, operation, payload, stale, undefined, timeoutMs)
-
-  if (!mutation?.result) {
-    return undefined
+  const payload = {
+    ...(operation === 'model' ? modelPayload(arg) : arg ? { [operation === 'branch' ? 'title' : 'focus']: arg } : {}),
+    ...(confirm ? { confirm } : {})
   }
 
-  // The level follows only a switch that was applied: a refusal threw above, and a guarded target the owner
-  // wants confirmed wrote nothing, so the confirmed re-send (same argument) carries the level then.
-  if (!effort || mutation.result.status === 'confirmation_required') {
-    return { result: mutation.result, expectedGeneration: mutation.expectedGeneration }
-  }
+  const mutation = await mutateCanonical(gw, sid, operation, payload, stale)
 
-  let level
-
-  try {
-    level = await mutateCanonical(gw, sid, 'reasoning', { effort }, stale)
-  } catch (error) {
-    throw new Error(t('canonical.controls.reasoningNotSet', mutation.result.model as string, (error as Error).message))
-  }
-
-  // The reasoning receipt is newer: report its generation, or the live session.info it published would mark
-  // the model result as superseded and the switch would go unannounced.
-  const generation = Math.max(
-    Number(mutation.result.execution_generation ?? 0),
-    Number(level?.result?.execution_generation ?? 0)
-  )
-
-  return {
-    result: { ...mutation.result, execution_generation: generation },
-    expectedGeneration: mutation.expectedGeneration
-  }
+  return mutation?.result ? { result: mutation.result, expectedGeneration: mutation.expectedGeneration } : undefined
 }
 
 type CanonicalControlResult = NonNullable<Awaited<ReturnType<typeof mutateCanonicalSession>>>['result']
@@ -463,32 +408,13 @@ export async function runCanonicalSessionControl(
   confirm?: string
 ) {
   const gw = ctx.gateway.gw
-  // The compress RPC answers only after its minutes-long summarization and the
-  // commit: the status bar's compaction verb is the progress for that whole
-  // window, and the flag must drop on a refusal too or the surface reads
-  // stalled forever. `manualCompacting`, not `compacting`: turn idle and
-  // auto-compaction events clear that one, and the gateway runs the
-  // summarization outside the session gate, so turns can end mid-compress.
-  const showsCompacting = operation === 'compress'
 
   try {
     if (!ctx.sid) {
       throw new Error(t('slashCmd.core.status.noActiveSession'))
     }
 
-    if (showsCompacting) {
-      patchUiState({ manualCompacting: true })
-    }
-
-    const mutation = await mutateCanonicalSession(
-      gw,
-      ctx.sid,
-      operation,
-      arg,
-      ctx.stale,
-      confirm,
-      showsCompacting ? SESSION_COMPRESS_TIMEOUT_MS : undefined
-    )
+    const mutation = await mutateCanonicalSession(gw, ctx.sid, operation, arg, ctx.stale, confirm)
 
     if (!mutation) {
       return
@@ -521,9 +447,5 @@ export async function runCanonicalSessionControl(
     }
   } catch (error) {
     ctx.guardedErr(error)
-  } finally {
-    if (showsCompacting) {
-      patchUiState({ manualCompacting: false })
-    }
   }
 }

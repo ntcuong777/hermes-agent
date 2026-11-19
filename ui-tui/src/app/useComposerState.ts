@@ -18,6 +18,8 @@ import { t } from '../i18n/runtime.js'
 import { isUsableClipboardText, readClipboardImagePng, readClipboardText } from '../lib/clipboard.js'
 import { draftFromEditorText, resolveEditor } from '../lib/editor.js'
 import { stageClipboardImage, stageImagePath } from '../lib/imageAttachments.js'
+import { extensionHost } from '../sdk/ext/host.js' // fork: tui extension host
+import { clipboardImagePathFromExtensions, transformPasteText } from '../sdk/ext/composerHooks.js' // fork: tui extension host
 import { readOsc52Clipboard } from '../lib/osc52.js'
 import { isRemoteShellSession } from '../lib/terminalSetup.js'
 import { expandPasteTokens, pasteTokenLabel, stripTrailingPasteNewlines } from '../lib/text.js'
@@ -564,9 +566,11 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
           // The gateway's extraction can fail where the TUI itself sits in the GUI session (a
           // launchd/systemd-managed gateway has no pasteboard context): read the image here and
           // stage the file ourselves before reporting a miss.
-          const path = await localClipboardImagePath(message => {
-            sys(message)
-          })
+          const path =
+            (await clipboardImagePathFromExtensions()) ?? // fork: tui extension host
+            (await localClipboardImagePath(message => {
+              sys(message)
+            }))
 
           if (!path) {
             return primary
@@ -605,7 +609,14 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
       const destination = captureDestination()
       const draft = captureDraft(value)
       const current = () => isCurrentDestination(destination) && isFresh(draft)
-      const cleanedText = stripTrailingPasteNewlines(text)
+      // fork: tui extension host. No await unless an extension hooks the paste (ordering of sibling pastes stays as it was).
+      const hooked = extensionHost.has('composer.paste') ? await transformPasteText(text, Boolean(bracketed)) : text
+
+      if (hooked === null) {
+        return null
+      }
+
+      const cleanedText = stripTrailingPasteNewlines(hooked)
 
       if (!cleanedText || !/[^\n]/.test(cleanedText)) {
         return bracketed ? pasteClipboardImage(value, cursor, true) : null

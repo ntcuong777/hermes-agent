@@ -12,7 +12,7 @@ from gateway.session_authority import SessionAuthority
 from gateway.session_events import SessionEvents
 from gateway.session_idle_approval import IdleApprovalNotifier
 from gateway.session_pending_controls import PendingControls
-from hermes_state_runtime import RuntimeStoreError
+from persistence.core.errors import AuthorityRefusal
 
 SID = "sess"
 
@@ -46,7 +46,7 @@ def test_an_idle_ask_is_stamped_with_the_latest_generation_and_flagged_idle(monk
 
 def test_an_idle_ask_with_nobody_attached_is_refused_not_parked():
     stub, live = _authority(viewers=False)
-    with pytest.raises(RuntimeStoreError) as refused:
+    with pytest.raises(AuthorityRefusal) as refused:
         stub.register_idle_approval(SID, "route", {"request_id": "r1"})
     assert refused.value.reason == "no_viewer"
     assert live.controls.pending == {}
@@ -79,7 +79,7 @@ def test_an_idle_ask_is_answered_without_a_running_claim_but_an_ordinary_one_is_
         return asyncio.run(SessionAuthority.respond(stub, actor, ref, 7, prompt_id, {"choice": "once"}))
 
     assert respond("r1")["status"] == "resolved"  # idle: no running claim needed
-    with pytest.raises(RuntimeStoreError) as refused:
+    with pytest.raises(AuthorityRefusal) as refused:
         respond("o1")  # ordinary: the running-claim fence still applies
     assert refused.value.reason == "stale_generation"
     assert resolved == ["r1"]
@@ -100,3 +100,22 @@ def test_a_turn_starting_moves_a_waiting_idle_card_onto_its_generation(monkeypat
     TurnRunner._register_idle_approval_lane(runner, "route")
     assert live.controls.pending["r1"][1]["execution_generation"] == 4
     assert shown == [("approval.request", 4)]
+
+
+def test_an_idle_card_answered_at_another_generation_is_refused_by_its_own_stamp_with_no_turn_running(monkeypatch):
+    """``respond`` skips the running-claim check for an idle card, so its stamp is the only fence: with no turn
+    running, a card stamped at generation 7 answered at 8 is refused and stays pending (D1)."""
+    actor = object()
+    stub, live = _authority(viewers=True, running=False, generation=7)
+    live.subscribers = {"v": actor}
+    resolved = []
+    monkeypatch.setattr("gateway.session_pending_controls.list_gateway_approvals",
+                        lambda route: [{"request_id": "r1"}])
+    monkeypatch.setattr("gateway.session_pending_controls.resolve_gateway_approval",
+                        lambda route, choice, request_id=None, **_: resolved.append(request_id) or 1)
+    stub.register_idle_approval(SID, "route", {"request_id": "r1", "command": "<t>", "description": "d"})
+    ref = SimpleNamespace(session_id=SID)
+    with pytest.raises(AuthorityRefusal) as refused:
+        asyncio.run(SessionAuthority.respond(stub, actor, ref, 8, "r1", {"choice": "once"}))
+    assert refused.value.reason == "stale_generation"
+    assert resolved == [] and "r1" in live.controls.pending

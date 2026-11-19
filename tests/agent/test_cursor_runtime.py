@@ -358,7 +358,7 @@ def test_prompt_carries_system_history_and_current_user(tmp_path):
 
 
 def test_overlay_selects_cursor_sdk_for_the_cursor_provider_unless_pinned_to_chat():
-    from hermes_cli.runtime_provider import _maybe_apply_cursor_sdk_runtime as pick
+    from agent.agent_runtimes import claim_runtime_api_mode as pick
 
     assert (
         pick(

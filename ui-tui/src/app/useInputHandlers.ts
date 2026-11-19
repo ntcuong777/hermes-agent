@@ -1,13 +1,7 @@
 import { forceRedraw, type Key, useInput } from '@hermes/ink'
 import { sharedControlParams } from '@hermes/shared/gateway-canonical'
-import type {
-  ConfigSetResponse,
-  SharedControlRespondResponse,
-  SlashExecResponse,
-  VoiceRecordResponse
-} from '@hermes/shared/gateway-types'
-import { parseCommandDispatch } from '@hermes/shared/slash'
-import { applyCompletion, completionCursor, completionEnd } from '@hermes/shared/slash-input'
+import type { ConfigSetResponse, SharedControlRespondResponse, VoiceRecordResponse } from '@hermes/shared/gateway-types'
+import { applyCompletion } from '@hermes/shared/slash-input'
 import { useStore } from '@nanostores/react'
 import { useEffect, useRef } from 'react'
 
@@ -20,13 +14,7 @@ import { computeWheelStep, initWheelAccelForHost } from '../lib/wheelAccel.js'
 import { closeWidget, dispatchWidgetInput } from '../sdk/host.js'
 
 import { $agentDockCollapsed } from './agentRoster.js'
-import {
-  $backtrackPrime,
-  $pendingRewind,
-  cancelBacktrackPrime,
-  cancelPendingRewind,
-  primeBacktrack
-} from './backtrackStore.js'
+import { $backtrackPrime, $pendingRewind, cancelBacktrackPrime, cancelPendingRewind, primeBacktrack } from './backtrackStore.js'
 import { getInputSelection } from './inputSelectionStore.js'
 import {
   type ComposerActions,
@@ -42,7 +30,6 @@ import {
 import {
   $isBlocked,
   $overlayState,
-  $sessionsOverlayInputMode,
   capturePromptResponseGuard,
   hasSensitivePrompt,
   patchOverlayState,
@@ -50,8 +37,6 @@ import {
 } from './overlayStore.js'
 import { togglePasteSections } from './pasteStore.js'
 import { respondToServerRequest } from './serverRequestStore.js'
-import { refreshStashCounts } from './stashCounts.js'
-import { applyStashSelection, openStashes, stashCommand, type StashScope, stashScopeOf } from './stashPicker.js'
 import { turnController } from './turnController.js'
 import { patchTurnState } from './turnStore.js'
 import { $uiState, getUiState } from './uiStore.js'
@@ -63,15 +48,6 @@ export const shouldAllowIdleHotkeyExit = (dashboardTuiMode = DASHBOARD_TUI_MODE)
 /** Text or attachments in the composer: Ctrl+D must not exit over an unsent draft (#116443). */
 export const composerHasDraft = (cState: { input: string; inputBuf: string[]; tokens?: unknown[] }): boolean =>
   Boolean(cState.input || cState.inputBuf.length || cState.tokens?.length)
-
-/**
- * The whole composer text: the lines already accepted with a trailing `\`, then the line
- * being typed. `submit` joins them exactly this way (useSubmission's
- * `dispatchSubmission([...inputBuf, value].join('\n'))`), so anything that captures "the
- * draft" — the Alt+S stash — has to as well, or it captures one line of a multi-line
- * draft and the clear that follows discards the rest (review S-S).
- */
-export const composerDraftText = (inputBuf: string[], input: string): string => [...inputBuf, input].join('\n')
 
 export function handleInputSelectionClipboard(
   selection: ReturnType<typeof getInputSelection>,
@@ -100,34 +76,24 @@ export function handleIdleHotkeyExit(
   return actions.die()
 }
 
-export type CtrlCComposerAction = 'clear' | 'hold' | 'interrupt' | 'exit'
+export type CtrlCComposerAction = 'clear' | 'interrupt' | 'exit'
 
 /**
- * Ctrl+C (and terminals that rewrite Cmd+C to it) is the stop-the-machine
- * chord: a running turn wins over whatever is typed, and the draft survives
- * the interrupt. Upstream (#0593293962) put a non-empty composer first —
- * mid-stream the chord cleared the draft instead of interrupting, which read
- * as an accidental wipe of both the draft and the run. Dumping a draft
- * mid-stream keeps a chord: double-Esc (resolveDoubleEscAction) still
- * resolves draft-first. With a manual /compress in flight there is nothing
- * to interrupt and `hold` keeps the reflex chord from exiting the app.
+ * Ctrl+C (and terminals that rewrite Cmd+C to it) is clear / interrupt / exit
+ * in that order. A non-empty composer always wins — mid-stream, the chord
+ * used to interrupt the turn even when the user was trying to dump a draft.
  */
 export function resolveCtrlCComposerAction(opts: {
   busy: boolean
   hasDraft: boolean
   hasSession: boolean
-  compressPending?: boolean
 }): CtrlCComposerAction {
-  if (opts.busy && opts.hasSession) {
-    return 'interrupt'
-  }
-
   if (opts.hasDraft) {
     return 'clear'
   }
 
-  if (opts.compressPending) {
-    return 'hold'
+  if (opts.busy && opts.hasSession) {
+    return 'interrupt'
   }
 
   return 'exit'
@@ -137,11 +103,9 @@ export type DoubleEscAction = 'clear' | 'interrupt' | 'none'
 
 /**
  * Double-Esc (#62478): while a turn runs with no draft in the composer, the
- * second Esc interrupts it — the same path /stop uses. A single Esc
+ * second Esc interrupts it — the same path Ctrl+C and /stop use. A single Esc
  * never cancels work, and the idle composer keeps the existing discard-only
- * behaviour. Draft-first is this chord's contract (also mid-stream, where
- * Ctrl+C interrupts first): it is how a draft gets dumped without touching
- * the turn.
+ * behaviour, so a draft always clears instead of interrupting.
  */
 export function resolveDoubleEscAction(opts: {
   busy: boolean
@@ -481,20 +445,6 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
   useEffect(() => () => clearTimeout(scrollIdleTimer.current ?? undefined), [])
 
-  // The status bar's stash counts follow the live session: read them when it changes (start, resume,
-  // switch). subscribe() fires once with the current value, so a session already open is read too.
-  useEffect(() => {
-    let last: null | string | undefined
-
-    return $uiState.subscribe(ui => {
-      if (ui.sid !== last) {
-        last = ui.sid
-
-        void refreshStashCounts((method, params) => gateway.rpc<SlashExecResponse>(method, params), ui.sid)
-      }
-    })
-  }, [gateway])
-
   const scrollTranscript = (delta: number) => {
     if (getUiState().busy) {
       turnController.boostStreamingForScroll()
@@ -543,10 +493,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       // legacy server→client request resolves its response frame locally.
       if (overlay.approval.sharedControl) {
         return gateway
-          .rpc<SharedControlRespondResponse>('approval.respond', {
-            choice: 'deny',
-            ...sharedControlParams(overlay.approval)
-          })
+          .rpc<SharedControlRespondResponse>('approval.respond', { choice: 'deny', ...sharedControlParams(overlay.approval) })
           .then(r => r && fresh() && settle())
       }
 
@@ -717,262 +664,6 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       })
   }
 
-  // Alt+S — stash the composer draft (Pi parity). Slash commands cannot read
-  // the draft (a handler only ever receives its own typed argument text), so
-  // this keybind is the capture point. Seam choice: the draft travels over
-  // the slash-RPC channel as a hidden `/stash push-draft <json>` invocation
-  // rather than the TUI writing the store file directly, so the store stays
-  // server-side and per-profile (each HERMES_HOME owns its stash.json, the
-  // same file `/stash pop` reads). JSON.stringify preserves exact text
-  // (newlines, leading/trailing whitespace) through the command string.
-  // Empty composers open the numbered stash picker. Only stash-saved clears a draft.
-  //
-  // The (session, draft) pair of the save currently in flight, or null. Two Alt+S
-  // presses before the first answer pushed the same draft twice (review S-V).
-  const stashInFlightRef = useRef<null | string>(null)
-
-  const stashDraft = (scope: StashScope) => {
-    const slashRpc = (method: 'slash.exec', params: { command: string; session_id: string }) =>
-      gateway.rpc<SlashExecResponse>(method, params)
-
-    // The composer is more than the line being typed: `inputBuf` holds the lines already
-    // accepted with a trailing `\`, and `tokensRef` holds attached images. Capturing only
-    // `inputRef` and then clearing the rest lost every line but the last and dropped the
-    // images with no copy anywhere (review S-S). The live refs still win over `cState`,
-    // because an RPC round-trip can outlive a re-render and `cState` is the state as of
-    // the last one.
-    const lastLine = cRefs.inputRef.current
-    const draft = composerDraftText(cState.inputBuf, lastLine)
-    const sid = getUiState().sid
-    const revision = cRefs.revisionRef.current
-
-    // `clearIn()` empties the tokens too, and the stash holds text only: saving here
-    // would discard the attachments. Refuse and say why rather than lose them silently.
-    if (cRefs.tokensRef.current.length) {
-      actions.sys('stash: images are attached — delete the [[ Image N ]] token(s) to stash the text')
-
-      return
-    }
-
-    if (draft.trim()) {
-      // One save at a time per (session, draft): two Alt+S presses before the first
-      // answer used to push the same draft twice (review S-V).
-      const inFlightKey = `${sid}\u0000${scope}\u0000${draft}`
-
-      if (stashInFlightRef.current === inFlightKey) {
-        return
-      }
-
-      stashInFlightRef.current = inFlightKey
-
-      // Clear only on the explicit save directive. `push-draft` answering with a
-      // plain string is an ordinary RESOLVED rpc response — "stash full", a plugin
-      // that is not loaded, an unknown subcommand — so a `.catch` cannot see it and
-      // treating any response as success cleared the composer without storing the
-      // draft.
-      return void gateway
-        .rpc<SlashExecResponse>('slash.exec', {
-          command: stashCommand(scope, `push-draft ${JSON.stringify(draft)}`),
-          session_id: sid
-        })
-        .then(r => {
-          const d = parseCommandDispatch(r)
-
-          if (d?.type === 'stash-saved') {
-            if (d.notice?.trim()) {
-              actions.sys(d.notice)
-            }
-
-            void refreshStashCounts(slashRpc, sid)
-
-            // Drop the composer only if it still holds what we stashed, and only
-            // from the session we stashed it in; text typed while the RPC was in
-            // flight must survive. Both checks read a live ref for that reason.
-            // Revision covers edits to continuation lines as well as the last line.
-            if (cRefs.revisionRef.current === revision && !cRefs.tokensRef.current.length && getUiState().sid === sid) {
-              cActions.clearIn()
-            }
-
-            return
-          }
-
-          if (r?.output) {
-            actions.sys(r.output)
-          }
-        })
-        .catch(() => {
-          actions.sys('stash: save failed — draft kept')
-        })
-        .finally(() => {
-          if (stashInFlightRef.current === inFlightKey) {
-            stashInFlightRef.current = null
-          }
-        })
-    }
-
-    // After a delete the list is fetched again; a lone survivor is not restored behind the
-    // person's back, the delete message ("stash (1 left)") already says it is there.
-    const openList = (revision: number, afterDelete = false): void =>
-      void gateway
-        .rpc<SlashExecResponse>('slash.exec', { command: stashCommand(scope, 'snapshot'), session_id: sid })
-        .then(r => {
-          if (getUiState().sid !== sid || cRefs.revisionRef.current !== revision) {
-            // Silent skips read as "the stash did nothing": say which guard tripped
-            // and that the entries are still held. A session switch posts this into
-            // the NEW session's view, so it must name the switch, not just the composer.
-            actions.sys(
-              getUiState().sid !== sid
-                ? 'stash: session switched — drafts kept in the stash'
-                : 'stash: drafts kept — the composer changed while the list loaded'
-            )
-
-            return
-          }
-
-          if (!r?.output) {
-            return
-          }
-
-          if (afterDelete && JSON.parse(r.output).count < 2) {
-            return
-          }
-
-          const apply = (index: number, text: string) => {
-            void applyStashSelection({
-              index,
-              text,
-              accept: draft => {
-                if (
-                  getUiState().sid !== sid ||
-                  cRefs.revisionRef.current !== revision ||
-                  cRefs.tokensRef.current.length > 0
-                ) {
-                  actions.sys('stash: draft kept in store; composer changed')
-
-                  return false
-                }
-
-                cActions.setInput(draft)
-
-                return true
-              },
-              acknowledge: async argument => {
-                const result = await gateway.rpc<SlashExecResponse>('slash.exec', {
-                  command: stashCommand(scope, `applied ${argument}`),
-                  session_id: sid
-                })
-
-                if (result?.output) {
-                  actions.sys(result.output)
-                }
-
-                void refreshStashCounts(slashRpc, sid)
-              }
-            }).catch(() => actions.sys('stash: draft restored; removal failed, entry still held'))
-          }
-
-          // `stash applied` removes exactly this entry when it is still the one stored.
-          const drop = (index: number, text: string) => {
-            void gateway
-              .rpc<SlashExecResponse>('slash.exec', {
-                command: stashCommand(scope, `applied ${JSON.stringify({ index, text })}`),
-                session_id: sid
-              })
-              .then(result => {
-                if (result?.output) {
-                  actions.sys(result.output)
-                }
-
-                void refreshStashCounts(slashRpc, sid)
-                openList(cRefs.revisionRef.current, true)
-              })
-              .catch(() => actions.sys('stash: delete failed — entry still held'))
-          }
-
-          if (openStashes(r.output, apply, drop, scope) === 'empty') {
-            actions.sys(`stash empty (0) — ${scope === 'global' ? 'profile' : 'session'}`)
-          }
-        })
-        .catch(() => actions.sys('stash: picker failed — stored drafts kept'))
-
-    return openList(revision)
-  }
-
-  // Wheel scrolling: modifier-held wheel is precision mode (one row per frame,
-  // no accel); otherwise momentum-accelerated rows from the wheel state.
-  const handleWheelInput = (key: Key) => {
-    const dir: -1 | 1 = key.wheelUp ? -1 : 1
-    const now = Date.now()
-    // Modifier-held wheel = precision mode: one row per frame, no accel.
-    // Smooth mice / trackpads emit tiny same-frame bursts; coalesce those
-    // without the old 80ms throttle that made opt-scroll feel stepped.
-    // SGR/X10 mouse encoding only carries shift/meta/ctrl bits; Cmd on
-    // macOS is intercepted by the terminal, so we honor Option (meta) on
-    // Mac / Alt (meta) on Win+Linux / Ctrl as a portable fallback. Shift
-    // is reserved for selection extension.
-    const hasModifier = key.meta || key.ctrl
-    const precision = computePrecisionWheelStep(precisionWheelRef.current, dir, hasModifier, now)
-
-    if (precision.active) {
-      // Entering precision mode must discard any accelerated wheel state;
-      // otherwise the next normal wheel event inherits stale momentum.
-      if (precision.entered) {
-        wheelAccelRef.current = initWheelAccelForHost()
-      }
-
-      return precision.rows ? scrollTranscript(dir * wheelStep) : undefined
-    }
-
-    // 0 = direction-flip bounce deferred; skip the no-op scroll.
-    const rows = computeWheelStep(wheelAccelRef.current, dir, now)
-
-    return rows ? scrollTranscript(dir * rows * wheelStep) : undefined
-  }
-
-  // Ctrl+C on the composer: the stop-the-machine chord — a running turn wins
-  // over whatever is typed (interrupt), the draft survives it, a manual
-  // /compress in flight holds the reflex chord, and only then clear / exit.
-  const handleComposerCtrlC = (live: ReturnType<typeof getUiState>) => {
-    const ctrlC = resolveCtrlCComposerAction({
-      busy: live.busy,
-      hasDraft: Boolean(cState.input || cState.inputBuf.length),
-      hasSession: Boolean(live.sid),
-      compressPending: live.manualCompacting
-    })
-
-    if (ctrlC === 'clear') {
-      cancelPendingRewind(actions.sys)
-
-      return cActions.clearIn()
-    }
-
-    if (ctrlC === 'hold') {
-      return actions.sys(t('canonical.controls.compressPending'))
-    }
-
-    if (ctrlC === 'interrupt' && live.sid) {
-      return turnController.interruptTurn({
-        appendMessage: actions.appendMessage,
-        gw: gateway.gw,
-        sid: live.sid,
-        sys: actions.sys
-      })
-    }
-
-    // An armed edit whose text was erased: this press cancels it and never exits.
-    if (cancelPendingRewind(actions.sys)) {
-      return
-    }
-
-    return handleIdleHotkeyExit(actions, DASHBOARD_TUI_MODE, () => {
-      gateway.gw.publishLocalEvent({
-        payload: { reason: 'idle_exit_hotkey' },
-        session_id: live.sid ?? undefined,
-        type: 'dashboard.new_session_requested'
-      })
-    })
-  }
-
   // Double-Esc discards the draft, matching Claude Code / Gemini CLI. It
   // sits above the isBlocked early-return so a prompt overlay cannot swallow
   // it. Ctrl+C now clears a non-empty composer even mid-stream; Esc Esc is
@@ -1079,9 +770,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
       if (isCtrl(key, ch, 'c') || (key.escape && hasSensitivePrompt(overlay))) {
         cancelOverlayFromCtrlC()
-      } else if (key.escape && overlay.sessions && !$sessionsOverlayInputMode.get()) {
-        // The switcher owns Esc while its filter / workspace input is open
-        // (clear, then back) — closing the overlay here would skip both.
+      } else if (key.escape && overlay.sessions) {
         patchOverlayState({ sessions: false })
       }
 
@@ -1103,7 +792,32 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     }
 
     if (key.wheelUp || key.wheelDown) {
-      return handleWheelInput(key)
+      const dir: -1 | 1 = key.wheelUp ? -1 : 1
+      const now = Date.now()
+      // Modifier-held wheel = precision mode: one row per frame, no accel.
+      // Smooth mice / trackpads emit tiny same-frame bursts; coalesce those
+      // without the old 80ms throttle that made opt-scroll feel stepped.
+      // SGR/X10 mouse encoding only carries shift/meta/ctrl bits; Cmd on
+      // macOS is intercepted by the terminal, so we honor Option (meta) on
+      // Mac / Alt (meta) on Win+Linux / Ctrl as a portable fallback. Shift
+      // is reserved for selection extension.
+      const hasModifier = key.meta || key.ctrl
+      const precision = computePrecisionWheelStep(precisionWheelRef.current, dir, hasModifier, now)
+
+      if (precision.active) {
+        // Entering precision mode must discard any accelerated wheel state;
+        // otherwise the next normal wheel event inherits stale momentum.
+        if (precision.entered) {
+          wheelAccelRef.current = initWheelAccelForHost()
+        }
+
+        return precision.rows ? scrollTranscript(dir * wheelStep) : undefined
+      }
+
+      // 0 = direction-flip bounce deferred; skip the no-op scroll.
+      const rows = computeWheelStep(wheelAccelRef.current, dir, now)
+
+      return rows ? scrollTranscript(dir * rows * wheelStep) : undefined
     }
 
     if (key.shift && key.upArrow) {
@@ -1221,7 +935,39 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     }
 
     if (key.ctrl && ch.toLowerCase() === 'c') {
-      return handleComposerCtrlC(live)
+      const ctrlC = resolveCtrlCComposerAction({
+        busy: live.busy,
+        hasDraft: Boolean(cState.input || cState.inputBuf.length),
+        hasSession: Boolean(live.sid)
+      })
+
+      if (ctrlC === 'clear') {
+        cancelPendingRewind(actions.sys)
+
+        return cActions.clearIn()
+      }
+
+      if (ctrlC === 'interrupt' && live.sid) {
+        return turnController.interruptTurn({
+          appendMessage: actions.appendMessage,
+          gw: gateway.gw,
+          sid: live.sid,
+          sys: actions.sys
+        })
+      }
+
+      // An armed edit whose text was erased: this press cancels it and never exits.
+      if (cancelPendingRewind(actions.sys)) {
+        return
+      }
+
+      return handleIdleHotkeyExit(actions, DASHBOARD_TUI_MODE, () => {
+        gateway.gw.publishLocalEvent({
+          payload: { reason: 'idle_exit_hotkey' },
+          session_id: live.sid ?? undefined,
+          type: 'dashboard.new_session_requested'
+        })
+      })
     }
 
     // Ctrl+D is the terminal EOF convention: exit only from an empty composer, on every
@@ -1247,19 +993,10 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       return voiceRecordToggle()
     }
 
-    // Alt+S stashes the draft / pops the last stash (see stashDraft above).
-    // meta+letter follows the Alt+G precedent below: Option (meta) on macOS,
-    // Alt (meta) elsewhere; !key.ctrl keeps Ctrl+Alt combos free.
-    // Alt+Shift+S is the per-profile stash (capital S, shift), Alt+S the per-session one.
-    if (key.meta && !key.ctrl && ch.toLowerCase() === 's') {
-      return stashDraft(stashScopeOf(key, ch))
-    }
-
     // Cmd/Ctrl+G, plus Alt+G fallback for VSCode/Cursor (they bind the
     // primary keystroke to "Find Next" before the TUI sees it; Alt+G
-    // arrives as meta+g across platforms). On macOS the action modifier is Cmd,
-    // which no terminal sends, so raw Ctrl+G is accepted there as well.
-    if (ch.toLowerCase() === 'g' && (isAction(key, ch, 'g') || isMacActionFallback(key, ch, 'g') || key.meta)) {
+    // arrives as meta+g across platforms).
+    if (ch.toLowerCase() === 'g' && (isAction(key, ch, 'g') || key.meta)) {
       return void cActions.openEditor().catch((err: unknown) => {
         actions.sys(
           err instanceof Error
@@ -1296,11 +1033,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       const row = cState.completions[cState.compIdx]
 
       if (row?.text) {
-        // Splice the row in at the word before the caret and keep the rest of the prompt, caret after the row.
-        const end = completionEnd(cState.input, cRefs.caretRef.current)
-        const next = applyCompletion(cState.input, row.text, cState.compReplace, end)
-        cRefs.caretRef.current = { cursor: completionCursor(cState.input, row.text, cState.compReplace), value: next }
-        cActions.setInput(next)
+        cActions.setInput(applyCompletion(cState.input, row.text, cState.compReplace))
       }
 
       return

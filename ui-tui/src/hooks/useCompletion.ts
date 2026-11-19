@@ -10,6 +10,8 @@ import type { InputCursorSnapshot } from '../components/textInput.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import { t } from '../i18n/runtime.js'
 import { asRpcResult } from '../lib/rpc.js'
+import { extensionHost } from '../sdk/ext/host.js' // fork: tui slot
+import { slotFn } from '../sdk/ext/slotReact.js' // fork: tui slot
 import { listWidgetApps } from '../sdk/registry.js'
 
 /** Client-side widget apps live in the TUI's registry, not the gateway — so
@@ -31,36 +33,19 @@ export function mergeWidgetAppItems(input: string, items: CompletionItem[]): Com
 }
 
 const TAB_PATH_RE = /((?:["']?(?:[A-Za-z]:[\\/]|\.{1,2}\/|~\/|\/|@|[^"'`\s]+\/))[^\s]*)$/
-const AT_WORD_RE = /^["']?@/
 
-/**
- * What to ask the gateway for, from the text BEFORE the caret: `@`, a path or an inline `/skill` typed in the middle of
- * a prompt completes like one at the end. `replaceTo` is the caret, so applying a row keeps the text after it.
- */
 export function completionRequestForInput(
-  input: string,
-  caret: number = input.length
+  input: string
 ):
-  | {
-      method: 'complete.path'
-      params: { word: string; cwd?: string; session_id?: string }
-      replaceFrom: number
-      replaceTo: number
-    }
-  | { method: 'complete.slash'; params: { text: string }; replaceFrom: number; replaceTo: number; skillsOnly?: boolean }
+  | { method: 'complete.path'; params: { word: string; cwd?: string; session_id?: string }; replaceFrom: number }
+  | { method: 'complete.slash'; params: { text: string }; replaceFrom: number; skillsOnly?: boolean }
   | null {
-  const at = Math.max(0, Math.min(input.length, caret))
-  const before = input.slice(0, at)
-  const isSlashCommand = looksLikeSlashCommand(before)
-  const typedWord = before.match(TAB_PATH_RE)?.[1] ?? null
-  // After a leading `/command` or `/skill` the rest is arguments or prose. An `@` reference is prose-level and opens
-  // the file picker wherever it is typed; any other path-like word there stays with the command's own completer
-  // (`/skills install owner/na` is not a file).
-  const pathWord = !isSlashCommand || (typedWord !== null && AT_WORD_RE.test(typedWord)) ? typedWord : null
+  const isSlashCommand = looksLikeSlashCommand(input)
+  const pathWord = isSlashCommand ? null : (input.match(TAB_PATH_RE)?.[1] ?? null)
 
   // `/model` uses the two-step ModelPicker (real curated IDs).
   // Slash completion here only showed short aliases + vendor/family meta.
-  if (isSlashCommand && /^\/model(?:\s|$)/.test(before)) {
+  if (isSlashCommand && /^\/model(?:\s|$)/.test(input)) {
     return null
   }
 
@@ -71,20 +56,19 @@ export function completionRequestForInput(
   // It only matches a whitespace-preceded slash sitting at the caret, so
   // ordinary argument completion (`/cron ad`, `/personality alic`) is
   // untouched.
-  const inline = inlineSlashTrigger(before)
+  const inline = inlineSlashTrigger(input)
 
   if (inline) {
     return {
       method: 'complete.slash',
       params: { text: `/${inline.query}` },
       replaceFrom: inline.start + 1,
-      replaceTo: at,
       skillsOnly: true
     }
   }
 
-  if (isSlashCommand && !pathWord) {
-    return { method: 'complete.slash', params: { text: before }, replaceFrom: 1, replaceTo: at }
+  if (isSlashCommand) {
+    return { method: 'complete.slash', params: { text: input }, replaceFrom: 1 }
   }
 
   if (!pathWord) {
@@ -98,10 +82,12 @@ export function completionRequestForInput(
   return {
     method: 'complete.path',
     params: { word: pathWord, ...(cwd ? { cwd } : {}), ...(sid ? { session_id: sid } : {}) },
-    replaceFrom: at - pathWord.length,
-    replaceTo: at
+    replaceFrom: input.length - pathWord.length
   }
 }
+
+
+type SlotRequest = Exclude<ReturnType<typeof completionRequestForInput>, null> & { replaceTo?: number } // fork: tui slot
 
 export function useCompletion(
   input: string,
@@ -136,7 +122,12 @@ export function useCompletion(
 
     // The composer's TextInput records the caret with the value it belongs to; any other value means "at the end".
     const snapshot = caretRef?.current
-    const request = completionRequestForInput(input, snapshot?.value === input ? snapshot.cursor : input.length)
+    const request = slotFn(
+      'completion.request',
+      (value: string, _caret?: number): SlotRequest | null => completionRequestForInput(value),
+      extensionHost,
+      (value) => value === null || typeof value.replaceFrom === 'number'
+    )(input, snapshot?.value === input ? snapshot.cursor : input.length) // fork: tui slot
 
     if (!request) {
       clear()
@@ -166,7 +157,7 @@ export function useCompletion(
 
           const fetched =
             request.method === 'complete.slash'
-              ? mergeWidgetAppItems(input.slice(0, request.replaceTo), r?.items ?? [])
+              ? mergeWidgetAppItems(input.slice(0, request.replaceTo ?? input.length), r?.items ?? [])
               : (r?.items ?? [])
 
           // Mid-message offers SKILLS only. A built-in like `/model` or `/new`

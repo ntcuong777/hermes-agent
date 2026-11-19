@@ -6,6 +6,7 @@ import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { frontendArgs, isMain, productOutput, publishDirectory, repoRoot, withProduct, workspaceTool } from './frontend-common.mjs'
 import { recordProduct, buildInputs } from './freshness.mjs'
+import { slotHashesPlugin } from '../../ui-tui/src/sdk/ext/slotHashes.mjs' // fork: tui slot hashes
 
 // `react-devtools-core` is only imported when DEV=true at runtime (Ink dev
 // mode). Stub it out so the bundle doesn't carry the dep.
@@ -49,7 +50,7 @@ export async function buildTui(options) {
       //     circular async chain that hung the TUI at startup with only ANSI
       //     reset bytes on screen (#31227).
       alias: { '@hermes/ink': resolve(root, 'packages/hermes-ink/src/entry-exports.ts') },
-      plugins: [stubDevtools],
+      plugins: [stubDevtools, slotHashesPlugin(source)], // fork: tui slot hashes
       // Some transitive deps use CommonJS `require(...)` at runtime. ESM bundles
       // don't get a `require` binding automatically, so we inject one.
       banner: {

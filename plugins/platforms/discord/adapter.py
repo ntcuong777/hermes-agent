@@ -131,8 +131,6 @@ _NATIVE_SLASH_COMMAND_SPECS: tuple = (
     ("title", "platform.discord.command.title.description",
      (("name", str, "", "platform.discord.command.title.arg_name", None),),
      "/title {name}", None),
-    # /cwd: template None -> registered by _register_cwd_slash (dynamic path autocomplete).
-    ("cwd", "slash.cwd.description", (), None, None),
     ("resume", "slash.resume.description",
      (("name", str, "", "platform.discord.command.resume.arg_name", None),),
      "/resume {name}", None),
@@ -1281,7 +1279,6 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
             "websocket_event_max_silence_seconds", 14400.0,
         )
         self._liveness_task: Optional[asyncio.Task] = None
-        self._mirror_task: Optional[asyncio.Task] = None
         self._liveness_notification_task: Optional[asyncio.Task] = None
         # True while disconnect() intentionally closes discord.py (done callback: shutdown vs crash).
         self._disconnecting = False
@@ -1872,10 +1869,6 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
                 "old_name": old_name[:256] if isinstance(old_name, str) else None,
                 "new_name": new_name[:256],
             })
-        # The session mirror's reverse rename rides this normalization: a thread rename in
-        # Discord retitles the mirrored session (tag stripped, unbound threads ignored).
-        from plugins.platforms.discord.adapter_session_mirror import sync_thread_title
-        await sync_thread_title(self, after)
         await self._emit_platform_event("thread_renamed", _build)
 
     async def _cancel_bot_task(self) -> None:
@@ -1900,36 +1893,6 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
         if self._liveness_task and not self._liveness_task.done():
             return
         self._liveness_task = asyncio.create_task(self._liveness_loop())
-
-    def _start_session_mirror(self) -> None:
-        """Session mirror (adapter_session_mirror.py): new machine-local sessions get a thread in
-        `session_mirror_channel`, bound via `/resume <id> --all`. Idle unless the channel AND the
-        group-scope admin list (`group_allow_admin_from`) are configured; see that module."""
-        from plugins.platforms.discord.adapter_session_mirror import start as start_mirror
-        start_mirror(self)
-
-    @property
-    def accepts_local_forward(self) -> bool:
-        """Local submits to mirror-bound sessions relay into the bound thread
-        (`session_mirror_local_forward`); gateway/session_controls consults this duck-typed
-        flag before asking :meth:`forward_local_submit`."""
-        from plugins.platforms.discord.adapter_session_mirror import local_forward_enabled
-        return local_forward_enabled(self)
-
-    def owns_local_forward(self, session_id: str) -> bool:
-        """Whether the session mirror bound *session_id* to one of its threads (local forwards on):
-        gateway/session_lane.bound_lane relays and answers locally only for such a session, never
-        for another user's Discord chat."""
-        from plugins.platforms.discord.adapter_session_mirror import owns_local_forward as _owns
-        return _owns(self, session_id)
-
-    async def forward_local_submit(self, *, session_id: str, text: str, submission_id: str,
-                                   command: bool = False) -> dict | None:
-        """Relay a local surface's prompt into *session_id*'s bound thread; None when this
-        session is not forwardable. See adapter_session_mirror.forward_local_submit."""
-        from plugins.platforms.discord.adapter_session_mirror import forward_local_submit as _forward
-        return await _forward(self, session_id=session_id, text=text, submission_id=submission_id,
-                              command=command)
 
     # Reasons from ``_read_websocket_health`` that mean the transport is confirmed dead,
     # not merely suspect: ``_liveness_loop`` escalates on the first such strike (#118487).
@@ -2090,7 +2053,7 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
     async def _cancel_liveness_task(self) -> None:
         """Cancel and await liveness tasks without awaiting the current task."""
         current = asyncio.current_task()
-        for task_name in ("_liveness_task", "_liveness_notification_task", "_mirror_task"):
+        for task_name in ("_liveness_task", "_liveness_notification_task"):
             task = getattr(self, task_name, None)
             if task is None:
                 continue
@@ -2352,8 +2315,6 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
         """Finish non-critical startup work after Discord is connected."""
         if not self._client:
             return
-        # The mirror runs even when the command sync early-returns: it needs no sync.
-        self._start_session_mirror()
         try:
             sync_policy = self._get_discord_command_sync_policy()
             if sync_policy == "off":
@@ -4491,71 +4452,6 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
                 _handler = discord.app_commands.choices(**choices)(_handler)
         return _handler
 
-    _CWD_CANDIDATES_TTL_SECONDS = 30.0
-    _cwd_candidates_cache: tuple | None = None  # (monotonic stamp, candidate paths)
-
-    def _build_cwd_choices(self, current: str) -> list:
-        """Workspace candidates for the /cwd type-ahead. Cached briefly: a candidates build walks
-        projects.db and git probes — too slow per keystroke. Session-derived roots need a real chat
-        key, which a keystroke has none of — this list is projects + the discovered-repo cache only;
-        ``/cwd list`` (which runs inside a turn) is the fuller list."""
-        now = time.monotonic()
-        cached = self._cwd_candidates_cache
-        if cached is not None and now - cached[0] < self._CWD_CANDIDATES_TTL_SECONDS:
-            candidates = cached[1]
-        else:
-            from gateway.workspace_candidates import candidate_workspaces
-            candidates = candidate_workspaces(None)
-            self._cwd_candidates_cache = (now, candidates)
-        q = (current or "").strip().lower()
-        choices: list = []
-        # "list" is a subcommand riding the path argument (Discord has no separate enum slot):
-        # offer it whenever the typed text can still become it, so the dropdown isn't just dirs.
-        if not q or "list".startswith(q) or "ls".startswith(q):
-            choices.append(discord.app_commands.Choice(
-                name="list — show numbered workspaces", value="list"))
-        if not q:
-            matches = candidates
-        else:
-            from gateway.workspace_candidates import match_workspace_prefix
-            matches, _note = match_workspace_prefix(candidates, q)
-        # Discord's Choice.name is capped at 100 chars; autocomplete at 25 choices.
-        room = 25 - len(choices)
-        choices.extend(discord.app_commands.Choice(name=m[:100], value=m) for m in matches[:room])
-        return choices
-
-    def _register_cwd_slash(self, tree, name: str, description: str) -> None:
-        """/cwd with dynamic path autocomplete over the profile's candidate workspaces
-        (the _register_skill_group shape). Unauthorized users get []: no path leak."""
-        async def _autocomplete_path(interaction: discord.Interaction, current: str) -> list:
-            try:
-                allowed, _reason = self._evaluate_slash_authorization(interaction)
-            except Exception:  # health: allow BLE001 -- never raise from autocomplete; fail closed
-                return []
-            if not allowed:
-                return []
-            profile = getattr(self, "_owner_profile", None)
-            if profile:  # a keystroke runs outside any turn: bind the owning profile explicitly
-                from gateway.run import _async_profile_runtime_scope
-                from hermes_cli.profiles import get_profile_dir
-                async with _async_profile_runtime_scope(get_profile_dir(profile)):
-                    return await asyncio.to_thread(self._build_cwd_choices, current)
-            return await asyncio.to_thread(self._build_cwd_choices, current)
-
-        @discord.app_commands.describe(
-            path=_t_discord("platform.discord.command.cwd.arg_path", _DISCORD_APP_COMMAND_TEXT_LIMIT),
-        )
-        @discord.app_commands.autocomplete(path=_autocomplete_path)
-        async def _cwd_handler(interaction: discord.Interaction, path: str = ""):
-            if not await self._check_slash_authorization(interaction, "/cwd"):
-                return
-            await self._run_simple_slash(interaction, f"/cwd {path}".strip())
-
-        tree.command(name="cwd", description=description)(_cwd_handler)
-
-    # Template-None spec entries route here by name (all take ``(tree, name, description)``).
-    _TEMPLATE_NONE_REGISTRARS = {"cwd": _register_cwd_slash}
-
     def _register_thread_slash(self, tree, name: str, description: str) -> None:
         @tree.command(name=name, description=description)
         @discord.app_commands.describe(
@@ -4577,10 +4473,7 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
         tree = self._client.tree
         for name, description, args, template, followup in _native_slash_commands():
             if template is None:
-                # Spec-driven dispatch: each template-None entry names its registrar
-                # (everything unknown defaults to the /thread registrar).
-                registrar = self._TEMPLATE_NONE_REGISTRARS.get(name, type(self)._register_thread_slash)
-                registrar(self, tree, name, description)
+                self._register_thread_slash(tree, name, description)
                 continue
             tree.command(name=name, description=description)(
                 self._slash_proxy(name, args, template, followup, strip=name != "insights")
@@ -4847,7 +4740,6 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
             channel_prompt=self._resolve_channel_prompt(channel_id, parent_id or None),
             # Bound skills load only when a session starts, and "/skill x" or "/queue" can start one.
             auto_skill=self._resolve_channel_skills(channel_id, parent_id or None),
-            auto_workspace=self._resolve_channel_workspace(channel_id, parent_id or None),
         )
 
     # --- Thread creation helpers ---
@@ -4901,7 +4793,6 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
         event = MessageEvent(
             text=text, message_type=MessageType.TEXT, source=source, raw_message=interaction,
             auto_skill=_skills, channel_prompt=_channel_prompt,
-            auto_workspace=self._resolve_channel_workspace(thread_id, _parent_id or None),
         )
         await self.handle_message(event)
 
@@ -4915,19 +4806,6 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
         """
         from gateway.platforms.base import resolve_channel_skills
         return resolve_channel_skills(self.config.extra, channel_id, parent_id)
-
-    def _resolve_channel_workspace(self, channel_id: str, parent_id: str | None = None) -> str | None:
-        """Workspace a NEW session in this channel/thread starts in (parent inherits like skills):
-        ``platforms.discord.extra.thread_workspaces``, exact id first. Applied by the gateway only
-        when the session is fresh; an ongoing session keeps its own directory."""
-        raw = self.config.extra.get("thread_workspaces") if isinstance(self.config.extra, dict) else None
-        if not isinstance(raw, dict):
-            return None
-        mappings = {str(k): str(v).strip() for k, v in raw.items() if isinstance(v, str) and v.strip()}
-        for key in (channel_id, parent_id):
-            if key and key in mappings:
-                return mappings[key]
-        return None
 
     def _resolve_channel_prompt(self, channel_id: str, parent_id: str | None = None) -> str | None:
         """Resolve a Discord per-channel prompt, preferring the exact channel over its parent."""
@@ -6370,7 +6248,6 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
         _chan_id = str(getattr(_chan, "id", ""))
         _skills = self._resolve_channel_skills(_chan_id, _parent_id or None)
         _channel_prompt = self._resolve_channel_prompt(_chan_id, _parent_id or None)
-        _workspace = self._resolve_channel_workspace(_chan_id, _parent_id or None)
         reply_to_id = None
         reply_to_text = None
         if message.reference:
@@ -6383,7 +6260,7 @@ class DiscordAdapter(DiscordLiveGatesMixin, DiscordAuthorizationMixin, DiscordMe
             media_text_inlined=media_text_inlined,
             reply_to_message_id=reply_to_id, reply_to_text=reply_to_text,
             timestamp=message.created_at, auto_skill=_skills, channel_prompt=_channel_prompt,
-            channel_context=_channel_context, auto_workspace=_workspace,
+            channel_context=_channel_context,
         )
         if is_automated_message(message) and self._is_bot_tag_debounce_continuation(message):
             event._bot_tag_debounce = True  # type: ignore[attr-defined]
@@ -6970,7 +6847,7 @@ if DISCORD_AVAILABLE:
 
 
 # ── Standalone (out-of-process) sender ────────────────────────────────────────
-# Used by ``tools/send_message_tool._send_via_adapter`` when no live DiscordAdapter is in this
+# Used by ``gateway/outbound/send._send_via_adapter`` when no live DiscordAdapter is in this
 # process (e.g. standalone ``hermes cron``); same forum/thread/multipart logic via Discord REST.
 
 # Process-local channel-type probe cache: avoids re-probing every send when the directory cache misses.

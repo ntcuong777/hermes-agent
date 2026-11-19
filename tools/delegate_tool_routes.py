@@ -18,8 +18,10 @@ from pathlib import Path
 from typing import Any, Iterator, Mapping, Optional
 
 from agent.delegation_provider import (
-    RESERVED_TASK_PARAMETERS, ROUTE_KEYS, DelegationProvider, DelegationRouteError,
+    PROVIDER_DECLARABLE_PARAMETERS, RESERVED_TASK_PARAMETERS, ROUTE_KEYS, DelegationProvider, DelegationRouteError,
 )
+from tools.delegate_tool_scope import SCOPE_KEYS, call_refusal, clean_scope, confirm_launches, parent_route
+from tools.delegate_tool_config import _resolve_delegation_credentials
 
 logger = logging.getLogger("tools.delegate_tool")  # log-record parity with the origin module
 
@@ -29,8 +31,10 @@ _PARAM_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 @dataclass
 class TaskRoute:
     """How core builds one child: the credential bundle (with a route's speed tier applied), the config block
-    owning its fallback policy, an optional reasoning override, and the profile home it runs as (None = this one).
-    ``error`` set = the backend could not route this task: it is refused alone and its siblings still run."""
+    owning its fallback policy, an optional reasoning override, and the profile home it runs as (None = this one);
+    ``toolsets``/``instructions``/``child_profile``/``confirm`` are the route's child-scope fields
+    (tools/delegate_tool_scope.py). ``error`` set = the backend could not route this task: it is refused alone and
+    its siblings still run."""
 
     creds: dict[str, Any]
     routing_cfg: dict[str, Any]
@@ -42,6 +46,10 @@ class TaskRoute:
     # The task's provider-declared parameters this route came from (no secrets): what a continue after a restart
     # re-routes with. None for an internal caller's explicit route (``route_for_config``), which cannot be rebuilt.
     request: Optional[dict[str, Any]] = None
+    toolsets: tuple[str, ...] = ()
+    instructions: str = ""
+    child_profile: Optional[str] = None
+    confirm: Optional[dict[str, str]] = None
 
     def report(self) -> Optional[dict[str, Any]]:
         """The ``route`` a backend-routed task's result carries (None for the default backend's unlabelled route)."""
@@ -72,7 +80,8 @@ def _declared_parameters(provider: DelegationProvider, config: Mapping[str, Any]
         return {}
     accepted: dict[str, dict[str, Any]] = {}
     for name, schema in raw.items():
-        if not isinstance(name, str) or not _PARAM_NAME_RE.match(name) or name in RESERVED_TASK_PARAMETERS:
+        if (not isinstance(name, str) or not _PARAM_NAME_RE.match(name)
+                or name in RESERVED_TASK_PARAMETERS - PROVIDER_DECLARABLE_PARAMETERS):
             logger.warning("delegation provider %s: task parameter %r refused (reserved or invalid name)",
                            provider.name, name)
             continue
@@ -242,7 +251,6 @@ def _with_inherited_fallback(route: dict[str, Any], config: Mapping[str, Any]) -
 def _resolve_route(route: dict[str, Any], parent_agent: Any, backend: str) -> TaskRoute:
     if route.get("profile"):
         return replace(_profile_route(_profile_home(route["profile"])), backend=backend)
-    from tools.delegate_tool import _resolve_delegation_credentials  # the facade is the patch seam
     creds = _resolve_delegation_credentials(route, parent_agent)
     if route.get("service_tier") not in (None, ""):
         from tools.delegate_tool_tuning import task_service_tier
@@ -253,12 +261,13 @@ def _resolve_route(route: dict[str, Any], parent_agent: Any, backend: str) -> Ta
 def _route_to_task_route(route: dict[str, Any], parent_agent: Any, cache: dict[str, TaskRoute],
                          config: Optional[Mapping[str, Any]] = None, backend: str = "default") -> TaskRoute:
     label = route.get("label") if isinstance(route.get("label"), str) else None
+    scope = clean_scope(route)
     route = _with_inherited_fallback(route, config or {})
-    # The label is display-only: two labels on one route (or one profile) resolve once.
-    key = json.dumps({k: v for k, v in route.items() if k != "label"}, sort_keys=True, default=str)
+    # The label and the child-scope fields never reach credential resolution: routes differing only there resolve once.
+    key = json.dumps({k: v for k, v in route.items() if k not in SCOPE_KEYS}, sort_keys=True, default=str)
     if key not in cache:
         cache[key] = _resolve_route(route, parent_agent, backend)
-    return replace(cache[key], label=label)
+    return replace(cache[key], label=label, **scope)
 
 
 def _check_backend_effort(index: int, route: Mapping[str, Any], config: Mapping[str, Any]) -> None:
@@ -295,7 +304,7 @@ def _undeclared_error(provider: DelegationProvider, index: int, names: list[str]
 
 
 def _route_one(provider: DelegationProvider, declared: dict[str, dict[str, Any]], index: int,
-               task: Mapping[str, Any], config: Mapping[str, Any]) -> dict[str, Any]:
+               task: Mapping[str, Any], config: Mapping[str, Any], parent: Mapping[str, Any]) -> dict[str, Any]:
     undeclared = sorted(name for name, value in task.items()
                         if value is not None and name not in declared and name not in RESERVED_TASK_PARAMETERS)
     if undeclared:
@@ -305,7 +314,7 @@ def _route_one(provider: DelegationProvider, declared: dict[str, dict[str, Any]]
         error = _param_error(index, name, value, declared[name])
         if error:
             raise DelegationRouteError(error)
-    payload = {"goal": task.get("goal"), "context": task.get("context"), "index": index, **params}
+    payload = {**params, "goal": task.get("goal"), "context": task.get("context"), "index": index, "parent": dict(parent)}
     try:
         return _clean_route(provider.name, provider.route_task(payload, config))
     except DelegationRouteError as exc:
@@ -316,11 +325,13 @@ def _route_one(provider: DelegationProvider, declared: dict[str, dict[str, Any]]
 
 
 def resolve_task_routes(task_list: list[dict[str, Any]], config: Mapping[str, Any], parent_agent: Any,
-                        ) -> tuple[list[TaskRoute], Optional[str]]:
+                        confirm: bool = True) -> tuple[list[TaskRoute], Optional[str]]:
     """One :class:`TaskRoute` per task from the backend the session's ``delegate_task`` was built from (else
     ``delegation.backend``), or ``([], error)`` when that backend cannot run (fails closed, never another backend).
     A task the backend cannot route gets a route with ``error`` set; its siblings are unaffected. Identical routes
-    resolve credentials once per call (the default backend resolves exactly once)."""
+    resolve credentials once per call (the default backend resolves exactly once). ``confirm=False`` skips the human
+    approval a route may ask for (a restart's rebuild of a child the person already approved; ``delegate_task`` itself
+    asks later, with ``confirm_launches``, once the duplicate and budget gates have passed)."""
     from agent.delegation_backends import pinned_backend
     if pinned := pinned_backend(parent_agent):
         config = {**config, "backend": pinned}
@@ -329,22 +340,26 @@ def resolve_task_routes(task_list: list[dict[str, Any]], config: Mapping[str, An
     except DelegationRouteError as exc:
         return [], str(exc)
     declared = _declared_parameters(provider, config)
+    parent = parent_route(parent_agent)
+    if refusal := call_refusal(provider, declared, task_list, config, parent):  # whole call, before any task is routed
+        return [], refusal
     cache: dict[str, TaskRoute] = {}
     routes: list[TaskRoute] = []
     for i, task in enumerate(task_list):
         try:
-            route = _route_one(provider, declared, i, task, config)
+            route = _route_one(provider, declared, i, task, config, parent)
             _check_backend_effort(i, route, config)
             request = {name: task[name] for name in declared if task.get(name) is not None}
             routes.append(replace(_route_to_task_route(route, parent_agent, cache, config, provider.name),
                                   request=request))
         except ValueError as exc:  # DelegationRouteError, the credential resolver's and the tier check's refusals
             routes.append(TaskRoute({}, {}, backend=provider.name, error=str(exc)))
+    if confirm and (refusal := confirm_launches(routes, parent_agent)):  # a launch the human must approve, before any child
+        return [], refusal
     return routes, None
 
 
 def route_for_config(routing_cfg: dict[str, Any], parent_agent: Any) -> TaskRoute:
     """The route an internal caller's explicit config block describes (``/review`` ->
     ``auxiliary.review``); bypasses the provider, as those callers own their route."""
-    from tools.delegate_tool import _resolve_delegation_credentials  # the facade is the patch seam
     return TaskRoute(_resolve_delegation_credentials(routing_cfg, parent_agent), routing_cfg)

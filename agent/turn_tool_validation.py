@@ -15,8 +15,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from agent.message_metadata import append_message
-from agent.message_sanitization import (close_interrupted_tool_sequence, coalesce_tool_call_id,
-                                          normalize_provider_tool_call_ids)
+from agent.message_sanitization import close_interrupted_tool_sequence, normalize_provider_tool_call_ids
+from session_rules.turns import coalesce_tool_call_id
 from agent.turn_failure_copy import site_copy, stamp_failure
 from hermes_constants import FINISH_REASON_LENGTH
 
@@ -92,15 +92,6 @@ def _partial_exit(agent, messages, conversation_history, api_call_count, final_r
         "partial": True,
         "error": final_response,
     }, "truncated", True)
-
-
-def deferred_tool_names_for_errors(agent: Any) -> frozenset:
-    """Deferred tools the session may call through ``tool_call``, for an unknown-name error to point at.
-    Empty when ``tool_call`` was not sent: with no tool search, a name outside the sent list is just wrong."""
-    if "tool_call" not in (agent.valid_tool_names or ()):
-        return frozenset()
-    from agent import tool_executor
-    return tool_executor._tool_search_scoped_names(agent)
 
 
 def validate_tool_calls(
@@ -184,11 +175,10 @@ def validate_tool_calls(
 
         append_message(messages, agent._build_assistant_message(assistant_message, finish_reason))
         # See _invalid_tool_name_error_content for the blank-name anti-priming rationale (#47967).
-        deferred_names = deferred_tool_names_for_errors(agent)
         _append_tool_error_results(
             messages, tool_calls,
             lambda tc: (
-                _invalid_tool_name_error_content(tc.function.name, valid_names, deferred_names)
+                _invalid_tool_name_error_content(tc.function.name, valid_names)
                 if tc.function.name not in valid_names
                 else "Skipped: another tool call in this turn used an invalid name. Please retry this tool call."
             ),

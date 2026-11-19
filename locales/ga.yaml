@@ -445,6 +445,9 @@ gateway:
     cache_unknown_route: "Taisce an phrompta: anaithnid (ní fhoilsíonn an soláthraí seo a choinneáil taisce)."
     cache_unknown_runtime: "Taisce an phróimpte: anaithnid (socraíonn an timpeallacht rite seo a roghanna taisce féin, nach féidir le Hermes a fheiceáil)."
     cache_unknown_storage: "Taisce an phróimpte: anaithnid (níorbh fhéidir stór an tseisiúin a léamh)."
+    cache_warming_off: "Coimeád beo: múchta (chaill faoi dhó)."
+    cache_tier_pending: "Leibhéal: 5m go dtí an chéad sos os cionn 5 nóiméad, ansin 1h."
+    cache_learned: "Foghlamtha: {rule}."
     cache_confidence:
       proven: "cruthaithe"
       declared: "fógartha"
@@ -984,35 +987,6 @@ gateway:
     hint: "Cuir breis leis agus bainistigh billeáil sa bhrabhsálaí — nuashonrófar d'iarmhéid anseo ina dhiaidh sin."
   login:
     free_tier_remaining: "\nTá roinnt comhráite fós ar an bplean saor in aisce; úsáid /model sna comhráite sin chun athrú."
-  cwd:
-    current: "📁 Eolaire oibre: `{cwd}`"
-    set: "📁 Socraíodh an eolaire oibre mar `{cwd}`\nRithfidh orduithe sa chomhrá seo ansin anois (fillfidh `/new` ar an réamhshocrú)."
-    invalid: "❌ Níl an eolaire ann: `{path}`"
-    backend: "❌ Níl na spásanna oibre ar fáil ach nuair is `local` an t-inneall deiridh teirminéil."
-    unauthorized: "Níl cead agat /cwd a úsáid ar an bot seo."
-    failed: "❌ Níorbh fhéidir an eolaire oibre a shocrú. Féach ar logaí an gheata."
-    list_header: "📁 Spásanna oibre iarrthacha — roghnaigh le `/cwd <number>`, nó clóscríobh níos mó den chosán:"
-    list_item: "{index}. `{path}`"
-    list_footer: "Nó socraigh eolaire ar bith le `/cwd <path>`."
-    list_empty: "Níl aon spás oibre aithnichte fós — socraigh ceann le `/cwd <path>` (taispeánfar tionscadail agus stórtha úsáidte le déanaí anseo)."
-    list_ambiguous: "❓ Meaitseálann roinnt spásanna oibre:\n{matches}\n\nClóscríobh níos mó den chosán."
-    no_chat_id: "Níorbh fhéidir ID an chomhrá a chinneadh."
-    mode_not_enabled: "Níl mód topaic ilsheisiúin cumasaithe faoi láthair don chomhrá seo."
-    disable_failed: "Theip ar mhód topaic a dhíchumasú: {error}"
-    mode_disabled: "Tá mód topaic ilsheisiúin MÚCHTA anois don chomhrá seo.\n\nNí scriosfar topaicí Telegram atá ann cheana — ní dhéanfar iad aonrú mar sheisiúin neamhspleách a thuilleadh. Oibreoidh an DM fréamh mar chomhrá Hermes gnáth arís. Rith /topic chun é a chumasú arís níos déanaí."
-    status_enabled: "Tá topaicí ilsheisiúin Telegram cumasaithe."
-    status_how_to: "Chun comhrá Hermes nua a chruthú, oscail «All Messages» ag barr an chomhéadan bota seo agus seol teachtaireacht ann. Cruthóidh Telegram topaic nua."
-    previous_unlinked: "Seisiúin roimhe seo gan nasctha:"
-    restore_one: "Chun ceann a chur ar ais:"
-    restore_example: "Sampla: seol /topic {session_id} laistigh de topaic."
-    no_unlinked: "Níor aimsíodh seisiúin Telegram roimhe seo gan nasctha."
-    restore_later: "Chun seisiún roimhe seo a chur ar ais níos déanaí:"
-    session_not_found: "Seisiún gan aimsiú: {session_id}"
-    not_telegram_session: "Ní seisiún Telegram é an seisiún sin agus ní féidir é a chur ar ais sa topaic seo."
-    not_your_session: "Níl an seisiún sin in úinéireacht an úsáideora Telegram sin."
-    already_linked: "Tá an seisiún sin nasctha le topaic Telegram eile cheana féin."
-    restored: "Seisiún curtha ar ais: {title}"
-    restored_last_message: "\n\nTeachtaireacht dheireanach Hermes:\n{text}"
 platform:
   whatsapp:
     clarify_other_title: "✏️ Eile"
@@ -1126,8 +1100,6 @@ platform:
       choice_error: "Earráid agus an rogha á cur i bhfeidhm: {error}"
       choice_expired: "⏱ Tá an roghnú imithe in éag — níor athraíodh aon rud."
     command:
-      cwd:
-        arg_path: "Eolaire spáis oibre don chomhrá seo (m.sh. ~/code/foo). Fág folamh chun an ceann reatha a thaispeáint."
       new:
         description: "Tosaigh comhrá nua"
         followup: "Comhrá nua tosaithe~"
@@ -1550,8 +1522,6 @@ platform:
     prompt_other: "✏️ Eile (clóscríobh freagra)"
     prompt_expired: ⌛ Níl an leid sin ag fanacht le freagra a thuilleadh. Seol do fhreagra mar ghnáth-theachtaireacht.
 slash:
-  cwd:
-    description: "Taispeánann nó socraíonn sé spás oibre teirminéil an chomhrá seo (go dtí /new)"
   rewind:
     description: "Athchas go leid níos luaithe chun í a chur in eagar & a athsheoladh, nó gabhlaigh as sin (Esc Esc)"
   approve:
@@ -4058,7 +4028,7 @@ plan_usage:
   large_notice_limit_stops: "Samhail mhór: tá do theorainn {name} bainte amach ({resets}), mar sin ní rithfidh sí go dtí sin."
   large_notice_percent: "Samhail mhór: úsáideann sí níos mó de d’úsáid plean in aghaidh na teachtaireachta. Teorainn mhíosúil na samhlacha móra: {percent} úsáidte."
 shared:
-  # /undo's line naming the files the undone turns changed (tools/checkpoint_undo_hint.py).
+  # /undo's line naming the files the undone turns changed (agent/checkpoints/undo_hint.py).
   undo_rollback:
     list: "↶ Comhaid a athraíodh sna seal a cealaíodh: {files}. Rith /rollback chun seicphointí a liostú agus ceann a athchóiriú."
     more: "+{count} eile"

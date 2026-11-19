@@ -13,6 +13,19 @@ from hermes_constants import display_hermes_home
 from agent.prompt_cache_boundary import register_stable_prefix
 from agent.skill_preprocessing import load_skills_config as _load_skills_config, preprocess_skill_content
 from agent.skill_utils import AMBIGUOUS_SKILL_PREFIX
+from session_rules.turns import (
+    _AUTO_LOAD_HEADER_RE,
+    _AUTO_LOAD_PREFIX,
+    _AUTO_LOAD_SUFFIX_RE,
+    _BUNDLE_MARKER,
+    _SINGLE_SKILL_INSTRUCTION,
+    _SINGLE_SKILL_MARKER,
+    _SKILL_INVOCATION_PREFIX,
+    _SKILL_NAME_RE,
+    _SUPPORTING_FILES_END,
+)
+# Published here before the storage interface (#149567) moved it; the catalog's OpenViking and Honcho pins import it here.
+from session_rules.turns import extract_user_instruction_from_skill_message
 
 logger = logging.getLogger(__name__)
 
@@ -41,34 +54,6 @@ _publish_lock = threading.Lock()
 _SKILL_INVALID_CHARS = re.compile(r"[^\w-]")
 _SKILL_MULTI_HYPHEN = re.compile(r"-{2,}")
 
-# Skill-scaffolding markers. A /skill (or /bundle) turn is expanded into a
-# model-facing message embedding the full skill body; memory providers storing
-# the raw user turn would capture the body instead of what the user asked, so
-# ``extract_user_instruction_from_skill_message`` recovers just the instruction.
-# The markers MUST stay byte-identical to the builders (``_build_skill_message``,
-# ``_scaffold_header``).
-_SKILL_INVOCATION_PREFIX = "[IMPORTANT: The user has invoked the "
-_SINGLE_SKILL_MARKER = "The full skill content is loaded below.]"
-_SINGLE_SKILL_INSTRUCTION = "The user has provided the following instruction alongside the skill invocation: "
-_RUNTIME_NOTE = "\n\n[Runtime note:"
-_BUNDLE_MARKER = " skill bundle,"
-_BUNDLE_USER_INSTRUCTION = "\nUser instruction: "
-_BUNDLE_FIRST_SKILL_BLOCK = "\n\n[Loaded as part of the "
-
-# The skill name sits in the first quoted span of the activation note, for both
-# the single-skill and the bundle header ("work" / "/clean /work").
-_SKILL_NAME_RE = re.compile(re.escape(_SKILL_INVOCATION_PREFIX) + r'"([^"]*)"')
-
-# Gateway auto-load scaffold (gateway/run_turn.py ``_hmwa_auto_load_skills``): a channel-bound
-# skill prepended to the user's text on a NEW session. Unlike the invocation scaffolds above it
-# carries no instruction marker — the user's text simply follows the payload blocks — so the
-# describer strips the header + body and renders the typed request (session previews, titles).
-_AUTO_LOAD_PREFIX = '[IMPORTANT: The "'
-_AUTO_LOAD_SUFFIX_RE = re.compile(r'" skill is auto-loaded\. Follow its instructions for this session\.\]')
-# Closing sentence of the skill-directory footer note (see _SKILL_DIR_NOTE in this module):
-# the last thing in every built payload, so it marks where an auto-load payload ends and the
-# next payload or the user's typed text begins.
-_SKILL_DIR_NOTE_END = "then run them with the terminal tool using the absolute path."
 
 # SQL LIKE pattern for listing queries that recognize scaffolding before the row
 # reaches Python (no LIKE wildcards in the prefix, so no ESCAPE clause needed).
@@ -114,124 +99,6 @@ def append_user_instruction(parts: list, instruction: str) -> str:
     return stable_prefix
 
 
-def extract_user_instruction_from_skill_message(content: Any) -> Optional[str]:
-    """Recover the user's instruction from a slash-skill-expanded or gateway
-    auto-load turn: the string unchanged when it is NOT scaffolding, the
-    extracted instruction when the scaffolding carried one, or ``None`` for a
-    bare ``/skill`` invocation."""
-    if not isinstance(content, str):
-        return None
-    if _AUTO_LOAD_HEADER_RE.match(content):
-        # Gateway auto-load scaffolding wraps the user's typed text in the same
-        # model-facing turn as the loaded skill bodies; keep only the typed text.
-        # A complete header is required so typed text that merely starts like one
-        # stays intact; a bare load carries no instruction.
-        return _auto_load_typed_text(content) or None
-    if not content.startswith(_SKILL_INVOCATION_PREFIX):
-        return content
-    if _BUNDLE_MARKER in content:
-        # Bundles put the instruction before the loaded skills: FIRST marker is the user's.
-        return _cut_after(content, _BUNDLE_USER_INSTRUCTION, _BUNDLE_FIRST_SKILL_BLOCK, content.find)
-    if _SINGLE_SKILL_MARKER in content:
-        # The instruction follows the skill body (which may quote the marker): LAST marker is the user's.
-        return _cut_after(content, _SINGLE_SKILL_INSTRUCTION, _RUNTIME_NOTE, content.rfind)
-    return None
-
-
-def _describe_auto_loaded_skill_turn(content: str) -> Optional[str]:
-    """``[IMPORTANT: The "X" skill is auto-loaded. …]`` + payload(s) + typed text
-    -> the typed text.
-
-    ``_hmwa_auto_load_skills`` builds each payload with ``_build_skill_message``
-    (activation header, body, then the skill-directory footer note) and appends the
-    user's text as the final block. The footer's closing sentence is the reliable
-    payload-end marker: the user's text is what follows the LAST footer. A header
-    quoted inside a body (a skill embedding the scaffold in an example) carries no
-    footer, so it cannot end the payload early. ``/<skill>`` renders when no user
-    text follows, matching the single-skill describer's bare-invocation shape."""
-    if not content.startswith(_AUTO_LOAD_PREFIX):
-        return None
-    name_match = re.match(re.escape(_AUTO_LOAD_PREFIX) + r'([^"]*)"', content)
-    name = name_match.group(1) if name_match else ""
-    tail = _auto_load_typed_text(content)
-    if not tail:
-        return f"/{name}" if name else None
-    return " ".join(tail.split())
-
-
-_AUTO_LOAD_SCAFFOLDS: OrderedDict[str, None] = OrderedDict()
-_AUTO_LOAD_SCAFFOLDS_MAX = 32
-_AUTO_LOAD_SCAFFOLDS_LOCK = threading.Lock()
-
-
-def register_auto_load_scaffold(scaffold: str) -> None:
-    """Record the exact payload text the gateway prepended to a turn's typed text, so the
-    boundary is known rather than guessed from prose the user may also have typed or pasted."""
-    if not scaffold:
-        return
-    with _AUTO_LOAD_SCAFFOLDS_LOCK:
-        _AUTO_LOAD_SCAFFOLDS[scaffold] = None
-        _AUTO_LOAD_SCAFFOLDS.move_to_end(scaffold)
-        while len(_AUTO_LOAD_SCAFFOLDS) > _AUTO_LOAD_SCAFFOLDS_MAX:
-            _AUTO_LOAD_SCAFFOLDS.popitem(last=False)
-
-
-def _registered_auto_load_tail(content: str) -> Optional[str]:
-    """Text after the longest registered scaffold *content* starts with; None on a miss."""
-    with _AUTO_LOAD_SCAFFOLDS_LOCK:
-        best = max((s for s in _AUTO_LOAD_SCAFFOLDS if content.startswith(s)), key=len, default=None)
-    return None if best is None else content[len(best):]
-
-
-def _auto_load_typed_text(content: str) -> str:
-    """The user's text after the auto-load payloads of a turn, stripped (``""`` when none).
-    The boundary the gateway registered wins; a turn built in another process (an old session
-    row) falls back to the FINAL payload footer, which ends with this exact sentence
-    (_build_skill_message)."""
-    registered = _registered_auto_load_tail(content)
-    if registered is not None:
-        return registered.strip()
-    footer_end = content.rfind(_SKILL_DIR_NOTE_END)
-    if footer_end == -1:
-        return ""
-    tail = content[footer_end + len(_SKILL_DIR_NOTE_END):].lstrip()
-    while block_end := next((end for start, end in _TRAILING_BLOCK_ENDS if tail.startswith(start)), None):
-        cut = tail.find(block_end)
-        tail = tail[cut + len(block_end):].lstrip() if cut >= 0 else ""
-    return tail.strip()
-
-
-def describe_skill_invocation(content: Any, separator: str = " — ") -> Optional[str]:
-    """Render a slash-skill-expanded turn the way the user typed it:
-    ``"/work — fix the title leak"``, ``"/work"`` for a bare invocation, or
-    ``None`` when *content* is not scaffolding. ``separator=" "`` gives the
-    literal invocation as typed (chat transcripts).
-
-    A gateway auto-load scaffold (channel-bound skill on a new session) is also
-    scaffolding: the typed request follows the skill payload, so it renders as
-    that request — the header/body never reaches a preview or a title (#48359).
-    """
-    if not isinstance(content, str):
-        return None
-    if content.startswith(_AUTO_LOAD_PREFIX):
-        return _describe_auto_loaded_skill_turn(content)
-    if not content.startswith(_SKILL_INVOCATION_PREFIX):
-        return None
-    match = _SKILL_NAME_RE.match(content)
-    name = (match.group(1) if match else "").strip()
-    # Bundle headers already carry their typed "/a /b" keys; a single skill is a bare name.
-    label = name if name.startswith("/") else f"/{name}"
-    instruction = extract_user_instruction_from_skill_message(content)
-    if instruction and instruction is not content:
-        # An excerpt (head + tail joined by SKILL_EXCERPT_JOINT) can put the
-        # joint inside the span — keep only the side the marker was found on.
-        instruction = " ".join(instruction.split(SKILL_EXCERPT_JOINT)[0].split())
-        if instruction:
-            return f"{label}{separator}{instruction}" if name else instruction
-    return label if name else None
-
-
-_AUTO_LOAD_HEADER_RE = re.compile(re.escape(_AUTO_LOAD_PREFIX) + r'([^"]*)' + _AUTO_LOAD_SUFFIX_RE.pattern)
 _BUNDLE_LOADED_RE = re.compile(r"^Skills loaded: (.+)$", re.MULTILINE)
 
 
@@ -251,14 +118,6 @@ def skills_loaded_by_scaffold(content: Any) -> list[str]:
         return [n.strip() for n in loaded.group(1).split(",") if n.strip()] if loaded else []
     match = _SKILL_NAME_RE.match(content)
     return [match.group(1)] if header.endswith(_SINGLE_SKILL_MARKER) and match and match.group(1) else []
-
-
-def _cut_after(message: str, marker: str, stop_marker: str, find) -> Optional[str]:
-    """Text between *marker* (located with ``find``) and *stop_marker*, stripped; None if absent/empty."""
-    marker_idx = find(marker)
-    if marker_idx < 0:
-        return None
-    return message[marker_idx + len(marker):].split(stop_marker, 1)[0].strip() or None
 
 
 def _resolve_skill_commands_platform() -> Optional[str]:
@@ -379,11 +238,6 @@ _SKILL_DIR_NOTE = (
     "`templates/config.yaml`) against that directory, then run them "
     "with the terminal tool using the absolute path."
 )
-# Closing text of the optional blocks _build_skill_message appends after the directory note; the
-# auto-load describer skips them so they are never read as the user's typed request.
-_SUPPORTING_FILES_END = "/scripts/foo.js`)."
-_TRAILING_BLOCK_ENDS = (("[Skill config (", "\n]"), ("[Skill setup note: ", "]\n\n"),
-                        ("[This skill has supporting files", _SUPPORTING_FILES_END))
 _SETUP_SKIPPED_NOTE = (
     "Required environment setup was skipped. Continue loading the skill "
     "and explain any reduced functionality if it matters."
@@ -945,81 +799,6 @@ def build_stacked_skill_invocation_message(
     typed = " ".join(keys)
     header = _scaffold_header(f'"{typed}" stacked skill bundle', loaded_names, missing=missing, user_instruction=user_instruction)
     return ("\n\n".join([header, *skill_blocks]), loaded_names, missing)
-
-
-_MAX_INLINE_SKILL_REFS = _MAX_STACKED_SKILLS
-_INLINE_SKILL_DESC_CHARS = 240
-_CODE_SPAN_RE = re.compile(r"```.*?```|`[^`\n]*`", re.DOTALL)
-# A bare `/name` after whitespace or at the start of the text. A second `/` or one more word
-# character after it (`/usr/local`) makes it a path, not a reference.
-_INLINE_SKILL_RE = re.compile(r"(?<!\S)/([A-Za-z][\w-]*)(?![\w/])")
-
-
-def _is_user_only_skill(info: Mapping[str, Any]) -> bool:
-    """True when the skill's frontmatter sets `disable-model-invocation: true`: the person alone loads it.
-
-    A skill from a commands table without a SKILL.md path is not user-only."""
-    path = info.get("skill_md_path")
-    if not path:
-        return False
-    try:
-        from agent.skill_utils import parse_frontmatter
-
-        frontmatter, _ = parse_frontmatter(Path(path).read_text(encoding="utf-8-sig", errors="replace"))
-    except OSError:
-        return False
-    return frontmatter.get("disable-model-invocation") is True
-
-
-def inline_skill_note(text: Any) -> str:
-    """Pointer to the skills a message names with a `/slash` outside its leading command, or "".
-
-    A leading `/skill` loads the whole skill into the turn. One typed after prose reaches the model
-    as plain text, so it never learned the skill existed. This lists each one by name and
-    description only (at most five) and tells the model to ``skill_view`` the ones that apply.
-    A user-only skill (`disable-model-invocation: true`) is the exception: the model cannot
-    ``skill_view`` it, and the person typing its name is the invocation, so it is loaded in full
-    like a leading `/skill` (C117).
-    A turn that is already skill scaffolding is scanned for the user's own words, never the skill
-    body. Paths (`/usr/local`), URLs and code spans are not references."""
-    if not isinstance(text, str):
-        return ""
-    instruction = extract_user_instruction_from_skill_message(text)
-    if not instruction:
-        return ""
-    commands = get_interactive_skill_commands()
-    entries: dict[str, dict[str, Any]] = {}
-    for token in _INLINE_SKILL_RE.findall(_CODE_SPAN_RE.sub(" ", instruction)):
-        key = resolve_slash_key(token, commands)
-        if key is not None and key not in entries:
-            entries[key] = commands[key]
-        if len(entries) == _MAX_INLINE_SKILL_REFS:
-            break
-    if not entries:
-        return ""
-
-    def line(key: str, info: dict[str, Any]) -> str:
-        description = " ".join(str(info.get("description") or "").split())
-        if len(description) > _INLINE_SKILL_DESC_CHARS:
-            description = description[:_INLINE_SKILL_DESC_CHARS].rstrip() + "…"
-        return f"- {key} (name: {info.get('name') or key.lstrip('/')}): {description}"
-
-    loaded: list[str] = []
-    pointers: dict[str, dict[str, Any]] = {}
-    for key, info in entries.items():
-        block = build_skill_invocation_message(key) if _is_user_only_skill(info) else None
-        if block:
-            loaded.append(block)
-        else:
-            pointers[key] = info
-    parts: list[str] = []
-    if pointers:
-        parts.append(
-            "[The user's message names these skills with a slash. Only each name and description is shown "
-            "here: call skill_view(name) to load one in full when it applies.]\n"
-            + "\n".join(line(key, info) for key, info in pointers.items())
-        )
-    return "\n\n".join([*parts, *loaded])
 
 
 def _disabled_skill_names(platform: str | None = None) -> set:
