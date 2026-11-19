@@ -321,13 +321,13 @@
       "upstream_release": "0.22.5"
     },
     "lane-mirror/rescue-policy": {
-      "ast_sha": "a19fde9680085c200c75a4894d738a61cc5ec38f0370595c49a14efd63d40bec",
+      "ast_sha": "df82964b4ae03ada1ba890de07f400df22f33d8f959c30a1d5893b3d00d6e35a",
       "kind": "wrap",
       "plugin": "lane-mirror",
-      "reason": "A non-LOCAL source has no launch policy except while a read of a lane-bound session is re-run under its viewer policy (lane takeover, rescue)",
+      "reason": "A non-LOCAL source has no launch policy except while a read of a lane-bound session is re-run under its viewer policy (lane takeover, gates); upstream 31ce88f8 added field and detail to the policy refusals",
       "target": "gateway.session_policy:policy_for_source",
       "target_file": "gateway/session_policy.py",
-      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.22.5"
     },
     "lane-mirror/residue-lane-reasoning": {
