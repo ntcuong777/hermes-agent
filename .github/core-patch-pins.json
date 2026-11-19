@@ -160,6 +160,86 @@
       "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
       "upstream_release": "0.22.5"
     },
+    "core-fixes/exec-allowed-tools": {
+      "ast_sha": "d6d72c1020733b0a11737df8c3e640c7f4496104730b191d1abba09c74ab01f1",
+      "kind": "replace",
+      "plugin": "core-fixes",
+      "reason": "code_execution.allowed_tools replaces the built-in sandbox tool set",
+      "target": "tools.code_execution_tool:sandbox_allowed_tools",
+      "target_file": "tools/code_execution_tool.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "core-fixes/exec-await-cell": {
+      "ast_sha": "76721a47423082c7fe6d926634cd3e7e8e32266c3058c9a81f7aaf8367afb0d7",
+      "kind": "replace",
+      "plugin": "core-fixes",
+      "reason": "A cell parked on an approval is not killed at its own budget",
+      "target": "tools.code_kernel:_await_cell",
+      "target_file": "tools/code_kernel.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "core-fixes/exec-generate": {
+      "ast_sha": "68f0c278a844aba6d55151e9a7f854a27f2087cd30664fa2b5d8269fe5ec9aa0",
+      "kind": "replace",
+      "plugin": "core-fixes",
+      "reason": "The generated RPC client waits out an approval and does not re-send",
+      "target": "tools.code_execution_tool:generate_hermes_tools_module",
+      "target_file": "tools/code_execution_tool.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "core-fixes/exec-human-wait": {
+      "ast_sha": "51ccc100e8ce5e45149c8750467420aad369ada70d037391c9f324155947aa57",
+      "kind": "replace",
+      "plugin": "core-fixes",
+      "reason": "The cell wait reads how long the session has been blocked on a person",
+      "target": "tools.code_kernel:_human_wait_seconds",
+      "target_file": "tools/code_kernel.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "core-fixes/exec-import-hint": {
+      "ast_sha": "e9bbbf5e25be32761632cb150818589d8f0b2d509066efc227f1de16fec7ff0c",
+      "kind": "replace",
+      "plugin": "core-fixes",
+      "reason": "A refused hermes_tools import names tool_call and the config key",
+      "target": "tools.code_execution_tool:_missing_hermes_tools_import_hint",
+      "target_file": "tools/code_execution_tool.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "core-fixes/exec-rewrite": {
+      "ast_sha": "d89193358e09b62cfdd3995351434d6543e650dd435568b05eb1bce406b3d588",
+      "kind": "replace",
+      "plugin": "core-fixes",
+      "reason": "The session schema uses the configured sandbox tool set",
+      "target": "model_tools:_rewrite_execute_code",
+      "target_file": "model_tools.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "core-fixes/exec-schema": {
+      "ast_sha": "98eb29490bc33bb2bd9e7f505d4ae6a3fa384aedb07a6a6971402510e3b80b5a",
+      "kind": "replace",
+      "plugin": "core-fixes",
+      "reason": "The schema lists a configured tool that has no hand-written stub",
+      "target": "tools.code_execution_tool:build_execute_code_schema",
+      "target_file": "tools/code_execution_tool.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "core-fixes/exec-tools-for": {
+      "ast_sha": "64b8e54abd824bb243235f71358a79fbc28269ba496c48a1517ac183f53e722b",
+      "kind": "replace",
+      "plugin": "core-fixes",
+      "reason": "The session grant intersects the configured sandbox tools",
+      "target": "tools.code_execution_tool:_sandbox_tools_for",
+      "target_file": "tools/code_execution_tool.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
     "core-fixes/patch-mode-targets": {
       "ast_sha": "edf9c54fcfe3f3de12545787d73b2c34c708609107bb246685425749761ae7d6",
       "kind": "wrap",
