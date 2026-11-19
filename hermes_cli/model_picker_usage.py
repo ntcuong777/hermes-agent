@@ -38,6 +38,7 @@ _BP_FULL = 10_000
 
 # The server's allowance ids Hermes has its own words for (agent/usage_gauges.py); any other id
 # renders with the server's label.
+from hermes_cli.cursor_model_meta import picker_rows  # fork: the cursor branch lives outside upstream
 GAUGE_TODAY = "day"
 GAUGE_WEEK = "week"
 GAUGE_MONTH = "month"
@@ -529,13 +530,10 @@ def window_plan_default(model_ids: list[str], pricing: Optional[dict] = None) ->
 def annotate_window_plan_rows(provider_data: dict, model_ids: list) -> tuple[list, Optional[str]]:
     """``(labels, limit_line)`` for the /model picker's model stage. On a Nous usage-window plan rows carry
     the TUI's ``Large`` / ``Free`` tags, and with a full allowance ``limit_line`` (above the hint) says it
-    once, with what happens next. Cursor rows carry their catalog metadata instead (context window, fast,
-    max mode — hermes_cli/cursor_model_meta.py). Every other account: the bare ids and None. Display only."""
-    slug = str((provider_data or {}).get("slug") or "").lower()
-    if slug == "cursor":
-        from hermes_cli.cursor_model_meta import cursor_row_labels
-        return cursor_row_labels(list(model_ids)), None
-    if slug != "nous":
+    once, with what happens next. Every other account: the bare ids and None. Display only."""
+    if (rows := picker_rows((provider_data or {}).get("slug"), model_ids)) is not None:  # fork: cursor labels (cursor_model_meta)
+        return rows
+    if str((provider_data or {}).get("slug") or "").lower() != "nous":
         return list(model_ids), None
     try:
         usage = nous_picker_usage()  # fresh snapshot only: a stale percent would mislabel the line

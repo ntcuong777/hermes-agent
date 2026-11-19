@@ -54,3 +54,12 @@ def cursor_row_labels(model_ids: list[str]) -> list[str]:
         return ids
     width = min(max(len(model_id) for model_id in ids), 48)
     return [f"{model_id.ljust(width)}  {tags}".rstrip() for model_id, tags in rows]
+
+
+def picker_rows(slug: Any, model_ids: list) -> tuple[list, None] | None:
+    """The /model picker's rows for a Cursor provider account (catalog metadata: context window, fast,
+    max mode); ``None`` keeps upstream's own flow for every other slug."""
+    if str(slug or "").lower() != "cursor":
+        return None
+    return cursor_row_labels(list(model_ids)), None
+
