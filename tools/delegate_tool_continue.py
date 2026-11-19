@@ -110,7 +110,7 @@ def _refusal(parent_agent: Any) -> Optional[str]:
 
 def _durable_spec(sid: str, record: dict[str, Any], parent_agent: Any) -> tuple[Optional[dict[str, Any]], Optional[str]]:
     """A resume spec from the durable record: its route re-resolved from the task's own routing request."""
-    from tools.delegate_tool_routes import resolve_task_routes
+    from tools.scope_seam import resolve_task_routes  # fork: the scope seam (subagent-scope replaces)
     request = record.get("route_request")
     if not isinstance(request, dict) or not record.get("session_id"):
         return None, (f"Subagent '{sid}' ran on a route that cannot be rebuilt after a restart. "

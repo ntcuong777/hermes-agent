@@ -29,6 +29,8 @@ from tools.delegate_tool_child_run import (
     _ChildRun, _attach_child, _build_child_goal_message, _close_child, _detach_child, _build_result_entry, _dump_subagent_timeout_diagnostic, _fabricated_entry,
     _lease_child_credential, _merge_late_steer, _register_child, _reserve_child_transcript, _Heartbeat, _validate_child_output_schema,
 )
+from tools.scope_seam import (  # fork: delegation child-scope seam (subagent-scope)
+    _child_scope_build, _confirm_ready, _scope_child_prompt, _stamp_child_profile)
 from tools.delegate_tool_config import (
     _DEFAULT_MAX_CONCURRENT_CHILDREN, _get_max_concurrent_children,
     _get_max_spawn_depth, _get_oneshot_max_children, _get_orchestrator_enabled,
@@ -498,37 +500,6 @@ def _credential_overrides(creds: dict[str, Any], routing_cfg: dict[str, Any]) ->
     }
 
 
-def _scope_child_prompt(prompt: str, child_profile: Optional[str], instructions: str) -> str:
-    """Seam. The plugin inserts the route's instructions. Absent, instructions refuse the build."""
-    del child_profile
-    if instructions:
-        raise ValueError("child instructions were not applied")
-    return prompt
-
-
-def _stamp_child_profile(child: Any, child_profile: Optional[str]) -> None:
-    """Seam. The plugin sets ``child._delegate_profile``. Absent, a profile refuses the build."""
-    if child_profile:
-        raise ValueError("child profile was not applied")
-
-
-def _child_scope_build(route: Any, task: dict, top_role: str):
-    """Seam. Returns ``(role, kwargs)``. Absent, a route that carries scope refuses the build."""
-    if (getattr(route, "toolsets", ()) or getattr(route, "instructions", "")
-            or getattr(route, "child_profile", None)):
-        raise ValueError("child scope was not applied")
-    return (task.get("role") or top_role), {"toolsets": None, "instructions": "", "child_profile": None}
-
-
-def _confirm_ready(parent_agent: Any, runnable: list, spent_before: int):
-    """Seam. The plugin asks the person. Absent, a route that requires approval is refused."""
-    del parent_agent, spent_before
-    for route in runnable:
-        if getattr(route, "confirm", None):
-            return getattr(route, "confirm").get("refusal") or "This launch was not approved; no children launched."
-    return None
-
-
 def _route_overrides(route: Any) -> dict[str, Any]:
     """``_build_child_agent`` kwargs for one task route (``tools.delegate_tool_routes.TaskRoute``)."""
     return {
@@ -605,7 +576,8 @@ def _routes_for(task_list: list[dict[str, Any]], cfg: dict[str, Any], credential
                 parent_agent: Any) -> tuple[list[Any], Optional[str]]:
     """Per-task routes: an internal caller's explicit ``credentials_cfg`` (e.g. /review → auxiliary.review) owns
     every task's route; otherwise the active delegation provider decides each one."""
-    from tools.delegate_tool_routes import resolve_task_routes, route_for_config
+    from tools.scope_seam import resolve_task_routes  # fork: the scope seam
+    from tools.delegate_tool_routes import route_for_config
     if credentials_cfg is None:  # the human confirmation is asked later, for the launches that survive every gate
         return resolve_task_routes(task_list, cfg, parent_agent, confirm=False)
     try:
