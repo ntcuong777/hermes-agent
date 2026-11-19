@@ -430,6 +430,76 @@
       "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
       "upstream_release": "0.22.5"
     },
+    "lane-mirror/viewer-finish": {
+      "ast_sha": "fd38c1882aa7e72c1ad359698396e3e9f00d200812d3fc1bd570b0802f825535",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "lane viewer events: a lane turn publishes the additive local-viewer events",
+      "target": "gateway.run_turn_runner:TurnRunner._finish_stream_consumer",
+      "target_file": "gateway/run_turn_runner.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "lane-mirror/viewer-gate": {
+      "ast_sha": "db3c588e7d760a02205533a4bb900a245b09905afc6e45057a833e6fd1b1508b",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "lane viewer events: a lane turn publishes the additive local-viewer events",
+      "target": "gateway.run_turn_progress:local_viewer_turn",
+      "target_file": "gateway/run_turn_progress.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "lane-mirror/viewer-progress": {
+      "ast_sha": "a33b4807c0d7796eb6b3934f51de7293fc33445b7aedcef7054fcb7188d63168",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "lane viewer events: a lane turn publishes the additive local-viewer events",
+      "target": "gateway.run_turn_progress:GatewayTurnProgressMixin.progress_callback",
+      "target_file": "gateway/run_turn_progress.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "lane-mirror/viewer-step": {
+      "ast_sha": "0c1935901c01767fcd6ee86cbc7d53bf8da9c0b483b7a1472ba50f64d0d1a2a8",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "lane viewer events: a lane turn publishes the additive local-viewer events",
+      "target": "gateway.run_turn_progress:GatewayTurnProgressMixin._step_callback_sync",
+      "target_file": "gateway/run_turn_progress.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "lane-mirror/viewer-title": {
+      "ast_sha": "421019f648c32063d42fc5a5d369e571d0eee749dcd069582e675258b0fad0aa",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "lane viewer events: a lane turn publishes the additive local-viewer events",
+      "target": "gateway.run_turn_progress:GatewayTurnProgressMixin._attach_session_title_callback",
+      "target_file": "gateway/run_turn_progress.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "lane-mirror/viewer-tool-complete": {
+      "ast_sha": "33ac5c17192389ea2f55d9b3c571b8a1ef276ae0f96ce249805cd491ec9cfad4",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "lane viewer events: a lane turn publishes the additive local-viewer events",
+      "target": "gateway.run_turn_progress:GatewayTurnProgressMixin.combined_tool_complete_callback",
+      "target_file": "gateway/run_turn_progress.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "lane-mirror/viewer-tool-start": {
+      "ast_sha": "ce26a366a4f388d4aeee477df3d4cd2234834f0c146969b188fdadd977de1c54",
+      "kind": "wrap",
+      "plugin": "lane-mirror",
+      "reason": "lane viewer events: a lane turn publishes the additive local-viewer events",
+      "target": "gateway.run_turn_progress:GatewayTurnProgressMixin.combined_tool_start_callback",
+      "target_file": "gateway/run_turn_progress.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
     "lane-mirror/wake-retarget-enrich": {
       "ast_sha": "2e42a94be9edb38befaf1e95847adc117d469974bb7416aed8b69cc2edcf2a1d",
       "kind": "wrap",
