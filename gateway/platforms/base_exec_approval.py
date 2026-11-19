@@ -163,26 +163,20 @@ def render_exec_approval(adapter: Any, command: str, description: str, smart_den
                          full_command_shown: bool, mcp: Optional[dict] = None) -> tuple[str, bool]:
     """``(card text, truncated)`` for ``adapter``'s markup. A preview that cannot hold the whole command
     says so in the card: where the full command was sent just before it (``full_command_shown``), or
-    that only Deny is offered because it could not be (#62359). ``mcp`` is the structured MCP context the
-    approval-card plugin words the card from (``approval_card_parts``, ``card_header``)."""
-    header = card_header(adapter, mcp)
-    command, description = approval_card_parts(command, description, mcp)
+    that only Deny is offered because it could not be (#62359). ``mcp`` (the structured MCP context) is
+    the approval-card plugin's replacement's input; upstream's layout ignores it (one signature seam)."""
+    del mcp
     if adapter._EA_REASON_BUDGET:
         description = adapter._ea_fit(str(description or ""), adapter._EA_REASON_BUDGET)
-    args_cut = mcp_arguments_cut(mcp)
-    key = "truncated_full_above" if full_command_shown and not args_cut else "truncated_deny_only"
+    key = "truncated_full_above" if full_command_shown else "truncated_deny_only"
     cut_notice = "\n\n" + adapter._ea_escape(t(f"gateway.exec_approval.{key}", total=len(command)))
     capped = bool(adapter._EA_CARD_CAP)
-    # The budgets below measure ``_EA_HEADER``'s fixed frame; a different headline would overflow a cap-edge
-    # card without the delta.
-    header_delta = len(header) - len(adapter._EA_HEADER)
     if capped:  # the reason gives way first: the deadline line and the cut notice always stay on the card
-        room = (adapter._exec_approval_cmd_budget("", smart_denied) - adapter.message_len_fn(cut_notice)
-                - header_delta)
+        room = adapter._exec_approval_cmd_budget("", smart_denied) - adapter.message_len_fn(cut_notice)
         description = adapter._ea_fit(str(description or ""), max(0, room - _EA_MIN_PREVIEW - len("...")))
     # A ``` inside the shown preview would close a markdown fence early; a longer fence holds it, and its
     # extra backticks come out of the preview budget.
-    base = adapter._exec_approval_cmd_budget(description, smart_denied) - header_delta
+    base = adapter._exec_approval_cmd_budget(description, smart_denied)
 
     def fit(fence: str) -> str:
         budget = base - 2 * (len(fence) - 3)
@@ -194,10 +188,10 @@ def render_exec_approval(adapter: Any, command: str, description: str, smart_den
         return adapter._ea_fit(command, max(left, 0) if capped else max(left, budget // 2))
 
     preview, fence = fit_fenced(command, fit)
-    truncated = preview != command or args_cut
+    truncated = preview != command
     notice = cut_notice if truncated else ""
     code_open, code_close = (part.replace("```", fence, 1) for part in (adapter._EA_CODE_OPEN, adapter._EA_CODE_CLOSE))
-    text = (f"{header}"
+    text = (f"{adapter._EA_HEADER}"
             f"{code_open}{adapter._ea_escape(preview)}{code_close}"
             f"{adapter._EA_REASON_LABEL}{adapter._ea_escape(description)}{notice}"
             f"{adapter._ea_deadline_line()}")

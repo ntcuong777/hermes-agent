@@ -66,3 +66,18 @@ def clean_keybinds(raw: Any, owner: str = "") -> dict[str, str]:
             continue
         out[spec] = args.strip()
     return out
+
+
+def is_composer_directive(output) -> bool:
+    """A handler's dict that is a well-formed ``command.dispatch`` directive (``CommandDispatchResult``);
+    anything else is printed as text. Which commands a ``choices`` row's ``select``/``drop`` may name is
+    the client's to run through the normal command path, which authorizes each as it would a typed one."""
+    if not (isinstance(output, dict) and isinstance(output.get('type'), str)):
+        return False
+    from tui_gateway.contracts.tools_commands import CommandDispatchResult
+    try:
+        CommandDispatchResult.model_validate(output)
+    except ValueError:  # pydantic's ValidationError is one
+        return False
+    return True
+

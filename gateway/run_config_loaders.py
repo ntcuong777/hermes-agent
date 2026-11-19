@@ -310,17 +310,9 @@ class GatewayConfigLoadersMixin:
         Closes #21256.
         """
         from gateway.run import _load_gateway_config
-        from gateway.route_config import gateway_model_block
-        from hermes_constants import parse_reasoning_effort, resolve_reasoning_config
-        cfg = _load_gateway_config()
-        block = gateway_model_block(cfg)
-        # Gateway turns on the block's model take the block's effort. A pinned other model
-        # keeps the shared resolver (per-model override, then agent.reasoning_effort).
-        if block is not None and (not model or model == block.get("default")):
-            parsed = parse_reasoning_effort(block.get("reasoning_effort"))
-            if parsed is not None:
-                return parsed
-        return resolve_reasoning_config(cfg, model)
+        from gateway.route_config import session_reasoning_config
+
+        return session_reasoning_config(_load_gateway_config(), model)  # fork: gateway route (route_config)
 
     @staticmethod
     def _parse_reasoning_command_args(raw_args: str) -> tuple[str, bool]:

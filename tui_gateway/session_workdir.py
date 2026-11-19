@@ -11,6 +11,7 @@ from typing import Any
 from tui_gateway import git_probe
 
 from .method_ctx import bind_module
+from tui_gateway.terminal_host_backend import terminal_backend_on_host as _terminal_backend_on_host  # fork: the decision lives outside upstream's module
 
 
 def _normalize_completion_path(path_part: str) -> str:
@@ -425,23 +426,6 @@ def _effective_terminal_backend() -> str:
     return backend or "local"
 
 
-def _terminal_backend_on_host() -> bool:
-    """Whether the active terminal backend shares the gateway host's filesystem: ``local``, or a plugin backend that
-    declares ``is_remote = False`` (nono is a sandbox around host bash). Host paths and listings stay valid there; an
-    unregistered or remote-by-default backend does not."""
-    backend = _effective_terminal_backend()
-    if backend == "local":
-        return True
-    from agent.terminal_env_registry import get_provider, provider_flag
-
-    if get_provider(backend) is None:
-        # A plugin backend registers when plugins are discovered, which the gateway does on the first agent build,
-        # not at launch. Until then `is_remote` read as its default (remote) and `@` completion showed nothing.
-        with contextlib.suppress(Exception):
-            from hermes_cli.plugins import discover_plugins
-
-            discover_plugins()
-    return provider_flag(backend, "is_remote", True) is False
 
 
 def _display_session_cwd(session: dict | None) -> str:

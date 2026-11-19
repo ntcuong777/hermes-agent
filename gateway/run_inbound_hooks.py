@@ -277,15 +277,9 @@ class GatewayInboundHooksMixin:
         return False, None, command
 
     async def _hm_run_plugin_handler(
-        self,
-        plugin_handler,
-        event: MessageEvent,
-        source: SessionSource,
-        session_entry=None,
-        args=None,
+        self, plugin_handler, event: MessageEvent, source: SessionSource, session_entry=None, args=None
     ) -> str | dict | None:
         """Run a plugin handler; local composer directives stay structured, messaging stays text.
-
         Raises what
         the handler raises (``gateway/session_commands.py`` resolves the exact registered name).
         *args* is the argument as typed (a local session's command); otherwise the message's
@@ -301,8 +295,7 @@ class GatewayInboundHooksMixin:
             # The chat's current session, if it has one (lookup only: a command never creates one), so
             # HERMES_SESSION_ID / session_id name what a later /new reports as old_session_id (#123245).
             session_entry = await self.async_session_store.lookup_by_session_key(
-                self._session_key_for_source(source)
-            )
+                self._session_key_for_source(source))
         _plugin_context = build_session_context(source, self.config, session_entry)
         if session_entry is None:
             _plugin_context.session_key = self._session_key_for_source(source)
@@ -311,14 +304,9 @@ class GatewayInboundHooksMixin:
         from gateway.plugin_messages import bind_live_source
         from gateway.plugin_command_choice import chat_choices
         call = functools.partial(
-            invoke_plugin_command,
-            plugin_handler,
-            user_args,
-            source=source,
-            session_id=_plugin_context.session_id or "",
-            session_key=_plugin_context.session_key or "",
-            platform=source.platform.value,
-        )
+            invoke_plugin_command, plugin_handler, user_args, source=source,
+            session_id=_plugin_context.session_id or "", session_key=_plugin_context.session_key or "",
+            platform=source.platform.value)
         # ctx.post_message from the handler reaches this chat even before its session is stored;
         # ctx.ask_choice asks it with the clarify prompt.
         with (self._session_env_scope(_plugin_context), bind_live_source(source),
@@ -336,12 +324,6 @@ class GatewayInboundHooksMixin:
 
     @staticmethod
     def _hm_busy_plugin_handler(command: str):
-        """The handler of a plugin command that opted in to run while the agent works, else None.
-        Underscores normalize to hyphens like the idle path (Telegram's autocomplete form)."""
-        try:
-            from hermes_cli.plugins import get_plugin_commands
-            entry = get_plugin_commands().get(command.replace("_", "-"))
-        except Exception:
-            logger.debug("busy plugin lookup failed for %s", command, exc_info=True)
-            return None
-        return entry.get("handler") if isinstance(entry, dict) and entry.get("run_while_busy") else None
+        """Seam. The handler of a plugin command that opted in to run while the agent works
+        (``gateway/busy_plugin_dispatch.py``, fork); None when none did."""
+        return __import__("gateway.busy_plugin_dispatch").busy_plugin_dispatch.busy_plugin_handler(command)

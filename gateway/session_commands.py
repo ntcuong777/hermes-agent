@@ -101,10 +101,9 @@ _READ_ARGUMENTS = {
 # The write forms of a command whose reads are above: the messaging handler's own review verbs,
 # applied for this session's profile (`/memory` and `/skills` approve|reject their staged queues;
 # `approval` updates their config.yaml switch, as main's CLI wrote it).
-_WRITE_APPROVAL_VERBS = frozenset({'approve', 'apply', 'reject', 'deny', 'drop', 'approval', 'mode'})
 _CONTROL_ARGUMENTS = {
-    'skills': lambda arg: _first_word(arg) in _WRITE_APPROVAL_VERBS,
-    'memory': lambda arg: _first_word(arg) in _WRITE_APPROVAL_VERBS,
+    'skills': lambda arg: _first_word(arg) in {'approve', 'apply', 'reject', 'deny', 'drop', 'approval', 'mode'},
+    'memory': lambda arg: _first_word(arg) in {'approve', 'apply', 'reject', 'deny', 'drop', 'approval', 'mode'},
 }
 
 
@@ -488,7 +487,7 @@ async def execute_command(connection, ref, params, *, dispatch=False):
               viewer_choices(live, ref.session_id), bind_composer_text(params.get('composer_text'), composer_for)):
             output = await _run_runner_command(authority.runner, live, name, arg, *runner_command)
         # Composer directives must reach local clients, not become a printed Python dict.
-        if _is_directive(output):
+        if __import__("hermes_cli.plugin_composer").plugin_composer.is_composer_directive(output):  # fork: plugin_composer
             return output
         return {'type': 'exec', 'output': _text(output)}
     if definition is None:
@@ -545,20 +544,6 @@ async def execute_command(connection, ref, params, *, dispatch=False):
         return {'type': 'send', 'message': prompt, 'display': sink.display or typed,
                 **({'notice': notice} if notice else {})}
     return {'type': 'exec', 'output': '\n'.join(filter(None, [*sink.notices, _text(output)]))}
-
-
-def _is_directive(output):
-    """A handler's dict that is a well-formed ``command.dispatch`` directive (``CommandDispatchResult``); anything
-    else is printed as text. Which commands a ``choices`` row's ``select``/``drop`` may name is the client's to
-    run through the normal command path, which authorizes each as it would a typed one."""
-    if not (isinstance(output, dict) and isinstance(output.get('type'), str)):
-        return False
-    from tui_gateway.contracts.tools_commands import CommandDispatchResult
-    try:
-        CommandDispatchResult.model_validate(output)
-    except ValueError:  # pydantic's ValidationError is one
-        return False
-    return True
 
 
 def _text(output):

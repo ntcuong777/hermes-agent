@@ -1074,21 +1074,6 @@ class TurnRunner(GatewayTurnProgressMixin, GatewaySessionAgentMixin):
             logger.warning("Native image attachment failed, falling back to text: %s", exc)
         return ctx.message
 
-    def _register_idle_approval_lane(self, session_key: str) -> None:
-        """Leave the session an out-of-turn approval lane that outlives this turn (tools/approval_idle.py),
-        so a background subagent's ask still reaches the attached viewers once the turn is over. Replaced
-        by each turn; nothing else (tools, cron, hooks) reaches it unless it opts in with ``idle_ask()``."""
-        if self._approval_owner is None:
-            return
-        from gateway import local_viewer_events
-        from gateway.session_idle_approval import IdleApprovalNotifier
-        from tools.approval_idle import register_idle_notify
-        authority, owner_id, generation = self._approval_owner
-        register_idle_notify(session_key, IdleApprovalNotifier(
-            authority, owner_id, session_key, timeout_s=local_viewer_events.prompt_timeout_s(self, "approval")))
-        # An idle card waiting from before this turn moves onto the turn's generation now, and is shown
-        # again: Desktop only answers a card stamped with the session's current generation.
-        authority.sessions[owner_id].controls.snapshot(owner_id, generation)
 
     def _run_conversation_with_approval(self, agent, agent_history, observed_group_context,
                                         persist_user_message_override, persist_user_timestamp_override):
@@ -1102,7 +1087,6 @@ class TurnRunner(GatewayTurnProgressMixin, GatewaySessionAgentMixin):
         token = set_current_session_key(session_key)
         from gateway.run_turn_runner_approval_transport import approval_transport
         register_gateway_notify(session_key, approval_transport(self))
-        self._register_idle_approval_lane(session_key)
         try:
             run_message = self._native_image_run_message()
             api_message = _wrap_current_message_with_observed_context(run_message, observed_group_context)

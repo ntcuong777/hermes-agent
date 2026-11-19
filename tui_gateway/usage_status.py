@@ -95,3 +95,18 @@ def lineage_cost(db: Any, session_id: str, *, _depth: int = 0) -> tuple[float, s
         total += _cost_of(parent)
         row = parent
     return total + _fork_cost(db, row, _depth), status
+
+
+def fork_cost_config(persistence, parent_key: str) -> dict:
+    """The ``model_config`` entry a branch records: what its parent had cost at the fork (``FORK_COST_KEY``), so the
+    branch keeps counting from there. Empty when the parent cost nothing or cannot be read (the branch still forms)."""
+    from types import SimpleNamespace
+
+    def _row(session_id: str):
+        record = persistence.sessions.get(session_id)
+        return record.as_session_row() if record is not None else None
+
+    with contextlib.suppress(Exception):
+        if fork_cost := lineage_cost(SimpleNamespace(get_session=_row), parent_key)[0]:
+            return {FORK_COST_KEY: round(fork_cost, 6)}
+    return {}

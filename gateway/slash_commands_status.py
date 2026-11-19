@@ -111,7 +111,7 @@ def _status_model_route(
     a winner without a ``base_url`` leaves the lookup on the default runtime route.
     """
     from gateway.run import _AGENT_PENDING_SENTINEL, _load_gateway_config, _resolve_gateway_model
-    from gateway.route_config import gateway_route_config
+    from gateway.route_config import gateway_route_config, match_status_route
     context_used = context_total = 0
     routes: list[tuple[str, str, dict]] = []
     if status_agent is not None and status_agent is not _AGENT_PENDING_SENTINEL:
@@ -137,15 +137,7 @@ def _status_model_route(
     if not model_name or not provider_name:
         # Keep fallback model/provider on the same route that gateway turns use.
         user_config = _quiet_sync(lambda: gateway_route_config(_load_gateway_config()), {})
-    model_cfg = user_config.get("model", {}) if isinstance(user_config, dict) else {}
-    model_cfg = model_cfg if isinstance(model_cfg, dict) else {}
-    configured_model = _resolve_gateway_model(user_config)
-    configured_provider = _clean_str(model_cfg.get("provider"))
-    # Fill a missing half only when the known half matches this configured route.
-    if not model_name and (not provider_name or provider_name == configured_provider):
-        model_name = configured_model
-    if not provider_name and model_name == configured_model:
-        provider_name = configured_provider
+    model_name, provider_name = match_status_route(model_name, provider_name, user_config)  # fork: route_config
     # No raw ``model.context_length`` pin here: the resolver applies it only while the displayed
     # route still matches the configured one (a session /model switch must not inherit it).
     return model_name, provider_name, context_used, context_total, {"provider": provider_name, **route}

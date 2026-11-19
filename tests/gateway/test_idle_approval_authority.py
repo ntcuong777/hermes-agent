@@ -28,8 +28,10 @@ def _authority(*, viewers, running=False, generation=7, monkeypatch=None):
     handle = SimpleNamespace(execution_generation=generation, execution_state="running" if running else "idle")
     stub = SimpleNamespace(sessions={SID: live}, profile_id="p", _handle=lambda ref: handle)
     stub.check_approval_generation = lambda session_id, gen: SessionAuthority.check_approval_generation(stub, session_id, gen)
-    stub.register_idle_approval = lambda *a, **k: SessionAuthority.register_idle_approval(stub, *a, **k)
-    stub.has_viewer = lambda sid: SessionAuthority.has_viewer(stub, sid)
+    from gateway.session_idle_approval import authority_register_idle_approval
+    stub.register_idle_approval = lambda *a, **k: authority_register_idle_approval(stub, *a, **k)
+    from gateway.session_idle_approval import authority_has_viewer
+    stub.has_viewer = lambda sid: authority_has_viewer(stub, sid)
     stub.authorize = lambda *_: None
     return stub, live
 
@@ -85,21 +87,6 @@ def test_an_idle_ask_is_answered_without_a_running_claim_but_an_ordinary_one_is_
     assert resolved == ["r1"]
 
 
-def test_a_turn_starting_moves_a_waiting_idle_card_onto_its_generation(monkeypatch):
-    """Desktop answers only a card stamped with the session's current generation, so the turn runner
-    re-stamps (and re-shows) waiting idle cards the moment a turn registers its notifier."""
-    from gateway.run_turn_runner import TurnRunner
-
-    stub, live = _authority(viewers=True, generation=3)
-    monkeypatch.setattr("gateway.session_pending_controls.list_gateway_approvals", lambda route: [{"request_id": "r1"}])
-    stub.register_idle_approval(SID, "route", {"request_id": "r1", "command": "<t>", "description": "d"})
-    shown = []
-    live.event_stream.publish = lambda sid, payload, event_type=None, **kw: shown.append((event_type, payload["execution_generation"]))
-    runner = SimpleNamespace(_approval_owner=(stub, SID, 4))
-    monkeypatch.setattr("gateway.local_viewer_events.prompt_timeout_s", lambda *a, **k: 60)
-    TurnRunner._register_idle_approval_lane(runner, "route")
-    assert live.controls.pending["r1"][1]["execution_generation"] == 4
-    assert shown == [("approval.request", 4)]
 
 
 def test_an_idle_card_answered_at_another_generation_is_refused_by_its_own_stamp_with_no_turn_running(monkeypatch):

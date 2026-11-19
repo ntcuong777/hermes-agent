@@ -683,16 +683,11 @@ class GatewayInboundMixin(
             return True, await self._dispatch_busy_slash_command(event, _cmd_def_inner, _quick_key, source)
 
         # A plugin command that opted in (`register_command(run_while_busy=True)`) runs now and leaves the agent
-        # alone. Without this it falls through to the interrupt path: the turn is cut off and the command reaches
-        # the model as chat text, never the plugin (P22: /tell from a phone while the chat is working).
+        # alone (P22); the lookup and dispatch live in gateway/busy_plugin_dispatch.py (fork).
         if _evt_cmd:
-            _busy_plugin = self._hm_busy_plugin_handler(_evt_cmd)
-            if _busy_plugin is not None:
-                try:
-                    return True, await self._hm_run_plugin_handler(_busy_plugin, event, source)
-                except Exception as e:
-                    logger.warning("Plugin command dispatch failed while busy: %s", e, exc_info=True)
-                    return True, f"/{_evt_cmd} failed: {e}"
+            _busy = await __import__("gateway.busy_plugin_dispatch").busy_plugin_dispatch.dispatch_busy_plugin(self, event, source, _evt_cmd)
+            if _busy is not None:
+                return _busy
 
         # Telegram photo bursts arrive as near-simultaneous updates — never interrupt for a
         # photo-only follow-up; adapter-level batching absorbs them.

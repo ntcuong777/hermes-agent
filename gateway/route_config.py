@@ -60,3 +60,40 @@ def local_session_config(cfg: dict[str, Any], host: dict[str, Any] | None) -> di
     if isinstance(gateway, dict) and "model" in gateway:
         merged["gateway"] = {key: value for key, value in gateway.items() if key != "model"}
     return merged
+
+
+def session_reasoning_config(cfg: dict[str, Any], model: str | None):
+    """The reasoning config a gateway turn runs with: on the block's own model it is the block's
+    ``reasoning_effort``; a pinned other model keeps the shared resolver (per-model override, then
+    ``agent.reasoning_effort``)."""
+    from hermes_constants import parse_reasoning_effort, resolve_reasoning_config
+
+    block = gateway_model_block(cfg)
+    if block is not None and (not model or model == block.get("default")):
+        parsed = parse_reasoning_effort(block.get("reasoning_effort"))
+        if parsed is not None:
+            return parsed
+    return resolve_reasoning_config(cfg, model)
+
+
+def match_status_route(model_name: str, provider_name: str, user_config: dict[str, Any]) -> tuple[str, str]:
+    """Fallback model/provider for a status route, kept on the same route gateway turns use: a missing
+    half is filled only when the known half matches this configured route."""
+    model_cfg = user_config.get("model", {}) if isinstance(user_config, dict) else {}
+    model_cfg = model_cfg if isinstance(model_cfg, dict) else {}
+    configured_model = _resolve_gateway_model_for_route(user_config)
+    configured_provider = _clean_str_for_route(model_cfg.get("provider"))
+    if not model_name and (not provider_name or provider_name == configured_provider):
+        model_name = configured_model
+    if not provider_name and model_name == configured_model:
+        provider_name = configured_provider
+    return model_name, provider_name
+
+
+def _resolve_gateway_model_for_route(cfg):
+    from gateway.run import _resolve_gateway_model
+    return _resolve_gateway_model(cfg)
+
+
+def _clean_str_for_route(v):
+    return str(v).strip() if isinstance(v, str) else ""

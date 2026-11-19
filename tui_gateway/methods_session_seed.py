@@ -8,24 +8,6 @@ import contextlib
 
 from .method_ctx import bind_module
 
-
-def _fork_cost_config(persistence, parent_key: str) -> dict:
-    """The ``model_config`` entry a branch records: what its parent had cost at the fork (``FORK_COST_KEY``), so the
-    branch keeps counting from there. Empty when the parent cost nothing or cannot be read (the branch still forms)."""
-    from types import SimpleNamespace
-
-    from tui_gateway.usage_status import FORK_COST_KEY, lineage_cost
-
-    def _row(session_id: str):
-        record = persistence.sessions.get(session_id)
-        return record.as_session_row() if record is not None else None
-
-    with contextlib.suppress(Exception):
-        if fork_cost := lineage_cost(SimpleNamespace(get_session=_row), parent_key)[0]:
-            return {FORK_COST_KEY: round(fork_cost, 6)}
-    return {}
-
-
 def _persist_branch(db, new_key: str, parent_key: str, title: str, history: list, *, source, cwd, profile_name,
                     model: str, copy_fields=(), compensate: bool = False, title_source: str = "user",
                     user_id: str | None = None) -> None:
@@ -50,7 +32,8 @@ def _persist_branch(db, new_key: str, parent_key: str, title: str, history: list
             logger.debug("branch: parent system prompt read failed for %s", parent_key, exc_info=True)
         persistence.sessions.create(NewSession(
             session_id=new_key, source=source, model=model,
-            model_config={"_branched_from": parent_key, **_fork_cost_config(persistence, parent_key)},
+            model_config={"_branched_from": parent_key,
+                          **__import__("tui_gateway.usage_status").usage_status.fork_cost_config(persistence, parent_key)},  # fork: fork cost (usage_status)
             parent_session_id=parent_key, cwd=cwd, profile_name=profile_name, user_id=user_id,
             system_prompt=parent_prompt or None))
         try:
