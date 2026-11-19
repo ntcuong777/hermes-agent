@@ -1,5 +1,15 @@
 {
   "pins": {
+    "approval-card/mcp-describe": {
+      "ast_sha": "957e6ba17994682b4fd7c1bc57a2ffaf15a54018ee3df0d7a747c3dea0458c12",
+      "kind": "replace",
+      "plugin": "approval-card",
+      "reason": "An approval card carries the MCP server, tool, and redacted arguments",
+      "target": "tools.approval_context_seam:_describe",
+      "target_file": "tools/approval_context_seam.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
     "chat-workspaces/cwd-help": {
       "ast_sha": "382de1c8527252af535006380950dd861c057b700cf6aa5a88426875d941c357",
       "kind": "wrap",
