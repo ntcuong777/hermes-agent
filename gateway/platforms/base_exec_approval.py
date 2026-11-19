@@ -58,9 +58,9 @@ def ea_mcp_block(mcp: dict, command: str) -> str:
 
 
 def mcp_arguments_cut(mcp: Optional[dict]) -> bool:
-    """True when an MCP call's arguments were cut even in the structured context (over 20,000 characters):
-    no card can show the whole call, so none offers Approve (the TUI and Desktop show the same cut)."""
-    return bool(mcp and mcp.get("arguments_cut"))
+    """True when an MCP call's arguments were cut. The rule lives in ``tools.approval_mcp``."""
+    from tools.approval_mcp import arguments_cut
+    return arguments_cut(mcp)
 
 
 def approval_card_parts(command: str, description: str, mcp: Optional[dict] = None) -> tuple[str, str]:

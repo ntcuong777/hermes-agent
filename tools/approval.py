@@ -166,11 +166,10 @@ def resolve_gateway_approval(session_key: str, choice: str,
     choice = canonical_approval_choice(choice)
 
     def answerable(entry) -> bool:
-        # An MCP call whose arguments were cut even in the structured context can only be denied, whatever
-        # surface answers (a card, typed /approve, a canonical viewer, the TUI): it stays pending for a deny
-        # or the timeout instead of being approved unread.
-        mcp = entry.data.get("mcp")
-        return choice == "deny" or not (isinstance(mcp, dict) and mcp.get("arguments_cut"))
+        # Deny-only when the arguments were cut. The predicate is core: it holds with the card plugin
+        # present, absent, skipped, or faulted.
+        from tools.approval_mcp import arguments_cut
+        return choice == "deny" or not arguments_cut(entry.data.get("mcp"))
 
     with _lock:
         queue = _gateway_queues.get(session_key)
@@ -1458,12 +1457,8 @@ def _plugin_rule_mcp_context(tool_name: str, args: Optional[dict]) -> Optional[d
     parts = tool_name.split("__")
     if len(parts) < 3 or not parts[1] or not parts[2]:
         return None
-    try:
-        from tools.mcp_tool_handlers import _approval_mcp_context
-        return _approval_mcp_context(parts[1], "__".join(parts[2:]), args)
-    except Exception:
-        logger.debug("plugin-rule MCP context build failed for %s", tool_name, exc_info=True)
-        return None
+    from tools.approval_context_seam import describe_mcp
+    return describe_mcp(parts[1], "__".join(parts[2:]), args)
 
 
 # --- Combined pre-exec guard (floors + dangerous command detection) ------------------------------------------------

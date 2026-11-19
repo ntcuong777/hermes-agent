@@ -147,7 +147,9 @@ async def test_an_mcp_call_with_whole_arguments_still_offers_approve():
     assert "once" in [c for _, c, _ in adapter.prompts[-1].actions]
 
 
-def test_the_mcp_context_flags_arguments_cut_at_the_bound():
+def test_the_mcp_context_flags_arguments_cut_at_the_bound(monkeypatch):
+    import ac_describe
+    ac_describe.install(monkeypatch)
     from tools.mcp_tool_handlers import _approval_mcp_context
     assert "arguments_cut" not in _approval_mcp_context("s", "t", {"q": "small"})
     assert "arguments_cut" not in _approval_mcp_context("s", "t", {"q": "x" * 6000}), "a long call is shown whole"

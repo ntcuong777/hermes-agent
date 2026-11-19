@@ -131,19 +131,12 @@ def _format_trust_gate_arguments(args: dict, max_chars: int = _TRUST_GATE_ARGUME
 
 
 def _approval_mcp_context(server_name: str, tool_name: str, args: Optional[dict]) -> dict:
-    """Structured ``mcp`` card context for an approval prompt (trust gate and
-    ``tools.approval._plugin_rule_mcp_context``): the keys the adapters read (``server``/``tool`` header,
-    ``tool_description``, ``arguments`` body). Arguments are masked/redacted by the trust gate's formatter
-    with the roomier context bound; the description was sanitized at discovery."""
-    from tools import mcp_tool
-    from tools.mcp_tool_scope import _server_key
-
-    arguments = _format_trust_gate_arguments(args or {}, max_chars=_MCP_CONTEXT_ARGUMENTS_MAX_CHARS)
-    context = {"server": server_name, "tool": tool_name, "arguments": arguments,
-               # A card cannot prove what was approved when the arguments were cut: it offers Deny only.
-               **({"arguments_cut": True} if arguments.endswith(_TRUST_GATE_ARGUMENTS_TRUNCATION_MARKER) else {})}
-    description = mcp_tool._tool_descriptions.get(_server_key(server_name), {}).get(tool_name)
-    return {**context, "tool_description": description} if description else context
+    """The seam's MCP dict. Absent, server and tool only: no argument block, so nothing is approved unread."""
+    from tools.approval_context_seam import describe_mcp
+    described = describe_mcp(server_name, tool_name, args)
+    if described is None:
+        return {"server": server_name, "tool": tool_name, "arguments": ""}
+    return described
 
 
 _NO_TRUST_KEY = object()
@@ -307,10 +300,10 @@ def _ask_for_call(server_name: str, tool_name: str, charge, booked: Optional[lis
         remember_key = None
     try:  # lazy: tools.approval routes the prompt to whichever surface owns the session
         from tools.approval_prompt import request_elicitation_consent
+        from tools.approval_context_seam import describe_mcp
         answer = request_elicitation_consent(message, description, surface=f"mcp-trust/{server_name}", title=title,
                                             remember_key=remember_key,
-                                            context=_approval_mcp_context(server_name, tool_name, args)
-                                            if gated else None)
+                                            context=describe_mcp(server_name, tool_name, args) if gated else None)
     except Exception as exc:
         logger.error("MCP trust gate: approval check failed for %s.%s: %s", server_name, tool_name, exc, exc_info=True)
         if over and charge is not None:
