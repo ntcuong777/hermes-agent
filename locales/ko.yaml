@@ -70,8 +70,6 @@ gateway:
     reset_done: "세션 모델 오버라이드가 해제되었습니다 — 이제 `{model}`(채널/전역 기본값)을 사용합니다. 대화 기록은 유지됩니다."
     reset_none: "이 세션에 활성화된 모델 오버라이드가 없습니다 — 이미 `{model}`(채널/전역 기본값)을 사용 중입니다."
     err_skew: "이 게이트웨이는 {boot_rev} 코드로 실행 중인데 디스크의 체크아웃은 현재 {disk_rev}이에요. 지금 모델을 전환하면 오래된 모듈 때문에 충돌할 수 있어요. 새 코드를 불러오려면 게이트웨이를 재시작하세요: hermes gateway restart"
-    err_skew_short: "이 게이트웨이는 체크아웃보다 오래된 코드로 실행 중이에요. 모델을 전환하려면 재시작하세요: hermes gateway restart"
-    warn_skew: "참고: 이 게이트웨이는 아직 {boot_rev} 코드로 실행 중이에요(체크아웃은 현재 {disk_rev}). 편할 때 재시작하세요: hermes gateway restart"
     err_switch_failed: "{model}(으)로 모델 전환에 실패했어요({error}). {current}을(를) 계속 사용해요."
     err_config_not_updated: "config.yaml이 업데이트되지 않았어요({error})"
     err_stale_override: "config.yaml에 저장했지만 오래된 세션 재정의를 지우지 못했어요({error})"
@@ -146,7 +144,6 @@ gateway:
     nav_next: "다음 → `/commands {page}`"
     out_of_range: "_(요청한 페이지 {requested}이(가) 범위를 벗어났습니다. {page} 페이지를 표시합니다.)_"
   compress:
-    started: "🗜️ 압축 중입니다 — 긴 기록은 몇 분 걸릴 수 있습니다. 끝나면 여기로 답장합니다."
     not_enough: "압축할 대화가 충분하지 않습니다 (최소 4개의 메시지가 필요합니다)."
     no_provider: "구성된 제공자가 없습니다 -- 압축할 수 없습니다."
     nothing_to_do: "아직 압축할 내용이 없습니다 (대화 내용이 모두 보호된 컨텍스트입니다)."
@@ -634,7 +631,6 @@ gateway:
     none_value: "없음"
     unknown_value: "알 수 없음"
   exec_approval:
-    mcp_header: "MCP 서버 «{server}»가(이) 도구 «{tool}»을(를) 실행하려 합니다"
     header: "Hermes가 승인이 필요한 명령을 실행하려고 해요"
     reason_label: "표시된 이유"
     default_reason: "위험한 명령"

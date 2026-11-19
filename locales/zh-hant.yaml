@@ -70,8 +70,6 @@ gateway:
     reset_done: "已清除本工作階段的模型覆寫 — 現在使用 `{model}`（頻道/全域預設）。對話歷史已保留。"
     reset_none: "本工作階段沒有啟用的模型覆寫 — 已在使用 `{model}`（頻道/全域預設）。"
     err_skew: "此閘道執行的程式碼版本為 {boot_rev}，但磁碟上的檢出版本已是 {disk_rev}。此時切換模型可能因模組過時而崩潰 — 請重新啟動閘道以載入新程式碼：hermes gateway restart"
-    err_skew_short: "此閘道執行的程式碼比檢出版本更舊。請重新啟動以切換模型：hermes gateway restart"
-    warn_skew: "注意：此閘道仍在執行 {boot_rev} 的程式碼（檢出版本現為 {disk_rev}）；請在方便時重新啟動：hermes gateway restart"
     err_switch_failed: "切換模型至 {model} 失敗（{error}）；維持使用 {current}。"
     err_config_not_updated: "config.yaml 未更新（{error}）"
     err_stale_override: "已儲存至 config.yaml，但過時的工作階段覆寫未被清除（{error}）"
@@ -146,7 +144,6 @@ gateway:
     nav_next: "下一頁 → `/commands {page}`"
     out_of_range: "_（請求的第 {requested} 頁超出範圍，顯示第 {page} 頁。）_"
   compress:
-    started: "🗜️ 正在壓縮 — 歷史較長時可能需要幾分鐘。完成後我會在這裡回覆。"
     not_enough: "對話內容不足，無法壓縮（至少需要 4 則訊息）。"
     no_provider: "未設定提供方 — 無法壓縮。"
     nothing_to_do: "目前沒有可壓縮的內容（對話記錄仍全部為受保護的上下文）。"
@@ -634,7 +631,6 @@ gateway:
     none_value: "無"
     unknown_value: "未知"
   exec_approval:
-    mcp_header: "MCP 伺服器「{server}」想執行工具「{tool}」"
     header: "Hermes 想執行一個需要你批准的指令"
     reason_label: "標記原因"
     default_reason: "危險指令"

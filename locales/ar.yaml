@@ -70,8 +70,6 @@ gateway:
     reset_done: "تم مسح تجاوز نموذج الجلسة — يُستخدم الآن `{model}` (الافتراضي للقناة/العام). تم الاحتفاظ بسجل المحادثة."
     reset_none: "لا يوجد تجاوز نموذج نشط لهذه الجلسة — يُستخدم بالفعل `{model}` (الافتراضي للقناة/العام)."
     err_skew: "هذه البوّابة تعمل بكود من {boot_rev} بينما أصبحت النسخة على القرص {disk_rev}. تبديل النموذج الآن قد يسبّب انهيارًا بسبب وحدات قديمة — أعد تشغيل البوّابة لتحميل الكود الجديد: hermes gateway restart"
-    err_skew_short: "تعمل هذه البوّابة بكود أقدم من النسخة على القرص. أعد تشغيلها لتبديل النموذج: hermes gateway restart"
-    warn_skew: "ملاحظة: لا تزال هذه البوّابة تعمل بكود {boot_rev} (النسخة على القرص الآن {disk_rev})؛ أعد تشغيلها عند الملاءمة: hermes gateway restart"
     err_switch_failed: "فشل التبديل إلى النموذج {model} ({error})؛ سنبقى على {current}."
     err_config_not_updated: "لم يُحدَّث config.yaml ({error})"
     err_stale_override: "تم الحفظ في config.yaml، لكن لم يُمسح تجاوز الجلسة القديم ({error})"
@@ -146,7 +144,6 @@ gateway:
     nav_next: "التالي → `/commands {page}`"
     out_of_range: "_(الصفحة المطلوبة {requested} خارج النطاق، يتم عرض الصفحة {page}.)_"
   compress:
-    started: "🗜️ جارٍ الضغط — قد تستغرق المحفوظات الطويلة بضع دقائق. سأرد هنا عند الانتهاء."
     not_enough: "لا توجد محادثة كافية للضغط (يلزم 4 رسائل على الأقل)."
     no_provider: "لا يوجد مزوّد مُهيّأ -- لا يمكن الضغط."
     nothing_to_do: "لا شيء للضغط بعد (النص كله لا يزال سياقًا محميًا)."
@@ -634,7 +631,6 @@ gateway:
     none_value: "لا شيء"
     unknown_value: "غير معروف"
   exec_approval:
-    mcp_header: "يريد خادم MCP «{server}» تشغيل الأداة «{tool}»"
     header: "يريد Hermes تشغيل أمر يحتاج إلى موافقتك"
     reason_label: "سبب التنبيه"
     default_reason: "أمر خطير"

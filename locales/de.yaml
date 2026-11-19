@@ -70,8 +70,6 @@ gateway:
     reset_done: "Modell-Override der Sitzung entfernt — jetzt wird `{model}` verwendet (Kanal-/globaler Standard). Gesprächsverlauf bleibt erhalten."
     reset_none: "Kein Modell-Override für diese Sitzung aktiv — es wird bereits `{model}` verwendet (Kanal-/globaler Standard)."
     err_skew: "Dieses Gateway führt Code aus {boot_rev} aus, der Checkout auf der Festplatte ist inzwischen aber {disk_rev}. Ein Modellwechsel könnte durch veraltete Module abstürzen — starten Sie das Gateway neu, um den neuen Code zu laden: hermes gateway restart"
-    err_skew_short: "Dieses Gateway läuft mit älterem Code als der Checkout. Zum Wechseln des Modells neu starten: hermes gateway restart"
-    warn_skew: "Hinweis: Dieses Gateway führt noch Code aus {boot_rev} aus (der Checkout ist jetzt {disk_rev}); starte es bei Gelegenheit neu: hermes gateway restart"
     err_switch_failed: "Modellwechsel zu {model} fehlgeschlagen ({error}); {current} bleibt aktiv."
     err_config_not_updated: "config.yaml nicht aktualisiert ({error})"
     err_stale_override: "in config.yaml gespeichert, aber der veraltete Sitzungs-Override wurde nicht gelöscht ({error})"
@@ -146,7 +144,6 @@ gateway:
     nav_next: "weiter → `/commands {page}`"
     out_of_range: "_(Angeforderte Seite {requested} liegt außerhalb des Bereichs, Seite {page} wird angezeigt.)_"
   compress:
-    started: "🗜️ Komprimierung läuft — bei langem Verlauf kann das ein paar Minuten dauern. Ich melde mich hier, wenn es fertig ist."
     not_enough: "Nicht genug Konversation zum Komprimieren (mindestens 4 Nachrichten erforderlich)."
     no_provider: "Kein Anbieter konfiguriert — Komprimierung nicht möglich."
     nothing_to_do: "Noch nichts zu komprimieren (das Transkript ist weiterhin vollständig geschützter Kontext)."
@@ -634,7 +631,6 @@ gateway:
     none_value: "none"
     unknown_value: "unbekannt"
   exec_approval:
-    mcp_header: "MCP-Server „{server}“ möchte Tool „{tool}“ ausführen"
     header: "Hermes möchte einen Befehl ausführen, der Ihre Zustimmung braucht"
     reason_label: "Grund der Markierung"
     default_reason: "gefährlicher Befehl"

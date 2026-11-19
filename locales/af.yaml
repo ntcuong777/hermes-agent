@@ -70,8 +70,6 @@ gateway:
     reset_done: "Sessie-modeloorheersing verwyder — gebruik nou `{model}` (die kanaal-/globale verstek). Gespreksgeskiedenis behou."
     reset_none: "Geen sessie-modeloorheersing is aktief nie — gebruik reeds `{model}` (die kanaal-/globale verstek)."
     err_skew: "Hierdie gateway loop kode van {boot_rev}, maar die uitcheck op skyf is nou {disk_rev}. Om modelle te wissel kan 'n verouderde-module-omval veroorsaak — herbegin die gateway om die nuwe kode te laai: hermes gateway restart"
-    err_skew_short: "Hierdie gateway loop ouer kode as die uitcheck. Herbegin dit om modelle te wissel: hermes gateway restart"
-    warn_skew: "Let wel: hierdie gateway loop nog kode van {boot_rev} (die uitcheck is nou {disk_rev}); herbegin dit wanneer dit pas: hermes gateway restart"
     err_switch_failed: "Modelwisseling na {model} het misluk ({error}); bly op {current}."
     err_config_not_updated: "config.yaml nie opgedateer nie ({error})"
     err_stale_override: "in config.yaml gestoor, maar die verouderde sessie-oorskrywing is nie verwyder nie ({error})"
@@ -146,7 +144,6 @@ gateway:
     nav_next: "volgende → `/commands {page}`"
     out_of_range: "_(Versoekte bladsy {requested} was buite reikwydte; bladsy {page} word vertoon.)_"
   compress:
-    started: "🗜️ Saampressing aan die gang — 'n lang geskiedenis kan 'n paar minute duur. Ek antwoord hier wanneer dit klaar is."
     not_enough: "Nie genoeg gesprek om saam te pers nie (ten minste 4 boodskappe nodig)."
     no_provider: "Geen verskaffer opgestel nie -- kan nie saampers nie."
     nothing_to_do: "Niks om saam te pers nie (die transkripsie is steeds heeltemal beskermde konteks)."
@@ -634,7 +631,6 @@ gateway:
     none_value: "geen"
     unknown_value: "onbekend"
   exec_approval:
-    mcp_header: "MCP-bediener «{server}» wil hê dat instrument «{tool}» moet loop"
     header: "Hermes wil 'n opdrag uitvoer wat jou goedkeuring nodig het"
     reason_label: "Hoekom dit gemerk is"
     default_reason: "gevaarlike opdrag"

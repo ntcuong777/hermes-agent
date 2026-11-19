@@ -14,6 +14,20 @@ from gateway.platforms.base import BasePlatformAdapter, ExecApprovalPrompt, Send
 from gateway.run_turn_runner import _renders_exec_approval_buttons
 
 
+@pytest.fixture(autouse=True)
+def _fork_locales():
+    """The MCP header wording ships in the fork-locales plugin, not in locales/en.yaml."""
+    from pathlib import Path
+
+    from agent import i18n_layers
+
+    pack = Path("/private/etc/nix-darwin/.worktrees/core-surface-all/hermes/plugins/fork-locales/locales/en.yaml")
+    entry = i18n_layers.register_pack("en", i18n_layers.CORE_SURFACE, i18n_layers.parse_locale_file(pack),
+                                      source="fork-locales")
+    yield
+    i18n_layers.unregister_pack(entry)
+
+
 class _Plain(BasePlatformAdapter):
     def __init__(self):
         super().__init__(PlatformConfig(enabled=True), Platform.TELEGRAM)
