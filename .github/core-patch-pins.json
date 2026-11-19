@@ -140,6 +140,16 @@
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.23.2"
     },
+    "config-seams/fallback-notice": {
+      "ast_sha": "5633b9d7bf576fe623583fbf2f9173128735a1b935073e559ba83fadf2374a09",
+      "kind": "replace",
+      "plugin": "config-seams",
+      "reason": "cluster 4 review2: the exhausted-chain chat line is the plugin's; core upstream only arms the cooldown",
+      "target": "agent.chat_completion_helpers:_fallback_chain_exhausted",
+      "target_file": "agent/chat_completion_helpers.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
     "config-seams/memory-budget": {
       "ast_sha": "1afd3aaac807e544fea75960f4982ed9be5b334e11a64a53055272401fdc4545",
       "kind": "replace",
@@ -914,9 +924,9 @@
       "ast_sha": "6b3712204b50273e36ec79e235b8902a50d5bdf02ba004dfa0f7cdcbc1517dee",
       "kind": "replace",
       "plugin": "subagent-scope",
-      "reason": "A route's toolsets and profile choose the child",
-      "target": "tools.delegate_tool:_child_scope_build",
-      "target_file": "tools/delegate_tool.py",
+      "reason": "cluster 7 review2: the delegation child-scope seams folded into tools/scope_seam.py (one import per surface)",
+      "target": "tools.scope_seam:_child_scope_build",
+      "target_file": "tools/scope_seam.py",
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.23.2"
     },
@@ -924,9 +934,9 @@
       "ast_sha": "22a530e42e3b4e6b3e8238097d4d9b85774008214be1e5c6680b874a785e5645",
       "kind": "replace",
       "plugin": "subagent-scope",
-      "reason": "A launch confirmation is asked after the budget gate",
-      "target": "tools.delegate_tool:_confirm_ready",
-      "target_file": "tools/delegate_tool.py",
+      "reason": "cluster 7 review2: the delegation child-scope seams folded into tools/scope_seam.py (one import per surface)",
+      "target": "tools.scope_seam:_confirm_ready",
+      "target_file": "tools/scope_seam.py",
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.23.2"
     },
@@ -934,9 +944,9 @@
       "ast_sha": "834d933f7993b749d87ad1949aa9cb03cf057c9e703971924e88cda06e0322bc",
       "kind": "replace",
       "plugin": "subagent-scope",
-      "reason": "A route's instructions are inserted into the child prompt",
-      "target": "tools.delegate_tool:_scope_child_prompt",
-      "target_file": "tools/delegate_tool.py",
+      "reason": "cluster 7 review2: the delegation child-scope seams folded into tools/scope_seam.py (one import per surface)",
+      "target": "tools.scope_seam:_scope_child_prompt",
+      "target_file": "tools/scope_seam.py",
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.23.2"
     },
@@ -951,12 +961,12 @@
       "upstream_release": "0.23.2"
     },
     "subagent-scope/scope-resolve": {
-      "ast_sha": "b7bc5b6dc7e283f115b77d48ff1ecd46ee6235e2fd614037a8cbbb1067bcbf4c",
+      "ast_sha": "a572f894073c177a91de89b00c376c4076aa807fbeb1c918d5a868ba58d47669",
       "kind": "replace",
       "plugin": "subagent-scope",
-      "reason": "A child route carries scope, the parent payload, and an optional confirm",
-      "target": "tools.delegate_tool_routes:resolve_task_routes",
-      "target_file": "tools/delegate_tool_routes.py",
+      "reason": "cluster 7 review2: forwarding stub in tools/scope_seam.py; resolution and the TaskRoute scope fields stay in delegate_tool_routes",
+      "target": "tools.scope_seam:resolve_task_routes",
+      "target_file": "tools/scope_seam.py",
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.23.2"
     },
@@ -964,9 +974,9 @@
       "ast_sha": "e7f5932941fef02ff10cf68f8f8ce025d0f71fbe0dd8d79c8af54095e334ffe5",
       "kind": "replace",
       "plugin": "subagent-scope",
-      "reason": "The child and the start event carry the route profile",
-      "target": "tools.delegate_tool:_stamp_child_profile",
-      "target_file": "tools/delegate_tool.py",
+      "reason": "cluster 7 review2: the delegation child-scope seams folded into tools/scope_seam.py (one import per surface)",
+      "target": "tools.scope_seam:_stamp_child_profile",
+      "target_file": "tools/scope_seam.py",
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.23.2"
     },

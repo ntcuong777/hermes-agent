@@ -57,9 +57,9 @@
     },
     "slash.refused": {
       "plugin": "tui-lane",
-      "reason": "cluster 3 review2: the dispatch union's plugin-dispatch member replaces the choices/composer-clear branch above the refusal slot",
-      "sha": "09829b8051166b35e159d44ed0c0df7f742fc46952abd133f841857f7bebb03c",
-      "snapshot_commit": "c6e317f8c7b785b3693eacb7c835212c7ceb3745",
+      "reason": "cluster 3 review2: re-pinned after the plugin-dispatch union branch",
+      "sha": "f7d0c535320483d39bd536db358792299c0eea1d1acd26677b601d54e4a25ed6",
+      "snapshot_commit": "6aea697096cfd76b6f5a09f61f7ae909eb26f1d5",
       "snapshot_kind": "fork-core",
       "symbols": [],
       "target_file": "ui-tui/src/app/createSlashHandler.ts",
