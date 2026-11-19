@@ -131,6 +131,27 @@ def register_gateway_notify(session_key: str, cb) -> None:
         _gateway_notify_cbs[session_key] = cb
 
 
+def plugin_hook_approval_card(choice: str, mcp) -> bool:
+    """Plugin hook: approval-card.
+
+    The plugin sets ``arguments_cut`` when MCP arguments were truncated. This
+    function refuses every approving choice while that flag is set, even if the
+    card plugin is skipped or faulted. Upstream payloads have no such key, so
+    every choice stays answerable. Deny always stays answerable.
+    """
+    from tools.approval_mcp import arguments_cut
+    return choice == "deny" or not arguments_cut(mcp)
+
+
+def plugin_hook_yolo_exempt(yolo_exempt: bool) -> bool:
+    """Plugin hook: yolo-exempt.
+
+    That plugin sets ``yolo_exempt`` on an approve that must still ask a person.
+    The stub leaves the flag false, so this is upstream: yolo skips the gate.
+    """
+    return (not yolo_exempt) and _yolo_active()
+
+
 def unregister_gateway_notify(session_key: str) -> None:
     """Withdraw foreground waits when the turn ends. Dispatch-owned background
     waits survive until their worker ends or the session is cleared."""
@@ -166,10 +187,7 @@ def resolve_gateway_approval(session_key: str, choice: str,
     choice = canonical_approval_choice(choice)
 
     def answerable(entry) -> bool:
-        # Deny-only when the arguments were cut. The predicate is core: it holds with the card plugin
-        # present, absent, skipped, or faulted.
-        from tools.approval_mcp import arguments_cut
-        return choice == "deny" or not arguments_cut(entry.data.get("mcp"))
+        return plugin_hook_approval_card(choice, entry.data.get("mcp"))
 
     with _lock:
         queue = _gateway_queues.get(session_key)
@@ -1255,10 +1273,7 @@ def _run_approval_gate(
     must still ask about; ``approvals.mode: off`` and every later step are unchanged.
     """
     # Hardline blocks are the caller's job BEFORE this gate, so yolo here only skips the recoverable approval layer.
-    # ``approvals.mode: off`` is the third bypass source (the Desktop "Approvals: off" toggle writes it); the shell
-    # guards honour it, so every action routed through this gate (computer_use, plugin rules, SSH-config writes,
-    # dangerous-pattern prompts) must too, or "off" still prompts on those surfaces.
-    if (not yolo_exempt and _yolo_active()) or approval_context._get_approval_mode() == "off":
+    if plugin_hook_yolo_exempt(yolo_exempt) or approval_context._get_approval_mode() == "off":
         return _approved()
     session_key = get_current_session_key()
     if is_approved(session_key, pattern_key):
@@ -1436,16 +1451,9 @@ def request_tool_approval(tool_name: str, reason: str, *, rule_key: str = "", ap
 
 
 def _plugin_rule_mcp_context(tool_name: str, args: Optional[dict]) -> Optional[dict]:
-    """Structured MCP card context for a plugin-escalated ``mcp__<server>__<tool>`` call, reusing the
-    trust gate's builder (same redaction and caps). None for non-MCP tools or bare names — the card
-    then stays command chrome, exactly as before."""
-    if not args or not tool_name.startswith("mcp__"):
-        return None
-    parts = tool_name.split("__")
-    if len(parts) < 3 or not parts[1] or not parts[2]:
-        return None
-    from tools.approval_context_seam import describe_mcp
-    return describe_mcp(parts[1], "__".join(parts[2:]), args)
+    """Seam. approval-card fills the structured MCP block. Absent, the card stays command text."""
+    del tool_name, args
+    return None
 
 
 # --- Combined pre-exec guard (floors + dangerous command detection) ------------------------------------------------

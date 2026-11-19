@@ -168,12 +168,21 @@ def _missing_hermes_tools_import_hint(m, enabled_tools) -> str:
             "else, use the normal tool call instead of execute_code.")
 
 
+def plugin_hook_core_fixes_import_hint(m, enabled):
+    """Plugin hook: core-fixes.
+
+    The plugin replaces ``_missing_hermes_tools_import_hint``. This tuple must
+    call that name at match time. A function object stored here would keep the
+    original and ignore the patch.
+    """
+    return _missing_hermes_tools_import_hint(m, enabled)
+
+
 # (regex, formatter(match, enabled_tools)) — first match wins. Production mining (state.db) ranked
 # these as the top execute_code failure classes: hermes_tools import misuse, missing helper
 # imports, treating tool results as strings, importing third-party packages absent from the sandbox.
 _FAILURE_HINT_RULES = (
-    (r"cannot import name '(\w+)' from 'hermes_tools'",
-     lambda m, enabled: _missing_hermes_tools_import_hint(m, enabled)),
+    (r"cannot import name '(\w+)' from 'hermes_tools'", plugin_hook_core_fixes_import_hint),
     (r"NameError: name '(json_parse|shell_quote|retry)' is not defined",
      lambda m, _: f"Import {m.group(1)} before calling it: "
                   f"from hermes_tools import {m.group(1)}"),

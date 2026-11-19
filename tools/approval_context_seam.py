@@ -13,6 +13,8 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 
+# Hook for approval-card. The plugin replaces _describe. This stub returns None,
+# so a missing plugin produces no structured MCP block.
 def _describe(server_name: str, tool_name: str, args: Any) -> Optional[dict]:
     """Seam. Absent, the card has no structured MCP block."""
     del server_name, tool_name, args

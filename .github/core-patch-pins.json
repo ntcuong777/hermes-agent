@@ -10,6 +10,16 @@
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.23.2"
     },
+    "approval-card/plugin-rule-mcp": {
+      "ast_sha": "cd429b500ca99b5cc063926cf2b259bc8c7aa273e1d6ee5afc9b669851aa4eaa",
+      "kind": "replace",
+      "plugin": "approval-card",
+      "reason": "A plugin-escalated mcp tool call carries structured MCP context",
+      "target": "tools.approval:_plugin_rule_mcp_context",
+      "target_file": "tools/approval.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
     "approval-idle/idle-delivery": {
       "ast_sha": "805107a1650599b63bd09ddcd608e125e3e4ac62fdb5b80e5f41373a5a36f5d5",
       "kind": "replace",
@@ -709,6 +719,16 @@
       "target_file": "gateway/session_automation.py",
       "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
       "upstream_release": "0.22.5"
+    },
+    "prompt-cap/prompt-cap": {
+      "ast_sha": "fc383da6e7fb30d9301ac8dd3378a638e96d7b0c1ffc48b85ada86015751bc0b",
+      "kind": "replace",
+      "plugin": "prompt-cap",
+      "reason": "plugins.prompt_sections_total_chars may raise the prompt-section cap",
+      "target": "hermes_cli.plugins:_resolve_prompt_sections_total_cap",
+      "target_file": "hermes_cli/plugins.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
     },
     "request-messages/request-messages": {
       "ast_sha": "92e6616435f6c13a3144c97ab9a0f78c56b0dd22a901cfd03dba68e78644c7b8",

@@ -20,6 +20,14 @@ def _context(manager: PluginManager, name: str = "example-plugin") -> PluginCont
     )
 
 
+@pytest.fixture(autouse=True)
+def _install_prompt_cap(monkeypatch):
+    import sys
+    sys.path.insert(0, "/private/etc/nix-darwin/.worktrees/core-surface-all/hermes/plugins/prompt-cap")
+    import pc_cap
+    pc_cap.install(monkeypatch)
+
+
 def test_registration_validates_stable_id_position_budget_and_duplicates():
     manager = PluginManager()
     ctx = _context(manager)
