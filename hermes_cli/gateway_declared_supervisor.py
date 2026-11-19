@@ -35,6 +35,15 @@ def declared_external_supervisor() -> str | None:
     return None
 
 
+def stop_if_declared() -> bool:
+    """True when an external supervisor owns the gateway. The caller returns immediately."""
+    declared = declared_external_supervisor()
+    if not declared:
+        return False
+    note_externally_supervised(declared)
+    return True
+
+
 def note_externally_supervised(label: str) -> None:
     """Say why Hermes installs no service, and how to restart the gateway instead."""
     print(

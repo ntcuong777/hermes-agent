@@ -43,11 +43,6 @@ HERMES_PROTECTED_SUBPATHS = (
 BRIDGE_LOG_PARTS = frozenset(
     (*parent, name) for parent in (("platforms", "whatsapp"), ("whatsapp",)) for name in ("bridge.log", "bridge.log.1"))
 
-# The WhatsApp bridge log and its rotated generation, as path parts relative to a home: troubleshooting
-# output that records chat ids and the Signal library's console lines, never needed for a restore (#149860).
-BRIDGE_LOG_PARTS = frozenset(
-    (*parent, name) for parent in (("platforms", "whatsapp"), ("whatsapp",)) for name in ("bridge.log", "bridge.log.1"))
-
 
 def profile_root_entry(parts: tuple[str, ...]) -> str | None:
     """Locate a home-root entry without excluding same-named skill/plugin data."""

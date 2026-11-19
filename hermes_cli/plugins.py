@@ -114,23 +114,6 @@ VALID_HOOKS: set[str] = {
     "pre_tool_call", "post_tool_call", "transform_terminal_output", "transform_tool_result",
     # transform_llm_output: return a replacement string (first non-None wins) or None.
     "transform_llm_output", "pre_llm_call", "post_llm_call",
-    # transform_request_messages: per provider request, applied where the context-engine
-    # select_context results land (agent/turn_request_assembly.py). Receives the outgoing
-    # message list (structural clones — persisted history is never mutated) plus minimal
-    # metadata kwargs (session_id, model, platform). Return a replacement list of dicts or
-    # None to leave the request unchanged (first valid list wins). Egress backstop for
-    # secret redaction: rewrites reach the provider payload only; the stored transcript
-    # keeps the original bytes. Bounded+fail-open like the other hot-path transform hooks.
-    "transform_request_messages",
-    # transform_status_bar_fields: when a session.usage frame is built for a bar that lists
-    # fields in display.status_bar.fields (tui_gateway/status_bar_fields.py). Receives ``fields``
-    # (running list, chained), ``session_id``, ``agent`` (read-only) and ``wanted`` (the listed
-    # names). Return a replacement list of {"id", "text", "tone"?, "min_cols"?} rows; core keeps
-    # only listed ids. Must not block: read caches, never the network.
-    "transform_status_bar_fields",
-    # Session-lane seam (gateway/session_lane_seam.py): a plugin that owns the lane of a session.
-    "observe_session_check", "wrap_session_call", "route_lane_operation",
-    "resolve_write_policy", "resolve_tool_result_limits", "resolve_reply_max_tokens",  # fork hooks: tools/write_path_policy.py, tools/tool_result_limits.py, agent/reply_cap.py
     # Streaming observers (agent.plugin_stream_hooks), off the token path; payloads are immutable
     # normalized text/lifecycle and cannot transform the stream.
     "on_stream_start", "on_stream_delta", "on_stream_end", "on_interim_message",
@@ -228,6 +211,8 @@ VALID_HOOKS: set[str] = {
     # run_dir, run_json_path, report_md_path, dry_run. Observer; returns ignored.
     "post_curator_run",
 }
+from hermes_cli.fork_hooks import FORK_HOOKS
+VALID_HOOKS |= FORK_HOOKS
 
 # Hooks whose directive the shell-hook response parser has no channel for. VALID_HOOKS doubles as
 # the shell-hook allow-list, so these are refused loudly instead of having output silently ignored.
