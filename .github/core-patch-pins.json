@@ -891,20 +891,20 @@
       "upstream_release": "0.23.2"
     },
     "yolo-exempt/yolo-exempt-mark": {
-      "ast_sha": "cbc3d66c94c9a30fdc6e32b41dc8bc0a16b822e75938c272d352a34d925056e0",
+      "ast_sha": "e09529b1f5be1f643102267be3df094ab1bdbca635192fd4abc3ab7ddbc9eec5",
       "kind": "replace",
       "plugin": "yolo-exempt",
-      "reason": "A yolo_exempt marker is an exception, including a garbled one",
+      "reason": "A yolo_exempt marker asks a person unless this plugin relaxes it",
       "target": "hermes_cli.plugins:_is_yolo_exempt",
       "target_file": "hermes_cli/plugins.py",
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.23.2"
     },
     "yolo-exempt/yolo-exempt-prefer": {
-      "ast_sha": "4047e84edbcee2d0d8c4071be65374bae96871aa26ae3e8df487e9a99023250d",
+      "ast_sha": "d570d43deb1d2bae5b49a47ac29355df459e2a262dceb3c378f29dad53da3969",
       "kind": "replace",
       "plugin": "yolo-exempt",
-      "reason": "A yolo-exempt approve wins over an earlier routine approve",
+      "reason": "An exempt approve wins unless this plugin keeps the earlier routine approve",
       "target": "hermes_cli.plugins:_prefer_approve",
       "target_file": "hermes_cli/plugins.py",
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",

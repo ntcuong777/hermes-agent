@@ -146,8 +146,9 @@ def plugin_hook_approval_card(choice: str, mcp) -> bool:
 def plugin_hook_yolo_exempt(yolo_exempt: bool) -> bool:
     """Plugin hook: yolo-exempt.
 
-    That plugin sets ``yolo_exempt`` on an approve that must still ask a person.
-    The stub leaves the flag false, so this is upstream: yolo skips the gate.
+    That plugin sets ``yolo_exempt`` through ``_is_yolo_exempt``. A set flag
+    asks a person. The stub sets the flag for every marker except ``None``
+    and ``False``, so a missing plugin cannot yolo-skip a marked approve.
     """
     return (not yolo_exempt) and _yolo_active()
 

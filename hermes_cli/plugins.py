@@ -1144,14 +1144,24 @@ class _PreToolCallDirective:
 
 
 def _is_yolo_exempt(result: dict[str, Any]) -> bool:
-    """Seam. yolo-exempt treats a marker as an exception. Absent, no approve is exempt."""
-    del result
-    return False
+    """Plugin hook: yolo-exempt. Fail closed.
+
+    ``None`` and ``False`` are routine. Any other marker asks a person, even
+    when the yolo-exempt plugin is absent, skipped, or faulted. Only a
+    replacement of this function may treat a marker as routine.
+    """
+    return result.get("yolo_exempt", None) not in (None, False)
 
 
 def _prefer_approve(held, message, rule_key, exempt):
-    """Seam. The first approve wins. yolo-exempt prefers an exempt approve over an earlier routine one."""
-    del message, rule_key, exempt
+    """Plugin hook: yolo-exempt. Fail closed.
+
+    An exempt approve replaces an earlier routine one, so a later marker
+    cannot be hidden. Only a replacement of this function may keep the
+    earlier approve.
+    """
+    if held is None or (exempt and not held[2]):
+        return (message, rule_key, exempt)
     return held
 
 
