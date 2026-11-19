@@ -1,20 +1,24 @@
-"""Model prices from config: ``pricing:`` in config.yaml, read before the bundled table.
+"""Core does not read ``pricing:``. The config-seams plugin does, in front of this resolver.
 
-A new model (or a price change) used to need a fork edit to ``_OFFICIAL_DOCS_PRICING``; the
-person can now write the per-1M rates in config. Keys are ``<provider>/<model>`` or a bare
-model id. Subscription routes stay $0: that is what the person actually pays.
+What stays here: the config key is a known open root (``hermes config set`` accepts it),
+and a pricing block does not change ``get_pricing_entry`` while the plugin is absent.
 """
 
 from __future__ import annotations
 
 import os
-from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
-from agent import usage_pricing as pricing
-from agent.usage_pricing import CanonicalUsage, estimate_usage_cost, get_pricing_entry
+import agent.usage_pricing as pricing
+from agent.usage_pricing import get_pricing_entry
+
+
+@pytest.fixture(autouse=True)
+def _no_network(monkeypatch):
+    monkeypatch.setattr(pricing, "_models_dev_pricing_entry", lambda route: None)
+    monkeypatch.setattr(pricing, "fetch_endpoint_model_metadata", lambda *a, **k: {})
 
 
 def _write_config(text: str) -> None:
@@ -33,64 +37,16 @@ def _write_config(text: str) -> None:
             hook()
 
 
-@pytest.fixture(autouse=True)
-def _no_network(monkeypatch):
-    monkeypatch.setattr(pricing, "_models_dev_pricing_entry", lambda route: None)
-    monkeypatch.setattr(pricing, "fetch_endpoint_model_metadata", lambda *a, **k: {})
-
-
-def test_a_configured_price_prices_an_unknown_model():
+def test_a_pricing_block_does_not_change_core():
     _write_config(
-        "pricing:\n  anthropic/claude-newmodel-9:\n    input: 3\n    output: 15\n    cache_read: 0.3\n    cache_write: 3.75\n"
-    )
-
-    entry = get_pricing_entry("claude-newmodel-9", provider="anthropic")
-
-    assert entry is not None and entry.source == "user_override"
-    assert (entry.input_cost_per_million, entry.output_cost_per_million) == (
-        Decimal(3),
-        Decimal(15),
-    )
-    cost = estimate_usage_cost(
-        "claude-newmodel-9",
-        CanonicalUsage(input_tokens=1_000_000, output_tokens=100_000),
-        provider="anthropic",
-    )
-    assert cost.amount_usd == Decimal("4.5")
-
-
-def test_a_configured_price_wins_over_the_bundled_table():
-    _write_config("pricing:\n  anthropic/claude-sonnet-5-5: {input: 1, output: 1}\n")
-
-    entry = get_pricing_entry("claude-sonnet-5-5", provider="anthropic")
-
-    assert entry.source == "user_override" and entry.output_cost_per_million == Decimal(
-        1
-    )
-
-
-def test_a_bare_model_key_matches_any_provider():
-    _write_config("pricing:\n  claude-newmodel-9: {input: 2, output: 8}\n")
-
-    assert get_pricing_entry(
-        "claude-newmodel-9", provider="anthropic"
-    ).input_cost_per_million == Decimal(2)
-
-
-def test_without_a_pricing_block_the_bundled_table_still_answers():
-    _write_config("model:\n  default: claude-sonnet-4-6\n")
-
-    entry = get_pricing_entry("claude-sonnet-4-6", provider="anthropic")
-
-    assert entry is not None and entry.source == "official_docs_snapshot"
-
-
-def test_a_malformed_rate_is_ignored_not_guessed():
-    _write_config(
-        "pricing:\n  anthropic/claude-newmodel-9: {input: cheap, output: 15}\n"
+        "pricing:\n"
+        "  anthropic/claude-newmodel-9: {input: 3, output: 15}\n"
+        "  anthropic/claude-sonnet-4-6: {input: 1, output: 1}\n"
     )
 
     assert get_pricing_entry("claude-newmodel-9", provider="anthropic") is None
+    entry = get_pricing_entry("claude-sonnet-4-6", provider="anthropic")
+    assert entry is not None and entry.source != "user_override"
 
 
 def test_config_set_accepts_a_pricing_key():

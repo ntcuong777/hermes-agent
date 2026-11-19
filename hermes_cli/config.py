@@ -967,7 +967,7 @@ _EXTRA_KNOWN_ROOT_KEYS = {
     "multiplex_profiles", "profile_routes", "platforms", "require_mention",
     "unauthorized_dm_behavior", "signal", "allow_all_users",
     "timeouts",          # unified timeout resolution section (agent/deadline.py)
-    "pricing",           # per-model USD/1M rates read before the bundled table (agent/usage_pricing.py)
+    "pricing",           # per-model USD/1M rates; config-seams reads them before the bundled table
 }
 _KNOWN_ROOT_KEYS = frozenset(DEFAULT_CONFIG.keys()) | _EXTRA_KNOWN_ROOT_KEYS
 
