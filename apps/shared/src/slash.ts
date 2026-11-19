@@ -5,6 +5,7 @@
  * as the multi-line argument bug (#41323, #55510) reaches desktop and TUI at
  * once instead of landing in whichever copy the reporter happened to use.
  */
+import { forkPrefillAck, parseForkCommandDispatch } from './slash-fork.js'
 
 /** A slash COMMAND invocation: `/` at position 0, a bare name, then whitespace
  *  or end. `/usr/local` (second slash) and `run /clean` (not at 0) are prose. */
@@ -100,14 +101,6 @@ export type CommandDispatchResponse =
 
 const str = (value: unknown) => (typeof value === 'string' ? value : undefined)
 
-const choiceItems = (value: unknown): ChoicesCommandDispatchResponse['items'] | null => {
-  const rows = Array.isArray(value) ? (value as Record<string, unknown>[]) : []
-
-  return rows.length && rows.every(r => r && typeof r.label === 'string' && typeof r.select === 'string')
-    ? rows.map(r => ({ drop: str(r.drop), label: r.label as string, select: r.select as string }))
-    : null
-}
-
 /** Narrow a raw `command.dispatch` result to the union, or null when the
  *  payload is malformed (missing required field, unknown `type`). */
 export function parseCommandDispatch(raw: unknown): CommandDispatchResponse | null {
@@ -121,23 +114,6 @@ export function parseCommandDispatch(raw: unknown): CommandDispatchResponse | nu
     case 'alias':
       return typeof row.target === 'string' ? { target: row.target, type: 'alias' } : null
 
-    case 'choices': {
-      const items = choiceItems(row.items)
-
-      return items && typeof row.title === 'string'
-        ? {
-            items,
-            notice: str(row.notice),
-            selected: typeof row.selected === 'number' ? row.selected : undefined,
-            title: row.title,
-            type: 'choices'
-          }
-        : null
-    }
-
-    case 'composer-clear':
-      return { notice: str(row.notice), type: 'composer-clear' }
-
     case 'exec':
 
     case 'plugin':
@@ -145,7 +121,7 @@ export function parseCommandDispatch(raw: unknown): CommandDispatchResponse | nu
 
     case 'prefill':
       return typeof row.message === 'string'
-        ? { ack: str(row.ack), message: row.message, notice: str(row.notice), type: 'prefill' }
+        ? { ack: forkPrefillAck(row), message: row.message, notice: str(row.notice), type: 'prefill' }
         : null
 
     case 'send':
@@ -159,6 +135,6 @@ export function parseCommandDispatch(raw: unknown): CommandDispatchResponse | nu
         : null
 
     default:
-      return null
+      return parseForkCommandDispatch(row)
   }
 }

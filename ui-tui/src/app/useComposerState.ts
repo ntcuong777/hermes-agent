@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { useStdin, withInkSuspended } from '@hermes/ink'
@@ -15,7 +15,7 @@ import { useCompletion } from '../hooks/useCompletion.js'
 import { useInputHistory } from '../hooks/useInputHistory.js'
 import { useQueue } from '../hooks/useQueue.js'
 import { t } from '../i18n/runtime.js'
-import { isUsableClipboardText, readClipboardImagePng, readClipboardText } from '../lib/clipboard.js'
+import { isUsableClipboardText, readClipboardText } from '../lib/clipboard.js'
 import { draftFromEditorText, resolveEditor } from '../lib/editor.js'
 import { stageClipboardImage, stageImagePath } from '../lib/imageAttachments.js'
 import { extensionHost } from '../sdk/ext/host.js' // fork: tui extension host
@@ -510,30 +510,6 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
    * paste as zero text, so we speculatively ask the gateway and stay silent if
    * there was nothing there. An explicit `/paste` reports the miss.
    */
-  const localClipboardImagePath = useCallback(async (onError: (message: string) => void): Promise<string | null> => {
-    const png = await readClipboardImagePng().catch(() => null)
-
-    if (!png) {
-      return null
-    }
-
-    try {
-      const root = process.env.HERMES_HOME ?? join(homedir(), '.hermes')
-      const dir = join(root, 'cache', 'paste-images')
-      mkdirSync(dir, { recursive: true, mode: 0o700 })
-      const path = join(dir, `clip_${Date.now()}.png`)
-      writeFileSync(path, png, { mode: 0o600 })
-
-      return path
-    } catch (error) {
-      // A full disk or an unwritable home must say so, not vanish (the old code only
-      // guaranteed a message for gateway-side failures).
-      onError(`could not stage the clipboard image: ${(error as Error).message}`)
-
-      return null
-    }
-  }, [])
-
   const pasteClipboardImage = useCallback(
     async (value: string, cursor: number, quiet: boolean): Promise<ComposerPasteResult | null> => {
       const destination = captureDestination()
@@ -566,11 +542,8 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
           // The gateway's extraction can fail where the TUI itself sits in the GUI session (a
           // launchd/systemd-managed gateway has no pasteboard context): read the image here and
           // stage the file ourselves before reporting a miss.
-          const path =
-            (await clipboardImagePathFromExtensions()) ?? // fork: tui extension host
-            (await localClipboardImagePath(message => {
-              sys(message)
-            }))
+          // Seam: tui-ports stages a PNG from this process when the gateway has no pasteboard.
+          const path = await clipboardImagePathFromExtensions()
 
           if (!path) {
             return primary
@@ -601,7 +574,7 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
         return null
       })
     },
-    [attachImageToken, captureDraft, gw, localClipboardImagePath, resolveAttachment, sys]
+    [attachImageToken, captureDraft, gw, resolveAttachment, sys]
   )
 
   const handleResolvedPaste = useCallback(
