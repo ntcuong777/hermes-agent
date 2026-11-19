@@ -589,6 +589,66 @@
       "target_file": "tools/skills_sync.py",
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.23.2"
+    },
+    "subagent-scope/scope-build": {
+      "ast_sha": "6b3712204b50273e36ec79e235b8902a50d5bdf02ba004dfa0f7cdcbc1517dee",
+      "kind": "replace",
+      "plugin": "subagent-scope",
+      "reason": "A route's toolsets and profile choose the child",
+      "target": "tools.delegate_tool:_child_scope_build",
+      "target_file": "tools/delegate_tool.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "subagent-scope/scope-confirm": {
+      "ast_sha": "22a530e42e3b4e6b3e8238097d4d9b85774008214be1e5c6680b874a785e5645",
+      "kind": "replace",
+      "plugin": "subagent-scope",
+      "reason": "A launch confirmation is asked after the budget gate",
+      "target": "tools.delegate_tool:_confirm_ready",
+      "target_file": "tools/delegate_tool.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "subagent-scope/scope-prompt": {
+      "ast_sha": "834d933f7993b749d87ad1949aa9cb03cf057c9e703971924e88cda06e0322bc",
+      "kind": "replace",
+      "plugin": "subagent-scope",
+      "reason": "A route's instructions are inserted into the child prompt",
+      "target": "tools.delegate_tool:_scope_child_prompt",
+      "target_file": "tools/delegate_tool.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "subagent-scope/scope-reasoning": {
+      "ast_sha": "3b82e8bd420252779916d10efd4acb18eb8e140f3e21848114f1cd081a96828e",
+      "kind": "replace",
+      "plugin": "subagent-scope",
+      "reason": "A lifecycle child gets reasoning_config from its metadata",
+      "target": "agent.subagent_lifecycle:_reasoning_kwargs",
+      "target_file": "agent/subagent_lifecycle.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "subagent-scope/scope-resolve": {
+      "ast_sha": "b7bc5b6dc7e283f115b77d48ff1ecd46ee6235e2fd614037a8cbbb1067bcbf4c",
+      "kind": "replace",
+      "plugin": "subagent-scope",
+      "reason": "A child route carries scope, the parent payload, and an optional confirm",
+      "target": "tools.delegate_tool_routes:resolve_task_routes",
+      "target_file": "tools/delegate_tool_routes.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "subagent-scope/scope-stamp": {
+      "ast_sha": "e7f5932941fef02ff10cf68f8f8ce025d0f71fbe0dd8d79c8af54095e334ffe5",
+      "kind": "replace",
+      "plugin": "subagent-scope",
+      "reason": "The child and the start event carry the route profile",
+      "target": "tools.delegate_tool:_stamp_child_profile",
+      "target_file": "tools/delegate_tool.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
     }
   },
   "version": 2
