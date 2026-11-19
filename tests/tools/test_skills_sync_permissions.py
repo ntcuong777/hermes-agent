@@ -1,4 +1,8 @@
-"""Copies from immutable packages must leave skills editable."""
+"""Plugin absent: a read-only bundle copy stays read-only.
+
+skills-staging's sync wraps add the owner write bit. This file checks the core
+functions on their own.
+"""
 
 import stat
 from pathlib import Path
@@ -10,7 +14,7 @@ from tools.skills_sync import _copy_dir, _replace_skill_dir
 
 @pytest.mark.platforms("posix")
 @pytest.mark.parametrize("replace", [False, True])
-def test_readonly_bundle_copies_remain_writable(
+def test_a_readonly_bundle_copy_stays_readonly(
     tmp_path: Path, replace: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr("tools.skills_sync.SKILLS_DIR", tmp_path / "skills")
@@ -20,9 +24,6 @@ def test_readonly_bundle_copies_remain_writable(
     document = references / "guide.md"
     document.write_text("bundled guide")
     document.chmod(0o444)
-    script = source / "run.sh"
-    script.write_text("#!/bin/sh\nexit 0\n")
-    script.chmod(0o555)
     references.chmod(0o555)
     source.chmod(0o555)
     destination = tmp_path / "skills" / "example"
@@ -34,12 +35,7 @@ def test_readonly_bundle_copies_remain_writable(
     else:
         _copy_dir(source, destination)
 
-    assert stat.S_IMODE(destination.stat().st_mode) == 0o755
-    assert stat.S_IMODE((destination / "references").stat().st_mode) == 0o755
-    assert stat.S_IMODE((destination / "references" / "guide.md").stat().st_mode) == 0o644
-    assert stat.S_IMODE((destination / "run.sh").stat().st_mode) == 0o755
-    assert stat.S_IMODE(source.stat().st_mode) == 0o555
-    assert stat.S_IMODE(document.stat().st_mode) == 0o444
-    (destination / "references" / "guide.md").write_text("user edit")
-    (destination / "references" / "new.md").write_text("new guide")
-    (destination / "references" / "guide.md").unlink()
+    guide = destination / "references" / "guide.md"
+    assert guide.is_file()
+    assert not guide.stat().st_mode & stat.S_IWUSR
+    assert not source.stat().st_mode & stat.S_IWUSR
