@@ -17,6 +17,16 @@ from agent.delegation_provider import (
 )
 from tools.delegate_tool_routes import resolve_task_routes, schema_extension
 
+
+@pytest.fixture(autouse=True)
+def _install_scope_patches(monkeypatch):
+    """The route behavior lives in subagent-scope. Install it for these tests."""
+    import scope_patches
+    import tests.tools.test_delegation_route_scope as here
+    scope_patches.install(monkeypatch)
+    import tools.delegate_tool_routes as routes
+    monkeypatch.setattr(here, "resolve_task_routes", routes.resolve_task_routes)
+
 CODEX_RUNTIME = {
     "provider": "openai-codex", "base_url": "https://chatgpt.com/backend-api/codex", "api_key": "codex-key",
     "api_mode": "codex_responses",

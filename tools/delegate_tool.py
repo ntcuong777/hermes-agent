@@ -37,7 +37,6 @@ from tools.delegate_tool_config import (
     _subagent_auto_approve, _subagent_auto_deny,
 )
 from tools.delegate_tool_dispatch import _Batch, _announce_batch, _capture_origin, _run_batch
-from tools.delegate_tool_scope import with_instructions
 from tools.delegate_tool_progress import (
     SUBAGENT_FAILURE_STATUSES, _build_child_progress_callback,
     _build_child_system_prompt, _clean_error_text, _emit_parent_console, _quiet, _resolve_workspace_hint,
@@ -271,7 +270,7 @@ def _build_child_agent(
         workspace_path=_resolve_workspace_hint(parent_agent), role=effective_role,
         max_spawn_depth=max_spawn, child_depth=child_depth,
     )
-    child_prompt = with_instructions(child_prompt, child_profile, instructions)
+    child_prompt = _scope_child_prompt(child_prompt, child_profile, instructions)
     parent_api_key = getattr(parent_agent, "api_key", None)
     if (not parent_api_key) and hasattr(parent_agent, "_client_kwargs"):
         parent_api_key = parent_agent._client_kwargs.get("api_key")
@@ -363,7 +362,7 @@ def _build_child_agent(
     child_session_ref["session_id"] = getattr(child, "session_id", "") or ""
     child._progress_identity_ref = child_session_ref
     child._delegate_depth, child._delegate_role = child_depth, effective_role  # post-degrade role
-    child._delegate_profile = child_profile  # the route's profile name, if any
+    _stamp_child_profile(child, child_profile)
     # Plugins see one conversation per delegation tree.
     from agent.prompt_cache_scope import conversation_id, sibling_cache_scope
     child._inherited_conversation_id = conversation_id(parent_agent)
@@ -499,12 +498,42 @@ def _credential_overrides(creds: dict[str, Any], routing_cfg: dict[str, Any]) ->
     }
 
 
+def _scope_child_prompt(prompt: str, child_profile: Optional[str], instructions: str) -> str:
+    """Seam. The plugin inserts the route's instructions. Absent, instructions refuse the build."""
+    del child_profile
+    if instructions:
+        raise ValueError("child instructions were not applied")
+    return prompt
+
+
+def _stamp_child_profile(child: Any, child_profile: Optional[str]) -> None:
+    """Seam. The plugin sets ``child._delegate_profile``. Absent, a profile refuses the build."""
+    if child_profile:
+        raise ValueError("child profile was not applied")
+
+
+def _child_scope_build(route: Any, task: dict, top_role: str):
+    """Seam. Returns ``(role, kwargs)``. Absent, a route that carries scope refuses the build."""
+    if (getattr(route, "toolsets", ()) or getattr(route, "instructions", "")
+            or getattr(route, "child_profile", None)):
+        raise ValueError("child scope was not applied")
+    return (task.get("role") or top_role), {"toolsets": None, "instructions": "", "child_profile": None}
+
+
+def _confirm_ready(parent_agent: Any, runnable: list, spent_before: int):
+    """Seam. The plugin asks the person. Absent, a route that requires approval is refused."""
+    del parent_agent, spent_before
+    for route in runnable:
+        if getattr(route, "confirm", None):
+            return getattr(route, "confirm").get("refusal") or "This launch was not approved; no children launched."
+    return None
+
+
 def _route_overrides(route: Any) -> dict[str, Any]:
     """``_build_child_agent`` kwargs for one task route (``tools.delegate_tool_routes.TaskRoute``)."""
     return {
         **_credential_overrides(route.creds, route.routing_cfg),
         "override_reasoning_effort": route.reasoning_effort, "profile_home": route.profile_home,
-        "instructions": route.instructions, "child_profile": route.child_profile,
     }
 
 
@@ -529,13 +558,14 @@ def _build_children(
         if _task_schema is not None:
             _child_context = append_output_contract(_child_context, _task_schema)
         try:
+            scope_role, scope_kw = _child_scope_build(route, t, top_role)
             child = _build_child_preserving_parent_tools(
                 task_index=i, goal=t["goal"], context=_child_context, max_iterations=max_iterations,
                 task_count=len(task_list), parent_agent=parent_agent,
-                role=_normalize_role(None if route.child_profile else (t.get("role") or top_role)),
+                role=_normalize_role(scope_role),
                 **_route_overrides(route),
-                # A spawn takes the route's toolsets (intersected with the parent's); a continued child keeps its own.
-                **{"toolsets": list(route.toolsets) or None, "model": route.creds["model"], **(rebuild[i] if rebuild else {})},
+                # A continued child keeps its own toolsets (rebuild). Scope fields come from the seam.
+                **{**scope_kw, "model": route.creds["model"], **(rebuild[i] if rebuild else {})},
             )
         except ValueError as exc:
             # An owner refusal can land mid-batch: the siblings built so far hold reservations.
@@ -701,12 +731,7 @@ def delegate_task(
     err = _oneshot_spawn_budget(parent_agent, len(runnable))
     if err:
         return tool_error(err)
-    # Last gate, so a person is only asked about a launch that would otherwise run (not a duplicate of a child that
-    # is waiting to resume, not over the one-shot budget). A refusal here charged nothing: hand the budget back.
-    from tools.delegate_tool_scope import confirm_launches
-    if refusal := confirm_launches(runnable, parent_agent):
-        if getattr(parent_agent, "_oneshot_children_spawned", 0) != spent_before:
-            parent_agent._oneshot_children_spawned = spent_before
+    if refusal := _confirm_ready(parent_agent, runnable, spent_before):
         return tool_error(refusal)
 
     overall_start = time.monotonic()

@@ -267,13 +267,9 @@ def _coerce_handle(handle: Any) -> Optional[SubagentHandle]:
 
 
 def _reasoning_kwargs(metadata: Mapping[str, Any]) -> dict[str, Any]:
-    """Child ``reasoning_config`` from ``metadata['reasoning_effort']``. Empty when absent or unusable."""
-    effort = metadata.get("reasoning_effort")
-    if not isinstance(effort, str) or not effort.strip():
-        return {}
-    from hermes_constants import parse_reasoning_effort
-    config = parse_reasoning_effort(effort)
-    return {} if config is None else {"reasoning_config": config}
+    """Seam. subagent-scope supplies a child's reasoning_config from metadata. Absent, no extra config."""
+    del metadata
+    return {}
 
 
 class SubagentLifecycleService:

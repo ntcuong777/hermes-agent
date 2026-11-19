@@ -20,7 +20,6 @@ from typing import Any, Iterator, Mapping, Optional
 from agent.delegation_provider import (
     PROVIDER_DECLARABLE_PARAMETERS, RESERVED_TASK_PARAMETERS, ROUTE_KEYS, DelegationProvider, DelegationRouteError,
 )
-from tools.delegate_tool_scope import SCOPE_KEYS, call_refusal, clean_scope, confirm_launches, parent_route
 from tools.delegate_tool_config import _resolve_delegation_credentials
 
 logger = logging.getLogger("tools.delegate_tool")  # log-record parity with the origin module
@@ -261,13 +260,17 @@ def _resolve_route(route: dict[str, Any], parent_agent: Any, backend: str) -> Ta
 def _route_to_task_route(route: dict[str, Any], parent_agent: Any, cache: dict[str, TaskRoute],
                          config: Optional[Mapping[str, Any]] = None, backend: str = "default") -> TaskRoute:
     label = route.get("label") if isinstance(route.get("label"), str) else None
-    scope = clean_scope(route)
+    # subagent-scope replaces resolve_task_routes, which applies these. This path refuses them.
+    pending = [k for k in ("toolsets", "instructions", "child_profile", "confirm")
+               if route.get(k) not in (None, "", [], ())]
+    if pending:
+        raise DelegationRouteError(
+            "this route carries a child scope (" + ", ".join(pending) + ") and it was not applied")
     route = _with_inherited_fallback(route, config or {})
-    # The label and the child-scope fields never reach credential resolution: routes differing only there resolve once.
-    key = json.dumps({k: v for k, v in route.items() if k not in SCOPE_KEYS}, sort_keys=True, default=str)
+    key = json.dumps({k: v for k, v in route.items() if k != "label"}, sort_keys=True, default=str)
     if key not in cache:
         cache[key] = _resolve_route(route, parent_agent, backend)
-    return replace(cache[key], label=label, **scope)
+    return replace(cache[key], label=label)
 
 
 def _check_backend_effort(index: int, route: Mapping[str, Any], config: Mapping[str, Any]) -> None:
@@ -304,7 +307,7 @@ def _undeclared_error(provider: DelegationProvider, index: int, names: list[str]
 
 
 def _route_one(provider: DelegationProvider, declared: dict[str, dict[str, Any]], index: int,
-               task: Mapping[str, Any], config: Mapping[str, Any], parent: Mapping[str, Any]) -> dict[str, Any]:
+               task: Mapping[str, Any], config: Mapping[str, Any]) -> dict[str, Any]:
     undeclared = sorted(name for name, value in task.items()
                         if value is not None and name not in declared and name not in RESERVED_TASK_PARAMETERS)
     if undeclared:
@@ -314,7 +317,7 @@ def _route_one(provider: DelegationProvider, declared: dict[str, dict[str, Any]]
         error = _param_error(index, name, value, declared[name])
         if error:
             raise DelegationRouteError(error)
-    payload = {**params, "goal": task.get("goal"), "context": task.get("context"), "index": index, "parent": dict(parent)}
+    payload = {"goal": task.get("goal"), "context": task.get("context"), "index": index, **params}
     try:
         return _clean_route(provider.name, provider.route_task(payload, config))
     except DelegationRouteError as exc:
@@ -325,13 +328,14 @@ def _route_one(provider: DelegationProvider, declared: dict[str, dict[str, Any]]
 
 
 def resolve_task_routes(task_list: list[dict[str, Any]], config: Mapping[str, Any], parent_agent: Any,
-                        confirm: bool = True) -> tuple[list[TaskRoute], Optional[str]]:
-    """One :class:`TaskRoute` per task from the backend the session's ``delegate_task`` was built from (else
-    ``delegation.backend``), or ``([], error)`` when that backend cannot run (fails closed, never another backend).
-    A task the backend cannot route gets a route with ``error`` set; its siblings are unaffected. Identical routes
-    resolve credentials once per call (the default backend resolves exactly once). ``confirm=False`` skips the human
-    approval a route may ask for (a restart's rebuild of a child the person already approved; ``delegate_task`` itself
-    asks later, with ``confirm_launches``, once the duplicate and budget gates have passed)."""
+                        confirm: bool = False) -> tuple[list[TaskRoute], Optional[str]]:
+    """One :class:`TaskRoute` per task. ``confirm`` is accepted so callers can pass it.
+
+    subagent-scope replaces this function. That copy applies child scope, asks for a
+    launch approval, and honours ``confirm``. This copy does not: a route that carries
+    a child scope is refused in ``_route_to_task_route``.
+    """
+    del confirm
     from agent.delegation_backends import pinned_backend
     if pinned := pinned_backend(parent_agent):
         config = {**config, "backend": pinned}
@@ -340,22 +344,17 @@ def resolve_task_routes(task_list: list[dict[str, Any]], config: Mapping[str, An
     except DelegationRouteError as exc:
         return [], str(exc)
     declared = _declared_parameters(provider, config)
-    parent = parent_route(parent_agent)
-    if refusal := call_refusal(provider, declared, task_list, config, parent):  # whole call, before any task is routed
-        return [], refusal
     cache: dict[str, TaskRoute] = {}
     routes: list[TaskRoute] = []
     for i, task in enumerate(task_list):
         try:
-            route = _route_one(provider, declared, i, task, config, parent)
+            route = _route_one(provider, declared, i, task, config)
             _check_backend_effort(i, route, config)
             request = {name: task[name] for name in declared if task.get(name) is not None}
             routes.append(replace(_route_to_task_route(route, parent_agent, cache, config, provider.name),
                                   request=request))
         except ValueError as exc:  # DelegationRouteError, the credential resolver's and the tier check's refusals
             routes.append(TaskRoute({}, {}, backend=provider.name, error=str(exc)))
-    if confirm and (refusal := confirm_launches(routes, parent_agent)):  # a launch the human must approve, before any child
-        return [], refusal
     return routes, None
 
 
