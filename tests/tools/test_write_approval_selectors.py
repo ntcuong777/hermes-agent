@@ -13,8 +13,25 @@ import time
 
 import pytest
 
-from hermes_cli.write_approval_commands import handle_pending_subcommand as run
 from tools import write_approval as wa
+
+_PLUGIN = "/private/etc/nix-darwin/.worktrees/core-surface-all/hermes/plugins/write-approval-commands"
+
+
+@pytest.fixture(autouse=True)
+def _install_write_approval_commands(monkeypatch):
+    import sys
+
+    sys.path.insert(0, _PLUGIN)
+    import wc_commands
+
+    wc_commands.install(monkeypatch)
+
+
+def run(*args, **kwargs):
+    from hermes_cli import write_approval_commands as core
+
+    return core.handle_pending_subcommand(*args, **kwargs)
 
 
 @pytest.fixture

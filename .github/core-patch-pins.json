@@ -890,6 +890,46 @@
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.23.2"
     },
+    "write-approval-commands/wac-approve": {
+      "ast_sha": "1ec601e892a00d2b88f5e803672de7a4b11414d36506c71c543f0eac569b8d21",
+      "kind": "replace",
+      "plugin": "write-approval-commands",
+      "reason": "Approve by number, id, or the one pending write",
+      "target": "hermes_cli.write_approval_commands:_approve",
+      "target_file": "hermes_cli/write_approval_commands.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "write-approval-commands/wac-handle": {
+      "ast_sha": "0fc3c814596ee709a029597ad1d6ff60c0ebbd96cdfbaea2e4f234de41f54919",
+      "kind": "replace",
+      "plugin": "write-approval-commands",
+      "reason": "/memory and /skills gain show",
+      "target": "hermes_cli.write_approval_commands:handle_pending_subcommand",
+      "target_file": "hermes_cli/write_approval_commands.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "write-approval-commands/wac-list": {
+      "ast_sha": "8faf3aeb565af17505b10cfbfa7a742fa1da17a2120848b301262fa0626b0a88",
+      "kind": "replace",
+      "plugin": "write-approval-commands",
+      "reason": "Pending writes are numbered",
+      "target": "hermes_cli.write_approval_commands:_fmt_pending_list",
+      "target_file": "hermes_cli/write_approval_commands.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "write-approval-commands/wac-reject": {
+      "ast_sha": "2a49ad66c16b0ad61de5b92507fc02cc8db6b42ea690b92cc9b3cc97c9f2f40e",
+      "kind": "replace",
+      "plugin": "write-approval-commands",
+      "reason": "Reject by number, id, or the one pending write",
+      "target": "hermes_cli.write_approval_commands:_reject",
+      "target_file": "hermes_cli/write_approval_commands.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
     "yolo-exempt/yolo-exempt-mark": {
       "ast_sha": "e09529b1f5be1f643102267be3df094ab1bdbca635192fd4abc3ab7ddbc9eec5",
       "kind": "replace",
