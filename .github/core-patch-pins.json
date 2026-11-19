@@ -529,6 +529,66 @@
       "target_file": "gateway/session_automation.py",
       "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
       "upstream_release": "0.22.5"
+    },
+    "skills-staging/replay-apply-pending": {
+      "ast_sha": "a036a1fc7df52a19ec3a619daa42f96f6bdf29b5098f6127277a52eaab3d2e92",
+      "kind": "replace",
+      "plugin": "skills-staging",
+      "reason": "An approved replay sets the flag the two waivers read",
+      "target": "tools.skill_manager_tool:apply_skill_pending",
+      "target_file": "tools/skill_manager_tool.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "skills-staging/replay-guarded-write": {
+      "ast_sha": "0a67fe0d2da407836ed9c06c248cfb52525230ec42c3d0a805c704230a583722",
+      "kind": "replace",
+      "plugin": "skills-staging",
+      "reason": "An approved replay skips the description budget",
+      "target": "tools.skill_manager_tool:_guarded_write",
+      "target_file": "tools/skill_manager_tool.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "skills-staging/replay-patch-skill": {
+      "ast_sha": "6b5c4f6b515dcf458290423bd06d02e999d2f2cd4404206a58baf0fe00d3f8ee",
+      "kind": "replace",
+      "plugin": "skills-staging",
+      "reason": "An approved replay may patch a file that is already over the size cap",
+      "target": "tools.skill_manager_tool:_patch_skill",
+      "target_file": "tools/skill_manager_tool.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "skills-staging/staging-precheck": {
+      "ast_sha": "5ef01623898ed8f07fe11be8f32aae6e87c715c7e6522ea70f7f1a59da027ac3",
+      "kind": "replace",
+      "plugin": "skills-staging",
+      "reason": "A skill write that cannot apply is refused before it is staged",
+      "target": "tools.skill_manager_tool:_staging_precheck",
+      "target_file": "tools/skill_manager_tool.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "skills-staging/sync-copy-dir": {
+      "ast_sha": "79523f12f323d4a558f56777dda19b729cca7e434780bb20dd5d74cc7023a4d0",
+      "kind": "wrap",
+      "plugin": "skills-staging",
+      "reason": "A bundled skill copy stays owner-writable",
+      "target": "tools.skills_sync:_copy_dir",
+      "target_file": "tools/skills_sync.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "skills-staging/sync-seed-descriptions": {
+      "ast_sha": "5937da8af5e11139587e121fb79a63623f0bcc665a9d5b7118dfff5feb9f22cb",
+      "kind": "wrap",
+      "plugin": "skills-staging",
+      "reason": "A seeded category description stays owner-writable",
+      "target": "tools.skills_sync:_seed_category_descriptions",
+      "target_file": "tools/skills_sync.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
     }
   },
   "version": 2
