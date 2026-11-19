@@ -51,7 +51,8 @@ def _model_switch_skew_guard() -> Optional[str]:
     a new code path can crash on a stale cached dependency. Scoped to the highest-risk trigger.
 
     ``gateway.model_switch_skew_guard`` picks the behaviour (``refuse`` default, ``warn``, ``off``); only
-    ``refuse`` returns text here. ``warn`` is ``_model_switch_skew_note``."""
+    ``refuse`` returns text here. ``warn`` is ``_model_switch_skew_note``. The mode read is
+    ``gateway.code_skew.model_switch_skew``, which config-seams replaces."""
     from gateway.code_skew import model_switch_skew
 
     mode, skew = model_switch_skew()

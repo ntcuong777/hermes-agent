@@ -17,6 +17,11 @@ from unittest.mock import Mock, patch
 import pytest
 
 from gateway import code_skew
+
+try:
+    import cs_skew
+except ImportError:
+    cs_skew = None
 from gateway.session_controls import AuthorityConnection
 from tests.fixtures.storage_read import session_row
 from tests.gateway.test_authority_cold_route_recovery import _source
@@ -109,6 +114,19 @@ def _config(mode):
     return {} if mode is None else {'gateway': {'model_switch_skew_guard': mode}}
 
 
+@pytest.fixture(autouse=True)
+def _installed_skew_modes(monkeypatch):
+    """The mode policy lives in config-seams. Core alone refuses."""
+    if cs_skew is not None:
+        cs_skew.install(monkeypatch)
+
+
+def _modes():
+    if cs_skew is None:
+        pytest.skip("config-seams skew policy is not on PYTHONPATH")
+    return cs_skew
+
+
 @pytest.fixture
 def stale(monkeypatch):
     monkeypatch.setattr(code_skew, 'detect_code_skew', lambda: SKEW)
@@ -127,18 +145,19 @@ def configured(monkeypatch):
     (None, 'refuse'), ('refuse', 'refuse'), ('warn', 'warn'), ('off', 'off'), (False, 'off'), (' WARN ', 'warn'),
     ('sometimes', 'refuse'), (True, 'refuse'), (3, 'refuse'), ({'x': 1}, 'refuse')])
 def test_the_mode_reads_the_key_and_anything_unknown_refuses(written, mode):
-    assert code_skew.model_switch_skew_mode(_config(written)) == mode
+    assert _modes().model_switch_skew_mode(_config(written)) == mode
 
 
 def test_a_config_that_is_not_a_mapping_refuses():
-    assert code_skew.model_switch_skew_mode({'gateway': 'warn'}) == 'refuse'
-    assert code_skew.model_switch_skew_mode(['gateway']) == 'refuse'
+    policy = _modes()
+    assert policy.model_switch_skew_mode({'gateway': 'warn'}) == 'refuse'
+    assert policy.model_switch_skew_mode(['gateway']) == 'refuse'
 
 
 def test_the_default_config_names_the_key_and_defaults_to_refuse():
     from hermes_cli.config_defaults import DEFAULT_CONFIG
     assert DEFAULT_CONFIG['gateway']['model_switch_skew_guard'] == 'refuse'
-    assert code_skew.DEFAULT_MODEL_SWITCH_SKEW_MODE == 'refuse'
+    assert _modes().DEFAULT_MODE == 'refuse'
 
 
 def test_no_skew_is_never_a_verdict_in_any_mode(monkeypatch, configured):

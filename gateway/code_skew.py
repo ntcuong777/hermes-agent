@@ -59,39 +59,11 @@ def detect_code_skew() -> tuple[str, str] | None:
     return _short(_boot_fingerprint), _short(current)
 
 
-# ``gateway.model_switch_skew_guard``: what a model switch does when the checkout moved since boot.
-#   refuse (default): the switch fails with "restart the gateway" (the original behaviour);
-#   warn: the switch is performed and the reply carries a one-line "restart when convenient" note;
-#   off: the switch is performed with no note.
-MODEL_SWITCH_SKEW_MODES = ("refuse", "warn", "off")
-DEFAULT_MODEL_SWITCH_SKEW_MODE = "refuse"
-
-
-def model_switch_skew_mode(config: dict | None = None) -> str:
-    """The configured ``gateway.model_switch_skew_guard``: ``refuse`` | ``warn`` | ``off``.
-
-    Read fresh on every call (a config edit applies without a restart). Anything unreadable or unknown is
-    ``refuse``, today's behaviour; YAML's unquoted ``off`` (a boolean ``False``) means ``off``. *config* is
-    the effective user config; omitted, the gateway's own is read."""
-    try:
-        if config is None:
-            from gateway.run import _load_gateway_config
-
-            config = _load_gateway_config()
-        section = config.get("gateway") if isinstance(config, dict) else None
-        raw = section.get("model_switch_skew_guard") if isinstance(section, dict) else None
-    except Exception:
-        return DEFAULT_MODEL_SWITCH_SKEW_MODE
-    if raw is False:
-        return "off"
-    mode = str(raw).strip().lower() if raw is not None else DEFAULT_MODEL_SWITCH_SKEW_MODE
-    return mode if mode in MODEL_SWITCH_SKEW_MODES else DEFAULT_MODEL_SWITCH_SKEW_MODE
-
-
 def model_switch_skew(config: dict | None = None) -> tuple[str, tuple[str, str] | None]:
-    """``(mode, skew)``: the configured mode and ``detect_code_skew()``'s answer (None unless it drifted).
+    """``(mode, skew)``. Core always reports ``refuse`` when the checkout drifted.
 
-    The single read every model-switch caller shares (gateway ``/model``, a viewer's session pick, the TUI
-    and dashboard model RPCs); a caller acts on ``mode`` only when ``skew`` is set."""
+    config-seams replaces this to honor ``gateway.model_switch_skew_guard``
+    (``warn`` and ``off``). Absent, a skewed switch is refused."""
+    del config
     skew = detect_code_skew()
-    return (model_switch_skew_mode(config) if skew else DEFAULT_MODEL_SWITCH_SKEW_MODE), skew
+    return "refuse", skew
