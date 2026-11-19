@@ -324,11 +324,11 @@
       "ast_sha": "df82964b4ae03ada1ba890de07f400df22f33d8f959c30a1d5893b3d00d6e35a",
       "kind": "wrap",
       "plugin": "lane-mirror",
-      "reason": "A non-LOCAL source has no launch policy except while a read of a lane-bound session is re-run under its viewer policy (lane takeover, gates); upstream 31ce88f8 added field and detail to the policy refusals",
+      "reason": "A non-LOCAL source has no launch policy except while a read of a lane-bound session is re-run under its viewer policy (lane takeover, gates); upstream 31ce88f8 (0.23.2 canary) added field and detail to the policy refusals",
       "target": "gateway.session_policy:policy_for_source",
       "target_file": "gateway/session_policy.py",
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
-      "upstream_release": "0.22.5"
+      "upstream_release": "0.23.2"
     },
     "lane-mirror/residue-lane-reasoning": {
       "ast_sha": "d01de9f17026ed86c7dd800ccea1ecd5e444778c330f145f07f0f6d1eda9da5a",
