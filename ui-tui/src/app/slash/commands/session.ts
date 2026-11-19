@@ -16,7 +16,6 @@ import { usageBarsText } from '../../../components/overlayPrimitives.js'
 import { introMsg, toTranscriptMessages } from '../../../domain/messages.js'
 import { t } from '../../../i18n/runtime.js'
 import { formatVoiceRecordKey, parseVoiceRecordKey } from '../../../lib/platform.js'
-import { asRpcResult, SESSION_COMPRESS_TIMEOUT_MS } from '../../../lib/rpc.js'
 import type { PanelSection } from '../../../types.js'
 import { applyConfiguredTuiTheme } from '../../createGatewayEventHandler.js'
 import { DEFAULT_INDICATOR_STYLE, INDICATOR_STYLES, type IndicatorStyle } from '../../interfaces.js'
@@ -122,22 +121,16 @@ export const sessionCommands: SlashCommand[] = [
         return ctx.transcript.sys(t('slashCmd.session.bg.usage'))
       }
 
-      // The raw request, not `rpc`: a `lane_owned` refusal (a session bound to a Discord thread)
-      // must reach `guardedErr`, which relays the typed command to that thread.
-      ctx.gateway.gw
-        .request('prompt.background', { session_id: ctx.sid, text: arg })
-        .then(raw => asRpcResult<BackgroundStartResponse>(raw))
-        .then(
-          ctx.guarded<BackgroundStartResponse>(r => {
-            if (!r.task_id) {
-              return
-            }
+      ctx.gateway.rpc<BackgroundStartResponse>('prompt.background', { session_id: ctx.sid, text: arg }).then(
+        ctx.guarded<BackgroundStartResponse>(r => {
+          if (!r.task_id) {
+            return
+          }
 
-            patchUiState(state => ({ ...state, bgTasks: new Set(state.bgTasks).add(r.task_id!) }))
-            ctx.transcript.sys(t('slashCmd.session.bg.started', r.task_id))
-          })
-        )
-        .catch(ctx.guardedErr)
+          patchUiState(state => ({ ...state, bgTasks: new Set(state.bgTasks).add(r.task_id!) }))
+          ctx.transcript.sys(t('slashCmd.session.bg.started', r.task_id))
+        })
+      )
     }
   },
 
@@ -149,21 +142,15 @@ export const sessionCommands: SlashCommand[] = [
         return ctx.transcript.sys(t('slashCmd.session.btw.usage'))
       }
 
-      // The raw request, not `rpc`: a `lane_owned` refusal (a session bound to a Discord thread)
-      // must reach `guardedErr`, which relays the typed command to that thread.
-      ctx.gateway.gw
-        .request('prompt.btw', { session_id: ctx.sid, text: arg })
-        .then(raw => asRpcResult<BackgroundStartResponse>(raw))
-        .then(
-          ctx.guarded<BackgroundStartResponse>(r => {
-            if (!r.task_id) {
-              return
-            }
+      ctx.gateway.rpc<BackgroundStartResponse>('prompt.btw', { session_id: ctx.sid, text: arg }).then(
+        ctx.guarded<BackgroundStartResponse>(r => {
+          if (!r.task_id) {
+            return
+          }
 
-            ctx.transcript.sys(t('slashCmd.session.btw.answering', r.task_id))
-          })
-        )
-        .catch(ctx.guardedErr)
+          ctx.transcript.sys(t('slashCmd.session.btw.answering', r.task_id))
+        })
+      )
     }
   },
 
@@ -312,21 +299,11 @@ export const sessionCommands: SlashCommand[] = [
         return runCanonicalSessionControl('compress', arg, ctx)
       }
 
-      // Same indicator as the canonical control: the legacy RPC also answers only
-      // after its summarization, and `manualCompacting` survives a turn ending
-      // mid-compress where `compacting` would be cleared by turn idle.
-      patchUiState({ manualCompacting: true })
       ctx.gateway
-        .rpc<SessionCompressResponse>(
-          'session.compress',
-          {
-            session_id: ctx.sid,
-            ...(arg ? { focus_topic: arg } : {})
-          },
-          // The summarization legitimately outlasts the default 120s deadline;
-          // a false timeout here hid a compression that went on to succeed.
-          { timeoutMs: SESSION_COMPRESS_TIMEOUT_MS }
-        )
+        .rpc<SessionCompressResponse>('session.compress', {
+          session_id: ctx.sid,
+          ...(arg ? { focus_topic: arg } : {})
+        })
         .then(
           ctx.guarded<SessionCompressResponse>(r => {
             const current = getUiState()
@@ -383,7 +360,6 @@ export const sessionCommands: SlashCommand[] = [
           })
         )
         .catch(ctx.guardedErr)
-        .finally(() => patchUiState({ manualCompacting: false }))
     }
   },
 
