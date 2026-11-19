@@ -17,20 +17,15 @@ test('sibling routes survive every rebuilt control and compression follow-up', a
   )
 
   const requests: Array<[string, Record<string, unknown>]> = [
-    ['session.title', { title: 'title' }],
-    ['session.archive', { archived: true }],
-    ['session.branch', {}],
-    ['session.branch_stored', { parent_session_id: 's' }],
-    ['session.compress', {}],
-    ['slash.exec', { command: 'model new-model' }],
+    ['session.title', { title: 'title' }], ['session.archive', { archived: true }],
+    ['session.branch', {}], ['session.branch_stored', { parent_session_id: 's' }],
+    ['session.compress', {}], ['slash.exec', { command: 'model new-model' }],
     ['approval.respond', { request_id: 'p', choice: 'once' }],
     ['prompt.resolve_unknown', { admission_id: 'lost' }]
   ]
 
   for (const [method, params] of requests) {
-    expect(protocol.prepare(method, { session_id: 's', profile: 'sibling', ...params })).toMatchObject({
-      profile: 'sibling'
-    })
+    expect(protocol.prepare(method, { session_id: 's', profile: 'sibling', ...params })).toMatchObject({ profile: 'sibling' })
   }
 
   const calls: unknown[] = []
@@ -56,10 +51,7 @@ test('slash compress refreshes its transcript on the owner route and previews st
   }
 
   const result = protocol.result('slash.exec', prepared, { session_id: 's', revision: 2, message_count: 1 })
-  expect(await protocol.settle('slash.exec', prepared, result, followUp)).toMatchObject({
-    type: 'exec',
-    messages: [{ content: 'retained' }]
-  })
+  expect(await protocol.settle('slash.exec', prepared, result, followUp)).toMatchObject({ type: 'exec', messages: [{ content: 'retained' }] })
   expect(calls).toEqual([['session.resume', { session_id: 's', profile: 'sibling' }]])
   const preview = protocol.result('slash.exec', prepared, { session_id: 's', status: 'preview', lines: ['report'] })
   await protocol.settle('slash.exec', prepared, preview, followUp)
@@ -88,13 +80,7 @@ test('metadata writes retain the original CAS revision and request identity unti
   const protocol = new CanonicalDesktopProtocol()
   protocol.result('session.resume', { session_id: 's' }, { session_id: 's', revision: 7 })
   const first = protocol.prepare('session.title', { session_id: 's', title: 'new title' })
-  expect(first).toEqual({
-    session_id: 's',
-    request_id: expect.any(String),
-    expected_revision: 7,
-    operation: 'rename',
-    payload: { title: 'new title' }
-  })
+  expect(first).toEqual({ session_id: 's', request_id: expect.any(String), expected_revision: 7, operation: 'rename', payload: { title: 'new title' } })
   protocol.result('session.resume', { session_id: 's' }, { session_id: 's', revision: 8 })
   expect(protocol.prepare('session.title', { session_id: 's', title: 'new title' })).toEqual(first)
   protocol.failure(first, { data: { reason: 'revision_conflict' } })
@@ -102,11 +88,7 @@ test('metadata writes retain the original CAS revision and request identity unti
   expect(retry.expected_revision).toBe(8)
   expect(retry.request_id).not.toBe(first.request_id)
   protocol.result('session.title', first, { session_id: 's', revision: 8, title: 'new title' })
-  expect(protocol.prepare('session.archive', { session_id: 's', archived: true })).toMatchObject({
-    expected_revision: 8,
-    operation: 'archive',
-    payload: { archived: true }
-  })
+  expect(protocol.prepare('session.archive', { session_id: 's', archived: true })).toMatchObject({ expected_revision: 8, operation: 'archive', payload: { archived: true } })
 })
 
 test('canonical create retries retain identity', () => {
@@ -157,16 +139,8 @@ test('canonical receipts preserve admission identity and replay restores fenced 
     }
   )
   expect(resumed.pending_approval).toMatchObject({ request_id: 'p', execution_generation: 3 })
-  expect(protocol.prepare('approval.respond', { session_id: 's', request_id: 'p', choice: 'once' })).toEqual({
-    session_id: 's',
-    execution_generation: 3,
-    prompt_id: 'p',
-    choice: 'once'
-  })
-  expect(protocol.prepare('session.interrupt', { session_id: 's' })).toEqual({
-    session_id: 's',
-    execution_generation: 3
-  })
+  expect(protocol.prepare('approval.respond', { session_id: 's', request_id: 'p', choice: 'once' })).toEqual({ session_id: 's', execution_generation: 3, prompt_id: 'p', choice: 'once' })
+  expect(protocol.prepare('session.interrupt', { session_id: 's' })).toEqual({ session_id: 's', execution_generation: 3 })
   protocol.event({ type: 'message.start', session_id: 's', payload: { execution_generation: 4 } })
   expect(() => protocol.prepare('approval.respond', { session_id: 's', request_id: 'p', choice: 'once' })).toThrow(
     'stale'
@@ -191,27 +165,10 @@ test('a stored-parent branch travels as the canonical branch mutation on the par
   // policy), so every resume on it answers not_found and the first submit never leaves.
   const protocol = new CanonicalDesktopProtocol()
   protocol.result('session.resume', { session_id: 'p' }, { session_id: 'p', revision: 3, execution_generation: 1 })
-  const prepared = protocol.prepare('session.branch_stored', {
-    cols: 96,
-    source: 'desktop',
-    parent_session_id: 'p',
-    profile: 'default'
-  })
+  const prepared = protocol.prepare('session.branch_stored', { cols: 96, source: 'desktop', parent_session_id: 'p', profile: 'default' })
   expect(protocol.wire('session.branch_stored', prepared)).toBe('session.mutate')
-  expect(prepared).toMatchObject({
-    session_id: 'p',
-    operation: 'branch',
-    payload: {},
-    expected_revision: 3,
-    expected_generation: 1
-  })
-  const child = protocol.result('session.branch_stored', prepared, {
-    session_id: 'p',
-    revision: 4,
-    operation: 'branch',
-    branched_session_id: 'c',
-    copied_messages: 4
-  })
+  expect(prepared).toMatchObject({ session_id: 'p', operation: 'branch', payload: {}, expected_revision: 3, expected_generation: 1 })
+  const child = protocol.result('session.branch_stored', prepared, { session_id: 'p', revision: 4, operation: 'branch', branched_session_id: 'c', copied_messages: 4 })
   expect(child).toMatchObject({ session_id: 'c', stored_session_id: 'c', parent_session_id: 'p', message_count: 4 })
 })
 
@@ -220,22 +177,9 @@ test('composer branch and model switch become canonical prepared mutations with 
   protocol.result('session.resume', { session_id: 's' }, { session_id: 's', revision: 4, execution_generation: 9 })
   const branch = protocol.prepare('session.branch', { session_id: 's' })
   expect(protocol.wire('session.branch')).toBe('session.mutate')
-  expect(branch).toEqual({
-    session_id: 's',
-    request_id: expect.any(String),
-    expected_revision: 4,
-    expected_generation: 9,
-    operation: 'branch',
-    payload: {}
-  })
+  expect(branch).toEqual({ session_id: 's', request_id: expect.any(String), expected_revision: 4, expected_generation: 9, operation: 'branch', payload: {} })
   expect(protocol.prepare('session.branch', { session_id: 's' })).toEqual(branch)
-  const branched = protocol.result('session.branch', branch, {
-    session_id: 's',
-    revision: 5,
-    operation: 'branch',
-    branched_session_id: 'child',
-    copied_messages: 6
-  })
+  const branched = protocol.result('session.branch', branch, { session_id: 's', revision: 5, operation: 'branch', branched_session_id: 'child', copied_messages: 6 })
   expect(branched).toMatchObject({ session_id: 'child', stored_session_id: 'child', parent_session_id: 's' })
   expect(protocol.prepare('session.branch', { session_id: 's' }).request_id).not.toBe(branch.request_id)
 
@@ -262,18 +206,9 @@ test('composer branch and model switch become canonical prepared mutations with 
 })
 
 test('/model with --provider becomes the same canonical model mutation the CLI and ACP send', () => {
-  expect(slashMutation('/model gpt-5 --provider openai')).toEqual({
-    operation: 'model',
-    payload: { model: 'gpt-5', provider: 'openai' }
-  })
-  expect(slashMutation('/model gpt-5 --provider openai --session')).toEqual({
-    operation: 'model',
-    payload: { model: 'gpt-5', provider: 'openai' }
-  })
-  expect(slashMutation('/model gpt-5 --session --provider openai')).toEqual({
-    operation: 'model',
-    payload: { model: 'gpt-5', provider: 'openai' }
-  })
+  expect(slashMutation('/model gpt-5 --provider openai')).toEqual({ operation: 'model', payload: { model: 'gpt-5', provider: 'openai' } })
+  expect(slashMutation('/model gpt-5 --provider openai --session')).toEqual({ operation: 'model', payload: { model: 'gpt-5', provider: 'openai' } })
+  expect(slashMutation('/model gpt-5 --session --provider openai')).toEqual({ operation: 'model', payload: { model: 'gpt-5', provider: 'openai' } })
   expect(slashMutation('/model gpt-5 --session')).toEqual({ operation: 'model', payload: { model: 'gpt-5' } })
   expect(slashMutation('/model --session gpt-5')).toEqual({ operation: 'model', payload: { model: 'gpt-5' } })
   expect(slashMutation('/model gpt-5 --provider --session openai')).toBeNull()
@@ -284,15 +219,8 @@ test('/model with --provider becomes the same canonical model mutation the CLI a
 test('a session.info fanout after a turn refreshes the CAS revision the next mutation presents', () => {
   const protocol = new CanonicalDesktopProtocol()
   protocol.result('session.resume', { session_id: 's' }, { session_id: 's', revision: 2, execution_generation: 1 })
-  protocol.event({
-    type: 'session.info',
-    session_id: 's',
-    payload: { pending: [], running: false, execution_generation: 2, revision: 5 }
-  })
-  expect(protocol.prepare('session.branch', { session_id: 's' })).toMatchObject({
-    expected_revision: 5,
-    expected_generation: 2
-  })
+  protocol.event({ type: 'session.info', session_id: 's', payload: { pending: [], running: false, execution_generation: 2, revision: 5 } })
+  expect(protocol.prepare('session.branch', { session_id: 's' })).toMatchObject({ expected_revision: 5, expected_generation: 2 })
 })
 
 test("acknowledging a turn lost across a restart presents the unknown row's own generation", () => {
@@ -330,14 +258,7 @@ test("acknowledging a turn lost across a restart presents the unknown row's own 
   )
 
   expect(receipt).toMatchObject({ admission_id: 'lost', session_id: 's', status: 'terminal' })
-  protocol.event({
-    type: 'session.info',
-    session_id: 's',
-    payload: {
-      pending: [{ admission_id: 'next', status: 'started', execution_generation: 10, text: 'NEXT' }],
-      execution_generation: 10
-    }
-  })
+  protocol.event({ type: 'session.info', session_id: 's', payload: { pending: [{ admission_id: 'next', status: 'started', execution_generation: 10, text: 'NEXT' }], execution_generation: 10 } })
   expect(() => protocol.prepare('prompt.resolve_unknown', { session_id: 's', admission_id: 'lost' })).toThrow('unknown')
 })
 
@@ -346,14 +267,7 @@ test('the dedicated compress action becomes a fenced canonical mutation and sett
   protocol.result('session.resume', { session_id: 's' }, { session_id: 's', revision: 4, execution_generation: 9 })
 
   const prepared = protocol.prepare('session.compress', { session_id: 's', focus_topic: 'billing' })
-  expect(prepared).toEqual({
-    session_id: 's',
-    request_id: expect.any(String),
-    expected_revision: 4,
-    expected_generation: 9,
-    operation: 'compress',
-    payload: { focus: 'billing' }
-  })
+  expect(prepared).toEqual({ session_id: 's', request_id: expect.any(String), expected_revision: 4, expected_generation: 9, operation: 'compress', payload: { focus: 'billing' } })
   expect(protocol.prepare('session.compress', { session_id: 's' }).payload).toEqual({})
   expect(protocol.wire('session.compress', prepared)).toBe('session.mutate')
   expect(() =>
@@ -366,16 +280,9 @@ test('the dedicated compress action becomes a fenced canonical mutation and sett
   const fakeRequest = async (method: string, params: Record<string, unknown>) => {
     calls.push([method, params])
 
-    return resumed
-  }
+ return resumed }
 
-  const receipt = protocol.result('session.compress', prepared, {
-    session_id: 's',
-    revision: 5,
-    operation: 'compress',
-    target_session_id: 's',
-    message_count: 3
-  })
+  const receipt = protocol.result('session.compress', prepared, { session_id: 's', revision: 5, operation: 'compress', target_session_id: 's', message_count: 3 })
   const settled = await protocol.settle('session.compress', prepared, receipt, fakeRequest)
 
   expect(settled.messages).toEqual(resumed.messages)
@@ -437,12 +344,7 @@ test('the composer model picker travels as the canonical model mutation, not an 
 test('a message-level branch carries its durable boundary row; a whole-chat branch copies everything', () => {
   const protocol = new CanonicalDesktopProtocol()
   protocol.result('session.resume', { session_id: 's' }, { session_id: 's', revision: 3, execution_generation: 1 })
-  const selected = protocol.prepare('session.branch', {
-    session_id: 's',
-    idempotency_key: 'k',
-    count: 2,
-    through_message_id: 41
-  })
+  const selected = protocol.prepare('session.branch', { session_id: 's', idempotency_key: 'k', count: 2, through_message_id: 41 })
   expect(protocol.wire('session.branch', selected)).toBe('session.mutate')
   expect(selected).toMatchObject({ operation: 'branch', payload: { through_message_id: 41 } })
   // A lost-response retry presents the identical mutation (the boundary is part of its identity).

@@ -8,7 +8,7 @@ type KeybindApi = {
   keybindRunner?: (ctx: unknown, onSettled: () => void) => (key: unknown, ch: string) => boolean
   setConfiguredKeybinds?: (value: unknown) => void
   typedDirectives?: (
-    gw: { request: (...args: unknown[]) => Promise<unknown> },
+    gw: { request: (method: string, params?: Record<string, unknown>) => Promise<unknown> },
     setInput: (text: string) => void,
     say: (text: string) => void,
     sid: string,
@@ -29,7 +29,7 @@ export const keybindRunner =
     live().keybindRunner?.(ctx, onSettled)?.(key, ch) ?? false
 
 export const typedDirectives = (
-  gw: { request: (...args: unknown[]) => Promise<unknown> },
+  gw: { request: (method: string, params?: Record<string, unknown>) => Promise<unknown> },
   setInput: (text: string) => void,
   say: (text: string) => void,
   sid: string,

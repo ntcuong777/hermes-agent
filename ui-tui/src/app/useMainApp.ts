@@ -224,7 +224,6 @@ export async function startPromptLiveSession({
   if (requestedModel) {
     const applyModel = async (confirm?: string) => {
       const mutation = await mutateCanonicalSession({ request: rpc }, sid, 'model', requestedModel, undefined, confirm)
-
       const refusal = mutation?.result
 
       if (!confirm && refusal?.status === 'confirmation_required' && typeof refusal.confirm === 'string') {

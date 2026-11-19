@@ -1167,7 +1167,6 @@ def _apply_agent_section(agent, _agent_cfg):
         agent.run_budget_seconds = _normalize_run_budget_seconds(
             _agent_section.get("run_budget_seconds")
         )
-
     # Empty-response guard: a malformed section falls back to schema defaults (on, $0.25).
     from agent.empty_response_guard import resolve_guard_settings
     (

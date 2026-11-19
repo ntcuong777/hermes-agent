@@ -665,7 +665,6 @@ test('a /api/profiles/<name>/… path already names its profile: no ambient scop
   }
 
   assert.equal(pathWithProfileScope('/api/profiles/p2/soul', 'default'), '/api/profiles/p2/soul')
-
   // Method-aware: PATCH/DELETE of a profile NAMED active/import/sessions names that profile.
   for (const [path, method] of [['/api/profiles/active', 'PATCH'], ['/api/profiles/import', 'DELETE'],
     ['/api/profiles/sessions', 'DELETE']]) {

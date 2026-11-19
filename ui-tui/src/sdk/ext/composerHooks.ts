@@ -26,7 +26,8 @@ type ComposerEditorPayload = {
   saved?: string
   text?: string
   tokens?: ReadonlyArray<ComposerTokenLike>
-  trimTokens?: (tokens: ComposerTokenLike[]) => ComposerTokenLike[]
+  // `never[]` so the host's own `ComposerToken` trimmer is assignable; the extension only hands back tokens it was given.
+  trimTokens?: (tokens: never[]) => ComposerTokenLike[]
 }
 
 type ComposerEditorFn = (payload: ComposerEditorPayload) => ComposerEditorPlan | null | undefined
