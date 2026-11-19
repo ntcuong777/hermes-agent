@@ -1271,10 +1271,8 @@ DEFAULT_CONFIG = {
         "write_approval": False,
         "memory_char_limit": 2200,   # ~800 tokens at 2.75 chars/token
         "user_char_limit": 1375,     # ~500 tokens at 2.75 chars/token
-        # Prompt-snapshot bounds, independent of the store caps above: set them BELOW the store
-        # caps and the file may grow past what the system prompt carries (whole entries until the
-        # cap, then one line naming how many more the store holds; recall surfaces the rest per
-        # turn). None/absent = the store cap: the whole store renders, the historical behaviour.
+        # Prompt-snapshot bounds. The config-seams plugin reads these and truncates the
+        # system-prompt block. None/absent = the whole store renders.
         "memory_snapshot_char_limit": None,
         "user_snapshot_char_limit": None,
         # Periodic built-in memory review; 0 when an external provider auto-extracts.

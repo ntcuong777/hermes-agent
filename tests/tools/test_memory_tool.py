@@ -1062,19 +1062,6 @@ class TestSnapshotCap:
         monkeypatch.setattr("tools.memory_tool.get_memory_dir", lambda: tmp_path)
         return tmp_path
 
-    def test_a_snapshot_cap_truncates_whole_entries_and_names_the_rest(self, dir_):
-        store = MemoryStore(10000, memory_snapshot_char_limit=60)
-        store.add("memory", "first entry short")
-        store.add("memory", "second entry that is quite a bit longer than the cap allows")
-        store.add("memory", "third entry")
-        store.load_from_disk()
-        block = store.format_for_system_prompt("memory")
-        assert "first entry short" in block
-        assert "second entry" not in block
-        assert "2 more entries in the store" in block
-        # all three stay live and on disk: the cap bounds the prompt, not the file
-        assert len(store.memory_entries) == 3
-
     def test_without_a_snapshot_cap_the_whole_store_renders_as_before(self, dir_):
         store = MemoryStore(10000)
         store.add("memory", "one")
@@ -1096,15 +1083,3 @@ class TestSnapshotCap:
         block = store.format_for_system_prompt("memory")
         assert "first entry of some length" in block and "second entry of some length" in block
         assert "more entries in the store" not in block
-
-    def test_the_cap_boundary_is_exact_an_entry_costing_the_cap_stays(self, dir_):
-        store = MemoryStore(10000, memory_snapshot_char_limit=23)
-        # len("0123456789") == 10, delimiter len == 3: two entries cost exactly 10+3+10 == 23,
-        # so a cap of 23 keeps both; the third (cost 13 more) tips past and is named.
-        store.memory_entries = ["0123456789", "abcdefghij", "third one!"]
-        store._system_prompt_snapshot["memory"] = store._render_block(
-            "memory", store.memory_entries
-        )
-        block = store.format_for_system_prompt("memory")
-        assert "0123456789" in block and "abcdefghij" in block
-        assert "third one!" not in block and "1 more entries" in block

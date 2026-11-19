@@ -186,17 +186,10 @@ class MemoryStore:
     _MAX_CONSOLIDATION_FAILURES_PER_TURN = 3
 
     def __init__(self, memory_char_limit: int = 2200, user_char_limit: int = 1375, *,
-                 memory_enabled: bool = True, user_profile_enabled: bool = True,
-                 memory_snapshot_char_limit: "int | None" = None,
-                 user_snapshot_char_limit: "int | None" = None):
+                 memory_enabled: bool = True, user_profile_enabled: bool = True):
         self.memory_entries: list[str] = []
         self.user_entries: list[str] = []
         self.memory_char_limit, self.user_char_limit = memory_char_limit, user_char_limit
-        # Snapshot caps bound the system-prompt block only; None = the store cap (the whole store
-        # renders, the historical behaviour). Set below the store cap so the FILE can grow while the
-        # prompt stays cheap — a recall provider (memory plugin) surfaces the rest per turn.
-        self.memory_snapshot_char_limit = memory_snapshot_char_limit
-        self.user_snapshot_char_limit = user_snapshot_char_limit
         self.memory_enabled, self.user_profile_enabled = memory_enabled, user_profile_enabled
         self._system_prompt_snapshot: dict[str, str] = {"memory": "", "user": ""}
         self._consolidation_failures = 0  # per turn; reset by reset_consolidation_failures()
@@ -680,38 +673,12 @@ class MemoryStore:
                 "note": "Write saved. This update is complete — do not repeat it."}
 
     def _render_block(self, target: str, entries: list[str]) -> str:
-        """System prompt block: header + usage indicator + entries ("" when empty).
-
-        Whole entries until the snapshot cap, then one line naming how many more the store holds;
-        the usage indicator keeps counting the whole store, so the room figure stays honest. The
-        cap is approximate by design: a single entry larger than the whole cap still renders
-        (whole entry or none), and the header and hidden-count line are not counted. With no
-        snapshot limit configured the block is NOT truncated, even for a store over its file cap
-        (the legacy behaviour — external over-writes were allowed to ride in the prompt)."""
+        """System prompt block: header + usage indicator + entries ("" when empty)."""
         if not entries:
             return ""
-        full = ENTRY_DELIMITER.join(entries)
-        sep = "═" * 46
+        content, sep = ENTRY_DELIMITER.join(entries), "═" * 46
         title = MEMORY_BLOCK_HEADERS["user" if target == "user" else "memory"]
-        limit = self.user_snapshot_char_limit if target == "user" else self.memory_snapshot_char_limit
-        shown, used = entries, len(full)
-        if limit is not None:
-            kept, used = [], 0
-            for entry in entries:
-                cost = len(entry) + (len(ENTRY_DELIMITER) if kept else 0)
-                if kept and used + cost > limit:
-                    break
-                kept.append(entry)
-                used += cost
-            shown = kept
-        content = ENTRY_DELIMITER.join(shown)
-        hidden = len(entries) - len(shown)
-        if hidden:
-            content += (
-                f"{ENTRY_DELIMITER}… ({hidden} more entries in the store; a recall provider "
-                "surfaces them when a turn matches)"
-            )
-        return f"{sep}\n{title} [{self._usage_pct(target, len(full))}]\n{sep}\n{content}"
+        return f"{sep}\n{title} [{self._usage_pct(target, len(content))}]\n{sep}\n{content}"
 
     @staticmethod
     def _read_raw_checked(path: Path) -> tuple[str, bool]:
