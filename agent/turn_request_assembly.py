@@ -177,9 +177,9 @@ def assemble_api_request(
     # Plugin egress backstop (transform_request_messages): applied at the same seam as the
     # context-engine selection so rewrites reach the provider payload while the persisted
     # transcript stays untouched. Gated on has_hook — byte-identical when no plugin registers.
-    from agent.conversation_loop import _apply_transform_request_messages_plugins
+    from agent.fork_request_messages import apply_transform_request_messages
 
-    api_messages = _apply_transform_request_messages_plugins(
+    api_messages = apply_transform_request_messages(
         agent, api_messages, logger=request_logger
     )
 

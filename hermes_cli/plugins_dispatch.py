@@ -335,49 +335,9 @@ class PluginDispatchMixin:
         self, hook_name: str, chain_key: str, *, accept: Optional[Callable[[Any], bool]] = None,
         **kwargs: Any,
     ) -> Any:
-        """Invoke a REWRITE hook with each callback's output feeding the next.
-
-        ``invoke_hook`` collects independent results and the caller then picks one,
-        which is right for observers and verdicts but wrong for a rewrite: every
-        callback sees the *original* value, so a later plugin can never build on an
-        earlier one's rewrite and the caller can only honour a single winner. Two
-        registrants that both rewrite therefore silently cancel each other — which is
-        exactly how the persona rewrite suppressed the redactor's egress backstop.
-
-        Here each callback receives ``kwargs[chain_key]`` set to the running value and
-        its return value becomes the running value when *accept* allows it (a rejected
-        or ``None`` return leaves the chain unchanged). A raising callback is reported
-        and skipped, keeping the fail-open contract of the rewrite hooks. Returns the
-        final value; ``None`` when the hook has no callbacks at all.
-        """
-        callbacks = self._hooks.get(hook_name)
-        if not callbacks:
-            return None
-        from hermes_cli.plugins import _resolve_hook_callback_timeout
-        timeout = _resolve_hook_callback_timeout()
-        bounded = hook_name in _HOOK_CHAINED_BOUNDED_HOOKS and _hook_uses_callback_timeout(hook_name, timeout)
-        current = kwargs.get(chain_key)
-        for cb in callbacks:
-            payload = dict(kwargs)
-            payload[chain_key] = current
-            try:
-                if bounded:  # a listed hook: a hung callback is abandoned and skipped, the chain goes on
-                    ret = self._run_hook_callback_bounded(hook_name, cb, payload, timeout)
-                    if ret is _HOOK_SKIPPED:
-                        continue
-                else:
-                    ret = self._invoke_hook_callback(cb, payload)
-            except (Exception, SystemExit) as exc:
-                # _report_hook_failure owns the deduplicated WARNING (#111922); the traceback
-                # belongs at DEBUG so every failure is diagnosable without re-spamming.
-                logger.debug("hook '%s' callback chain failure", hook_name, exc_info=exc)
-                self._report_hook_failure(hook_name, cb, payload, exc)
-                continue
-            if ret is None:
-                continue
-            if accept is None or accept(ret):
-                current = ret
-        return current
+        """Seam. The chain lives in ``hermes_cli.fork_hooks``."""
+        from hermes_cli.fork_hooks import invoke_hook_chained
+        return invoke_hook_chained(self, hook_name, chain_key, accept=accept, **kwargs)
 
     def _report_hook_failure(
         self, hook_name: str, cb: Callable, kwargs: dict[str, Any], exc: BaseException, *, surface: str = "Hook"

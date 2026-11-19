@@ -1301,39 +1301,16 @@ class HermesCLI(CLIBacktrackMixin, CLIInitMixin, CLITuiRuntimeMixin, CLIProcessN
             self._pending_input.put(msg)
 
     def _split_trailing_command_lines(self, instruction: str) -> tuple[str, list[str]]:
-        """Peel whole-line bare ``/command`` lines off the tail of a skill/bundle instruction so they
-        dispatch as commands instead of riding along as instruction text. Only an exact bare line
-        peels (``/exit`` alone yes; ``see /help there`` and ``/usr/local`` stay prose) and an unknown
-        token stays instruction. Returns ``(remaining_instruction, commands_in_order)``."""
-        lines = (instruction or "").splitlines()
-        cut = len(lines)
-        while cut and self._is_dispatchable_command_line(lines[cut - 1].strip()):
-            cut -= 1
-        return "\n".join(lines[:cut]).strip(), [line.strip() for line in lines[cut:]]
+        from hermes_cli.cli_trailing_commands import split_trailing_command_lines
+        return split_trailing_command_lines(self, instruction)
 
     def _is_dispatchable_command_line(self, line: str) -> bool:
-        """True for a bare ``/token`` line this CLI can dispatch: a built-in, skill, bundle, quick
-        or locally-registered plugin command. The gateway's plugin catalog is not probed — the
-        line must resolve without I/O."""
-        if not _looks_like_slash_command(line) or any(ch.isspace() for ch in line):
-            return False
-        token = line[1:].lower()
-        if self._slash_handler(token):
-            return True
-        if f"/{token}" in _session_skill_commands(self) or f"/{token}" in get_skill_bundles():
-            return True
-        return token in self.config.get("quick_commands", {}) or token in _get_plugin_cmd_handler_names()
+        from hermes_cli.cli_trailing_commands import is_dispatchable_command_line
+        return is_dispatchable_command_line(self, line)
 
     def _dispatch_trailing_commands(self, commands: list[str]) -> None:
-        """Run commands peeled by ``_split_trailing_command_lines``; a False return (``/exit``)
-        ends the REPL like the Enter path does (``_tui_run_slash_input``)."""
-        for command in commands:
-            if not self.process_command(command):
-                self._should_exit = True
-                app = getattr(self, "_app", None)
-                if app is not None and app.is_running:
-                    app.exit()
-                break
+        from hermes_cli.cli_trailing_commands import dispatch_trailing_commands
+        dispatch_trailing_commands(self, commands)
 
     def _run_skill_bundle_command(self, base_cmd: str, bundle_info: dict, user_instruction: str) -> None:
         """``/<bundle>`` loads several skills at once (bundles win over same-named skills)."""
