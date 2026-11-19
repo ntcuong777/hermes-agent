@@ -89,7 +89,7 @@ REVERTED_FILES_UPSTREAM_BLOBS = (
     ("cron/scheduler_script.py", "82ca6447ae718fc96ec47b4e867906f070577a21"),
     ("agent/display.py", "0a129b056c2da0bc42a189dad1ce4e5e2505a3ce"),
     ("agent/tool_dispatch_helpers.py", "9d774b4e0ddc2c757a7217190ad8771fc4f7b199"),
-    ("agent/agent_runtime_helpers.py", "9da502a2dc9c250cb38d47db0e5de688895c6beb"),
+    ("agent/agent_runtime_helpers.py", "77fbc235e11ac3e190e55b8d460522000250545a"),
 )
 
 
