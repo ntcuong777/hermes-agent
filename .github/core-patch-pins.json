@@ -40,6 +40,16 @@
       "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
       "upstream_release": "0.22.5"
     },
+    "config-seams/pricing-config": {
+      "ast_sha": "6620b9d409f10a36be3faeeecd6772e7172635ad8ddcef712353e04b056d49e5",
+      "kind": "wrap",
+      "plugin": "config-seams",
+      "reason": "A pricing block in config.yaml is read before the bundled price table, so a new model or a changed rate needs no core edit",
+      "target": "agent.usage_pricing:get_pricing_entry",
+      "target_file": "agent/usage_pricing.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
     "core-fixes/checkpoint-stale-lock": {
       "ast_sha": "36df092499e414dc1b775e0b55b8e6f922ffae427e69bac085c6711cef00a887",
       "kind": "wrap",
