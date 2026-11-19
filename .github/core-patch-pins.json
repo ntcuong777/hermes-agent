@@ -60,6 +60,16 @@
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.23.2"
     },
+    "config-seams/skew-mode": {
+      "ast_sha": "a0227fec763d6875dd710884b69f5e29c70e8114107b15636059cdc291d8c4d8",
+      "kind": "replace",
+      "plugin": "config-seams",
+      "reason": "A model switch honors gateway.model_switch_skew_guard: refuse, warn, or off",
+      "target": "gateway.code_skew:model_switch_skew",
+      "target_file": "gateway/code_skew.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
     "core-fixes/checkpoint-stale-lock": {
       "ast_sha": "36df092499e414dc1b775e0b55b8e6f922ffae427e69bac085c6711cef00a887",
       "kind": "wrap",
