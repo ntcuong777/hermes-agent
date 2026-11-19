@@ -1897,54 +1897,6 @@ def _merge_selection_updates(model_cfg: Any, updates: dict[str, Any], *, mask_cl
     return model_cfg
 
 
-def gateway_model_config_updates(result: ModelSwitchResult, reasoning_effort: str = "") -> dict[str, Any]:
-    """Keys a messaging ``/model --global`` writes under ``gateway.model``. The CLI default stays put.
-    ``reasoning_effort`` is written only when the switch carried one."""
-    updates: dict[str, Any] = {"default": result.new_model, "provider": result.target_provider}
-    if reasoning_effort:
-        updates["reasoning_effort"] = reasoning_effort
-    return updates
-
-
-def _host_file_target(config_path):
-    """Resolved host file beside ``config_path``, if one exists. A symlink is followed so the
-    write lands on the linked file rather than replacing the link."""
-    host = config_path.parent / "host.yaml"
-    if not host.exists():
-        return None
-    return host.resolve() if host.is_symlink() else host
-
-
-def _set_dotted(doc: dict, dotted: str, value: Any) -> None:
-    """Set one dotted key in *doc*, creating its parent mappings; ``None`` removes the key."""
-    *parents, leaf = dotted.split(".")
-    node = doc
-    for key in parents:
-        if not isinstance(node.get(key), dict):
-            node[key] = {}
-        node = node[key]
-    if value is None:
-        node.pop(leaf, None)
-    else:
-        node[leaf] = value
-
-
-def _publish_route(target: Any, updates: list, *, config: bool) -> None:
-    """Apply every dotted update to ONE snapshot of *target* and publish it once: a failed write leaves
-    the previous route whole, never a half-written one. ``config`` picks the config.yaml writer; the
-    host file takes the plain round-trip primitive."""
-    from hermes_cli.config import _CONFIG_LOCK, atomic_config_replace, read_user_config_raw
-    from utils import atomic_roundtrip_yaml_save
-    with _CONFIG_LOCK:
-        doc = read_user_config_raw(target)
-        for dotted, value in updates:
-            _set_dotted(doc, dotted, value)
-        if config:
-            atomic_config_replace(target, doc)
-        else:
-            atomic_roundtrip_yaml_save(target, doc)
-
-
 def remote_model_selection_guard(before: Any, after: Any) -> None:
     """Remote Config: refuse a whole-document model assignment when any ``model.*`` key it
     changes is locked by an upper level. A bulk save omits a locked key instead of raising, which
@@ -1968,87 +1920,77 @@ def remote_model_selection_guard(before: Any, after: Any) -> None:
 _MISSING = object()
 
 
+def persist_routed_selection(
+    result: ModelSwitchResult, path: Any, *, surface: str = "cli", reasoning_effort: str = "",
+) -> bool:
+    """Seam for a route that is not ``model.*``. Core writes nothing and returns False.
+
+    config-seams replaces this: ``surface='gateway'`` writes ``gateway.model``, and a host
+    file beside the config receives a CLI switch. Callers may pass ``surface`` and
+    ``reasoning_effort`` either way, so a missing plugin does not raise.
+    """
+    return False
+
+
 def persist_model_selection(
     result: ModelSwitchResult, config_path: Any = None, *, surface: str = "cli", reasoning_effort: str = "",
 ) -> None:
     """Write a successful :func:`switch_model` result to ``config_path`` (default:
-    ``HERMES_HOME/config.yaml`` — the context override or ``HERMES_HOME`` at call time).
+    ``HERMES_HOME/config.yaml``, the context override or ``HERMES_HOME`` at call time).
 
     Build the complete selection from one raw snapshot, preserving sibling settings and secret
     references, then publish once. Per-key publication can leave a mixed route after a failed
-    write or an overlapping selection. ``should_clear_context_pin`` can do cold-start disk I/O
-    — async callers run this on a worker thread.
+    write or an overlapping selection. ``should_clear_context_pin`` can do cold-start disk I/O.
+    Async callers run this on a worker thread.
 
     The replace deletes keys missing from the snapshot, so every route decision (and its disk
-    I/O) is made from a pre-read BEFORE the snapshot; read -> merge -> replace is then a pure
+    I/O) is made from a pre-read BEFORE the snapshot; read, merge, replace is then a pure
     in-memory section. Only when another writer changed ``model:`` in between are the updates
     recomputed against the fresh block. ``_CONFIG_LOCK`` is in-process only: a cross-process
     config lock, once one exists, must wrap the same section.
 
-    ``surface='gateway'`` writes ``gateway.model`` and leaves ``model.*`` alone. ``surface='cli'``
-    writes ``model.*``, or the host file beside the config when that file exists.
+    ``surface`` and ``reasoning_effort`` are accepted and ignored here. :func:`persist_routed_selection`
+    handles a gateway or host-file route when that patch is active.
     """
     from pathlib import Path
     from hermes_cli.config import _CONFIG_LOCK, atomic_config_replace, get_config_path, read_user_config_raw
     from hermes_cli.config_backend import supports_file_tooling, write_config_keys
     path = Path(config_path) if config_path else get_config_path()
+    if persist_routed_selection(result, path, surface=surface, reasoning_effort=reasoning_effort):
+        return
+    planned_from = read_user_config_raw(path).get("model")
+    updates = model_selection_config_updates(result, planned_from)
     if not supports_file_tooling():
         # No config file (Remote Config): one keyed write, so a lock on any key refuses the whole
         # switch instead of a document save silently omitting the locked part. The planned-from
         # block is the EFFECTIVE one, so a key it holds may come from an upper level, where a
-        # profile-level unset cannot reach it (contract §5.4): an inherited old-endpoint api_key
+        # profile-level unset cannot reach it (contract 5.4): an inherited old-endpoint api_key
         # would stay active at the new endpoint. A key the switch clears and the effective block
         # still holds is therefore masked with null ("no value"); an absent one is just unset.
         from hermes_cli.config_backend import Changes, write_changes
-        if surface == "gateway":
-            # Same no-file-tools rule, ours' surface: a messaging switch still writes
-            # ``gateway.model.*``, keyed like the cli surface's write above it.
-            write_changes(path, Changes(
-                set={f"gateway.model.{k}": v for k, v in gateway_model_config_updates(result, reasoning_effort).items()},
-                unset=()))
-            return
-        planned_from = read_user_config_raw(path).get("model")
-        updates = model_selection_config_updates(result, planned_from)
         held = planned_from if isinstance(planned_from, dict) else {}
         masked = _merge_selection_updates(held, updates, mask_cleared=True)
         write_changes(path, Changes(
             set={f"model.{k}": masked[k] for k in updates if k in masked},
             unset=tuple(f"model.{k}" for k in updates if k not in masked)))
         return
-    host_target = _host_file_target(path) if surface != "gateway" else None
-    target = path
-    if surface == "gateway":
-        updates = [
-            (f"gateway.model.{key}", value)
-            for key, value in gateway_model_config_updates(result, reasoning_effort).items()
-        ]
-        _publish_route(path, updates, config=True)
-    elif host_target is not None:
-        updates = [("model.default", result.new_model), ("model.provider", result.target_provider)]
-        if reasoning_effort:
-            updates.append(("agent.reasoning_effort", reasoning_effort))
-        target = host_target
-        _publish_route(host_target, updates, config=False)
-    else:
-        planned_from = read_user_config_raw(path).get("model")
-        updates = model_selection_config_updates(result, planned_from)
-        with _CONFIG_LOCK:
-            config = read_user_config_raw(path)
-            model_cfg = config.get("model")
-            if model_cfg != planned_from:
-                updates = model_selection_config_updates(result, model_cfg)
-            merged = _merge_selection_updates(model_cfg, updates)
-            if isinstance(model_cfg, dict):
-                # A YAML anchor on ``model:`` reused elsewhere (``vision: *route``) loads as ONE shared
-                # dict; edit it in place so every alias carries the new route, as the shared node on
-                # disk will. A fresh copy left the alias stale and the round-trip merge wrote it back.
-                model_cfg.clear()
-                model_cfg.update(merged)
-            else:
-                config["model"] = merged
-            atomic_config_replace(path, config)
+    with _CONFIG_LOCK:
+        config = read_user_config_raw(path)
+        model_cfg = config.get("model")
+        if model_cfg != planned_from:
+            updates = model_selection_config_updates(result, model_cfg)
+        merged = _merge_selection_updates(model_cfg, updates)
+        if isinstance(model_cfg, dict):
+            # A YAML anchor on ``model:`` reused elsewhere (``vision: *route``) loads as ONE shared
+            # dict; edit it in place so every alias carries the new route, as the shared node on
+            # disk will. A fresh copy left the alias stale and the round-trip merge wrote it back.
+            model_cfg.clear()
+            model_cfg.update(merged)
+        else:
+            config["model"] = merged
+        atomic_config_replace(path, config)
     try:  # owner-only: config files contain API keys
-        os.chmod(target, 0o600)
+        os.chmod(path, 0o600)
     except (OSError, NotImplementedError):
         pass
 

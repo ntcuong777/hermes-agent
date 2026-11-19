@@ -424,7 +424,9 @@ async def test_compress_command_multiplexed_runs_under_profile_secret_scope(tmp_
 
 
 @pytest.mark.asyncio
-async def test_compress_command_sends_started_ack_before_compressing():
+async def test_compress_command_sends_started_ack_before_compressing(monkeypatch):
+    import cs_compress_ack
+    cs_compress_ack.install(monkeypatch)
     """Manual /compress answers only when the whole compress finishes — minutes on a big
     session — and with no intermediate line the surface shows nothing at all, which reads
     as Hermes not responding. The handler must send one ack line BEFORE the summariser

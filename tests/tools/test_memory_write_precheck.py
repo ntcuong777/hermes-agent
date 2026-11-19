@@ -18,6 +18,12 @@ from tools.memory_tool import MemoryStore, memory_tool
 from tools.skill_provenance import reset_current_write_origin, set_current_write_origin
 
 
+@pytest.fixture(autouse=True)
+def _budget_plugin(monkeypatch):
+    import cs_memory_budget
+    cs_memory_budget.install(monkeypatch)
+
+
 @pytest.fixture()
 def store(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
