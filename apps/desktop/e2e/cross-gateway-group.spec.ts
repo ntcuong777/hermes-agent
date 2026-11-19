@@ -23,14 +23,7 @@ import * as path from 'node:path'
 import { writeEnvFile, writeMockProviderConfig } from '../../../tests-js/scripts/mock-provider-config'
 import { startMockServer } from '../../../tests-js/scripts/mock-server'
 
-import {
-  buildAppEnv,
-  createSandbox,
-  launchDesktop,
-  type MockBackendFixture,
-  type Sandbox,
-  waitForAppReady
-} from './fixtures'
+import { buildAppEnv, createSandbox, launchDesktop, type MockBackendFixture, type Sandbox, waitForAppReady } from './fixtures'
 import { type ElectronApplication, expect, type Page, test } from './test'
 
 const DESKTOP_ROOT = path.resolve(import.meta.dirname, '..')
@@ -47,15 +40,8 @@ const LENT_PROFILE = 'coder'
 
 /** The model block every probe home uses: the Nous inference API (key from NOUS_API_KEY) or nothing (mock). */
 const MODEL = REAL_KEY
-  ? [
-      'model:',
-      `  default: ${REAL_MODEL}`,
-      '  provider: custom',
-      '  base_url: https://inference-api.nousresearch.com/v1',
-      '  key_env: NOUS_API_KEY',
-      '  context_length: 200000',
-      ''
-    ].join(NL)
+  ? ['model:', `  default: ${REAL_MODEL}`, '  provider: custom', '  base_url: https://inference-api.nousresearch.com/v1',
+    '  key_env: NOUS_API_KEY', '  context_length: 200000', ''].join(NL)
   : ''
 
 /** Point a probe home at the turn's model: its config, and an .env holding only what it needs. */
@@ -92,41 +78,23 @@ async function startRemoteGateway(root: string, mockUrl: string, config = MULTIP
   const url = `http://127.0.0.1:${port}`
   const python = process.env.CROSS_GATEWAY_PYTHON || path.join(REPO_ROOT, '.venv', 'bin', 'python')
 
-  const child: ChildProcess = spawn(
-    python,
-    ['-m', 'hermes_cli.main', 'serve', '--host', '127.0.0.1', '--port', String(port), '--skip-build'],
-    {
-      cwd: REPO_ROOT,
-      detached: true,
-      env: {
-        ...process.env,
-        HOME: fakeHome,
-        HERMES_HOME: home,
-        PYTHONPATH: REPO_ROOT,
-        HERMES_DASHBOARD_SESSION_TOKEN: REMOTE_TOKEN
-      },
-      stdio: ['ignore', 'pipe', 'pipe']
-    }
-  )
+  const child: ChildProcess = spawn(python, ['-m', 'hermes_cli.main', 'serve', '--host', '127.0.0.1', '--port', String(port), '--skip-build'], {
+    cwd: REPO_ROOT,
+    detached: true,
+    env: { ...process.env, HOME: fakeHome, HERMES_HOME: home, PYTHONPATH: REPO_ROOT, HERMES_DASHBOARD_SESSION_TOKEN: REMOTE_TOKEN },
+    stdio: ['ignore', 'pipe', 'pipe']
+  })
 
   let log = ''
-  child.stdout?.on('data', (chunk: Buffer) => {
-    log += chunk.toString()
-  })
-  child.stderr?.on('data', (chunk: Buffer) => {
-    log += chunk.toString()
-  })
+  child.stdout?.on('data', (chunk: Buffer) => { log += chunk.toString() })
+  child.stderr?.on('data', (chunk: Buffer) => { log += chunk.toString() })
   const deadline = Date.now() + 90_000
 
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      throw new Error(`remote hermes serve exited early (${child.exitCode}):\n${log}`)
-    }
+    if (child.exitCode !== null) {throw new Error(`remote hermes serve exited early (${child.exitCode}):\n${log}`)}
 
     try {
-      if ((await fetch(`${url}/api/status`, { headers: { 'X-Hermes-Session-Token': REMOTE_TOKEN } })).ok) {
-        break
-      }
+      if ((await fetch(`${url}/api/status`, { headers: { 'X-Hermes-Session-Token': REMOTE_TOKEN } })).ok) {break}
     } catch {
       // not up yet
     }
@@ -142,11 +110,7 @@ async function startRemoteGateway(root: string, mockUrl: string, config = MULTIP
     log: () => log,
     close: async () => {
       if (child.pid && child.exitCode === null) {
-        try {
-          process.kill(-child.pid, 'SIGTERM')
-        } catch {
-          child.kill('SIGTERM')
-        }
+        try { process.kill(-child.pid, 'SIGTERM') } catch { child.kill('SIGTERM') }
       }
 
       await new Promise(resolve => setTimeout(resolve, 500))
@@ -155,31 +119,13 @@ async function startRemoteGateway(root: string, mockUrl: string, config = MULTIP
 }
 
 function writeConnectionsRegistry(sandbox: Sandbox, remoteUrl: string): void {
-  fs.writeFileSync(
-    path.join(sandbox.userDataDir, 'connections.json'),
-    JSON.stringify(
-      {
-        version: 2,
-        primary: 'local',
-        launchMode: 'primary',
-        lastUsed: 'local',
-        connections: [
-          { id: 'local', kind: 'local', label: 'This device' },
-          {
-            id: REMOTE_ID,
-            kind: 'remote',
-            label: REMOTE_LABEL,
-            url: remoteUrl,
-            authMode: 'token',
-            token: { encoding: 'plain', value: REMOTE_TOKEN }
-          }
-        ]
-      },
-      null,
-      2
-    ),
-    { encoding: 'utf8', mode: 0o600 }
-  )
+  fs.writeFileSync(path.join(sandbox.userDataDir, 'connections.json'), JSON.stringify({
+    version: 2, primary: 'local', launchMode: 'primary', lastUsed: 'local',
+    connections: [
+      { id: 'local', kind: 'local', label: 'This device' },
+      { id: REMOTE_ID, kind: 'remote', label: REMOTE_LABEL, url: remoteUrl, authMode: 'token', token: { encoding: 'plain', value: REMOTE_TOKEN } }
+    ]
+  }, null, 2), { encoding: 'utf8', mode: 0o600 })
 }
 
 async function shot(page: Page, name: string): Promise<void> {
@@ -194,10 +140,7 @@ async function shot(page: Page, name: string): Promise<void> {
 }
 
 async function openBots(page: Page): Promise<void> {
-  const tab = page
-    .getByRole('button', { name: 'Bots', exact: true })
-    .or(page.getByRole('tab', { name: 'Bots', exact: true }))
-    .first()
+  const tab = page.getByRole('button', { name: 'Bots', exact: true }).or(page.getByRole('tab', { name: 'Bots', exact: true })).first()
   await tab.click()
   await expect(page.getByRole('button', { name: 'New bot or group chat' })).toBeVisible()
 }
@@ -206,9 +149,7 @@ async function openBots(page: Page): Promise<void> {
 async function pickerRows(page: Page) {
   const dialog = page.getByRole('dialog', { name: 'New group chat' })
 
-  return dialog
-    .locator('label:has([role="checkbox"])')
-    .evaluateAll(nodes => nodes.map(node => (node as HTMLElement).innerText.replace(/\s+/g, ' ').trim()))
+  return dialog.locator('label:has([role="checkbox"])').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).innerText.replace(/\s+/g, ' ').trim()))
 }
 
 async function openGroupDialog(page: Page) {
@@ -253,34 +194,18 @@ const isLocalScribe = (text: string) => !isRemote(text) && /scribe/i.test(text)
 
 const isRemoteCoder = (text: string) => isRemote(text) && new RegExp(LENT_PROFILE, 'i').test(text)
 
-interface RoomEvent {
-  kind: string
-  actor: Record<string, unknown>
-  payload: Record<string, unknown>
-  created_at: number
-}
+interface RoomEvent { kind: string; actor: Record<string, unknown>; payload: Record<string, unknown>; created_at: number }
 
 /** The owner's authoritative room event log, read straight from its state.db (works with Electron closed). */
 function roomEvents(home: string, name: string): RoomEvent[] {
-  const query = spawnSync(
-    'python3',
-    [
-      '-c',
-      [
-        'import json, sqlite3, sys',
-        'c = sqlite3.connect("file:" + sys.argv[1] + "/state.db?mode=ro", uri=True)',
-        'rows = c.execute("select e.kind, e.actor_json, e.payload_json, e.created_at from hosted_room_events e join hosted_rooms r using(room_id) where r.name = ? order by e.seq", (sys.argv[2],))',
-        'print(json.dumps([{"kind": k, "actor": json.loads(a), "payload": json.loads(p), "created_at": t} for k, a, p, t in rows]))'
-      ].join(NL),
-      home,
-      name
-    ],
-    { encoding: 'utf8' }
-  )
+  const query = spawnSync('python3', ['-c', [
+    'import json, sqlite3, sys',
+    'c = sqlite3.connect("file:" + sys.argv[1] + "/state.db?mode=ro", uri=True)',
+    'rows = c.execute("select e.kind, e.actor_json, e.payload_json, e.created_at from hosted_room_events e join hosted_rooms r using(room_id) where r.name = ? order by e.seq", (sys.argv[2],))',
+    'print(json.dumps([{"kind": k, "actor": json.loads(a), "payload": json.loads(p), "created_at": t} for k, a, p, t in rows]))'
+  ].join(NL), home, name], { encoding: 'utf8' })
 
-  if (query.status !== 0) {
-    throw new Error(query.stderr || `room log read exited ${query.status}`)
-  }
+  if (query.status !== 0) {throw new Error(query.stderr || `room log read exited ${query.status}`)}
 
   return JSON.parse(query.stdout)
 }
@@ -288,14 +213,10 @@ function roomEvents(home: string, name: string): RoomEvent[] {
 const memberMessages = (events: RoomEvent[], afterSeq = 0) =>
   events.slice(afterSeq).filter(event => event.kind === 'message.member')
 
-const summary = (events: RoomEvent[]) =>
-  events.map(event => ({
-    profile: event.actor.profile,
-    round: event.payload.round_index,
-    peer: event.actor.connection_id ?? null,
-    at: event.created_at,
-    text: String(event.payload.text).slice(0, 60)
-  }))
+const summary = (events: RoomEvent[]) => events.map(event => ({
+  profile: event.actor.profile, round: event.payload.round_index, peer: event.actor.connection_id ?? null, at: event.created_at,
+  text: String(event.payload.text).slice(0, 60)
+}))
 
 /** A real discussion may run more than one round: each member speaks at most once per round,
  *  and every member answers the first round. */
@@ -307,39 +228,23 @@ function expectOnePerMemberRound(replies: RoomEvent[], profiles: string[]): void
 
 /** Assistant rows containing `snippet`, per state.db under `home` (root and each profile). */
 function assistantRows(home: string, snippet: string): Record<string, number> {
-  const query = spawnSync(
-    'python3',
-    [
-      '-c',
-      [
-        'import glob, json, os, sqlite3, sys',
-        'out = {}',
-        'for db in glob.glob(sys.argv[1] + "/state.db") + glob.glob(sys.argv[1] + "/profiles/*/state.db"):',
-        '    c = sqlite3.connect("file:" + db + "?mode=ro", uri=True)',
-        '    out[os.path.relpath(db, sys.argv[1])] = c.execute("select count(*) from messages where role = \'assistant\' and content like ?", ("%" + sys.argv[2] + "%",)).fetchone()[0]',
-        'print(json.dumps(out))'
-      ].join(NL),
-      home,
-      snippet
-    ],
-    { encoding: 'utf8' }
-  )
+  const query = spawnSync('python3', ['-c', [
+    'import glob, json, os, sqlite3, sys',
+    'out = {}',
+    'for db in glob.glob(sys.argv[1] + "/state.db") + glob.glob(sys.argv[1] + "/profiles/*/state.db"):',
+    '    c = sqlite3.connect("file:" + db + "?mode=ro", uri=True)',
+    '    out[os.path.relpath(db, sys.argv[1])] = c.execute("select count(*) from messages where role = \'assistant\' and content like ?", ("%" + sys.argv[2] + "%",)).fetchone()[0]',
+    'print(json.dumps(out))'
+  ].join(NL), home, snippet], { encoding: 'utf8' })
 
-  if (query.status !== 0) {
-    throw new Error(query.stderr || `assistant row read exited ${query.status}`)
-  }
+  if (query.status !== 0) {throw new Error(query.stderr || `assistant row read exited ${query.status}`)}
 
   return JSON.parse(query.stdout)
 }
 
 /** A distinctive, markdown-free stretch of a reply to find it on screen and in transcripts. */
 function snippetOf(text: string): string {
-  const line =
-    text
-      .replace(/[*_#`>[\]]/g, '')
-      .split(NL)
-      .map(part => part.trim())
-      .find(part => part.length >= 12) ?? text.trim()
+  const line = text.replace(/[*_#`>[\]]/g, '').split(NL).map(part => part.trim()).find(part => part.length >= 12) ?? text.trim()
 
   return line.slice(0, 40).trim()
 }
@@ -370,9 +275,7 @@ test.describe('cross-gateway group chat without a lender', () => {
     writeConnectionsRegistry(sandbox, remote.url)
     ;({ app, page } = await launchDesktop(buildAppEnv(sandbox)))
     await waitForAppReady({ app, page } as MockBackendFixture, 120_000)
-    await expect(page.locator('[data-slot="statusbar"]').getByText('ready', { exact: true })).toBeVisible({
-      timeout: 120_000
-    })
+    await expect(page.locator('[data-slot="statusbar"]').getByText('ready', { exact: true })).toBeVisible({ timeout: 120_000 })
     await page.waitForTimeout(2_000)
   })
 
@@ -402,6 +305,14 @@ test.describe('cross-gateway group chat without a lender', () => {
     await shot(page, 'leg5-unavailable')
     await dialog.getByRole('button', { name: 'Retry' }).click()
     await page.waitForTimeout(3_000)
+    await expect(note).toBeVisible()
+    await expect(create).toBeDisabled()
+    await page.keyboard.press('Escape')
+    const stored = await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('hermes.plugin.hermes-bots.group-chats') || '{}')))
+    const hosted = spawnSync('python3', ['-c', 'import sqlite3,sys; c=sqlite3.connect("file:"+sys.argv[1]+"/state.db?mode=ro",uri=True); print(c.execute("select count(*) from hosted_rooms").fetchone()[0])', sandbox.hermesHome], { encoding: 'utf8' }).stdout.trim()
+    console.log('PROBE_RESULT leg5 rooms after', JSON.stringify({ localStorage: stored, ownerHostedRooms: hosted }))
+    expect(stored).not.toContain('No lender')
+    expect(hosted).toBe('0')
   })
 })
 
@@ -425,68 +336,43 @@ test.describe('every new group chat runs on a gateway (real model turns)', () =>
     await waitForAppReady(launched as MockBackendFixture, 120_000)
 
     // A reopen restores Bot Mode, which has no chat statusbar.
-    if (first) {
-      await expect(page.locator('[data-slot="statusbar"]').getByText('ready', { exact: true })).toBeVisible({
-        timeout: 120_000
-      })
-    }
+    if (first) {await expect(page.locator('[data-slot="statusbar"]').getByText('ready', { exact: true })).toBeVisible({ timeout: 120_000 })}
 
     await page.waitForTimeout(2_000)
   }
 
   const openRoom = async (name: string) => {
-    await expect(
-      page
-        .getByRole('button', { name: 'New bot or group chat' })
-        .or(page.getByRole('button', { name: 'Bots', exact: true }))
-        .first()
-    ).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByRole('button', { name: 'New bot or group chat' }).or(page.getByRole('button', { name: 'Bots', exact: true })).first()).toBeVisible({ timeout: 60_000 })
 
-    if (!(await page.getByRole('button', { name: 'New bot or group chat' }).count())) {
-      await openBots(page)
-    }
+    if (!await page.getByRole('button', { name: 'New bot or group chat' }).count()) {await openBots(page)}
 
-    if (!(await page.getByRole('textbox', { name: 'Group message' }).filter({ visible: true }).count())) {
+    if (!await page.getByRole('textbox', { name: 'Group message' }).filter({ visible: true }).count()) {
       await page.getByText(name, { exact: true }).first().click()
     }
 
-    await expect(page.getByRole('textbox', { name: 'Group message' }).filter({ visible: true })).toBeVisible({
-      timeout: 30_000
-    })
+    await expect(page.getByRole('textbox', { name: 'Group message' }).filter({ visible: true })).toBeVisible({ timeout: 30_000 })
   }
 
   /** Every member reply after `afterSeq`, once each member has settled its turn. */
   const settledReplies = async (name: string, afterSeq: number, members: number) => {
-    await expect
-      .poll(() => memberMessages(roomEvents(sandbox.hermesHome, name), afterSeq).length, {
-        timeout: 240_000,
-        intervals: [2_000]
-      })
+    await expect.poll(() => memberMessages(roomEvents(sandbox.hermesHome, name), afterSeq).length, { timeout: 240_000, intervals: [2_000] })
       .toBeGreaterThanOrEqual(members)
     // A real discussion may run another round; let it settle before counting.
     let last = -1
 
-    await expect
-      .poll(
-        () => {
-          const count = roomEvents(sandbox.hermesHome, name).length
-          const quiet = count === last
-          last = count
+    await expect.poll(() => {
+      const count = roomEvents(sandbox.hermesHome, name).length
+      const quiet = count === last
+      last = count
 
-          return quiet
-        },
-        { timeout: 120_000, intervals: [8_000] }
-      )
-      .toBe(true)
+      return quiet
+    }, { timeout: 120_000, intervals: [8_000] }).toBe(true)
 
     return memberMessages(roomEvents(sandbox.hermesHome, name), afterSeq)
   }
 
-  const shownInRoom = (snippet: string) =>
-    page
-      .locator('[role="log"]')
-      .filter({ visible: true })
-      .evaluate((node, text) => (node as HTMLElement).innerText.split(text).length - 1, snippet)
+  const shownInRoom = (snippet: string) => page.locator('[role="log"]').filter({ visible: true }).evaluate(
+    (node, text) => (node as HTMLElement).innerText.split(text).length - 1, snippet)
 
   test.beforeAll(async () => {
     test.setTimeout(300_000)
@@ -497,18 +383,14 @@ test.describe('every new group chat runs on a gateway (real model turns)', () =>
     lender = await startPeerGateway(sandbox.root, mock.url, LENT_PROFILE)
     writeConnectionsRegistry(sandbox, lender.url)
     env = buildAppEnv(sandbox)
-    console.log(
-      `PROBE_RESULT model ${REAL_MODEL} via Nous inference (real turns); owner home=${sandbox.hermesHome} lender home=${lender.home}`
-    )
+    console.log(`PROBE_RESULT model ${REAL_MODEL} via Nous inference (real turns); owner home=${sandbox.hermesHome} lender home=${lender.home}`)
     await launch(true)
   })
 
   test.afterAll(async () => {
     const dir = process.env.CROSS_GATEWAY_SHOTS
 
-    if (dir && lender) {
-      fs.writeFileSync(path.join(dir, `${LEG}-lender-viewer.log`), lender.log())
-    }
+    if (dir && lender) {fs.writeFileSync(path.join(dir, `${LEG}-lender-viewer.log`), lender.log())}
 
     await app?.close().catch(() => undefined)
     await lender?.close()
@@ -523,10 +405,7 @@ test.describe('every new group chat runs on a gateway (real model turns)', () =>
     const dialog = await openGroupDialog(page)
     const chosen = await pick(page, isLocalDefault, isRemoteCoder)
     const note = dialog.locator('[data-group-engine="gateway-peer"]')
-    await expect(note).toHaveText(
-      'Runs on this device, including when this Desktop is closed. Only text is sent to bots on other computers.',
-      { timeout: 60_000 }
-    )
+    await expect(note).toHaveText('Runs on this device, including when this Desktop is closed. Only text is sent to bots on other computers.', { timeout: 60_000 })
     await expect(dialog.locator('[data-group-engine="desktop"]')).toHaveCount(0)
     console.log('PROBE_RESULT leg1 dialog', JSON.stringify({ chosen, note: await note.innerText() }))
     await dialog.getByRole('textbox', { name: 'Group name' }).fill(ROOM)
@@ -535,39 +414,23 @@ test.describe('every new group chat runs on a gateway (real model turns)', () =>
     await expect(dialog).toBeHidden({ timeout: 30_000 })
     const composer = page.getByRole('textbox', { name: 'Group message' }).filter({ visible: true })
     await expect(composer).toBeVisible({ timeout: 30_000 })
-    const record = await page.evaluate(
-      name => JSON.parse(localStorage.getItem('hermes.plugin.hermes-bots.group-chats') || '{}')[name],
-      ROOM
-    )
-    console.log(
-      'PROBE_RESULT leg1 room record',
-      JSON.stringify({
-        engine: record?.engine,
-        members: record?.members?.map((m: any) => `${m.connectionId}/${m.targetProfile || m.name}`)
-      })
-    )
+    const record = await page.evaluate(name => JSON.parse(localStorage.getItem('hermes.plugin.hermes-bots.group-chats') || '{}')[name], ROOM)
+    console.log('PROBE_RESULT leg1 room record', JSON.stringify({ engine: record?.engine, members: record?.members?.map((m: any) => `${m.connectionId}/${m.targetProfile || m.name}`) }))
     expect(record?.engine?.kind).toBe('gateway')
     await composer.fill(`@all ${ASK}`)
     await composer.press('Enter')
     const replies = await settledReplies(ROOM, 0, 2)
     console.log('PROBE_RESULT leg1 owner hosted_room_events member messages', JSON.stringify(summary(replies)))
     expectOnePerMemberRound(replies, ['default', LENT_PROFILE])
-    const byProfile = (profile: string) =>
-      replies.filter(event => event.actor.profile === profile && event.payload.round_index === 0)
+    const byProfile = (profile: string) => replies.filter(event => event.actor.profile === profile && event.payload.round_index === 0)
     roundOne.default = String(byProfile('default')[0].payload.text)
     roundOne.coder = String(byProfile(LENT_PROFILE)[0].payload.text)
     const coderSnippet = snippetOf(roundOne.coder)
     const localSnippet = snippetOf(roundOne.default)
 
     const where = {
-      coder: {
-        lender: assistantRows(lender.home, coderSnippet),
-        owner: assistantRows(sandbox.hermesHome, coderSnippet)
-      },
-      default: {
-        lender: assistantRows(lender.home, localSnippet),
-        owner: assistantRows(sandbox.hermesHome, localSnippet)
-      }
+      coder: { lender: assistantRows(lender.home, coderSnippet), owner: assistantRows(sandbox.hermesHome, coderSnippet) },
+      default: { lender: assistantRows(lender.home, localSnippet), owner: assistantRows(sandbox.hermesHome, localSnippet) }
     }
 
     console.log('PROBE_RESULT leg1 assistant rows per state.db', JSON.stringify(where))
@@ -589,33 +452,17 @@ test.describe('every new group chat runs on a gateway (real model turns)', () =>
     test.setTimeout(480_000)
     const before = roomEvents(sandbox.hermesHome, ROOM).length
     const composer = page.getByRole('textbox', { name: 'Group message' }).filter({ visible: true })
-    await composer.fill(
-      `@all Each of you: in two or three plain sentences (no markdown), describe a city you would like to visit and why.`
-    )
+    await composer.fill(`@all Each of you: in two or three plain sentences (no markdown), describe a city you would like to visit and why.`)
     await composer.press('Enter')
     // The send is durable on the owner gateway before Desktop goes away.
-    await expect
-      .poll(
-        () =>
-          roomEvents(sandbox.hermesHome, ROOM)
-            .slice(before)
-            .some(event => event.kind === 'message.user'),
-        { timeout: 30_000, intervals: [250] }
-      )
-      .toBe(true)
+    await expect.poll(() => roomEvents(sandbox.hermesHome, ROOM).slice(before).some(event => event.kind === 'message.user'), { timeout: 30_000, intervals: [250] }).toBe(true)
     const repliedBeforeQuit = memberMessages(roomEvents(sandbox.hermesHome, ROOM), before).length
     await app!.close()
     app = undefined
     const closedAt = Date.now() / 1000
-    console.log(
-      `PROBE_RESULT leg2 desktop closed at ${closedAt.toFixed(3)} with ${repliedBeforeQuit} replies already in`
-    )
+    console.log(`PROBE_RESULT leg2 desktop closed at ${closedAt.toFixed(3)} with ${repliedBeforeQuit} replies already in`)
     const replies = await settledReplies(ROOM, before, 2)
-    const closed = replies.map(event => ({
-      profile: event.actor.profile,
-      at: event.created_at,
-      whileClosed: event.created_at > closedAt
-    }))
+    const closed = replies.map(event => ({ profile: event.actor.profile, at: event.created_at, whileClosed: event.created_at > closedAt }))
     console.log('PROBE_RESULT leg2 replies vs exit time', JSON.stringify(closed))
     expectOnePerMemberRound(replies, ['default', LENT_PROFILE])
     expect(closed.some(entry => entry.whileClosed)).toBe(true)
@@ -642,10 +489,7 @@ test.describe('every new group chat runs on a gateway (real model turns)', () =>
     await expect(dialog).toBeHidden({ timeout: 30_000 })
     const composer = page.getByRole('textbox', { name: 'Group message' }).filter({ visible: true })
     await expect(composer).toBeVisible({ timeout: 30_000 })
-    const engine = await page.evaluate(
-      room => JSON.parse(localStorage.getItem('hermes.plugin.hermes-bots.group-chats') || '{}')[room]?.engine,
-      name
-    )
+    const engine = await page.evaluate(room => JSON.parse(localStorage.getItem('hermes.plugin.hermes-bots.group-chats') || '{}')[room]?.engine, name)
     console.log('PROBE_RESULT leg3 engine', JSON.stringify(engine))
     expect(engine?.kind).toBe('gateway')
     await composer.fill(`@all ${ASK}`)
@@ -658,15 +502,13 @@ test.describe('every new group chat runs on a gateway (real model turns)', () =>
     await shot(page, 'leg3-same-computer-room')
   })
 
-  test("leg 6: Create & join from a bot's Manage groups makes a gateway-run room with a bot on another computer", async () => {
+  test('leg 6: Create & join from a bot\'s Manage groups makes a gateway-run room with a bot on another computer', async () => {
     test.setTimeout(420_000)
     const name = 'Joined from Manage groups'
     await openBots(page)
     await expect(page.getByText(REMOTE_LABEL).first()).toBeVisible({ timeout: 90_000 })
     const rows = page.locator('[data-roster-key]')
-    const texts = await rows.evaluateAll(nodes =>
-      nodes.map(node => (node as HTMLElement).innerText.replace(/\s+/g, ' ').trim())
-    )
+    const texts = await rows.evaluateAll(nodes => nodes.map(node => (node as HTMLElement).innerText.replace(/\s+/g, ' ').trim()))
     // Roster rows show no connection label: this device's default Bot is the one named Hermes.
     const index = texts.findIndex(text => /^Hermes\b/.test(text))
     console.log('PROBE_RESULT leg6 roster rows', JSON.stringify(texts), 'chosen', index)
@@ -687,22 +529,15 @@ test.describe('every new group chat runs on a gateway (real model turns)', () =>
     expect(isLocalDefault((await seeded.innerText()).replace(/\s+/g, ' '))).toBe(true)
     const chosen = await pick(page, isRemoteCoder)
     const note = dialog.locator('[data-group-engine="gateway-peer"]')
-    await expect(note).toHaveText(
-      'Runs on this device, including when this Desktop is closed. Only text is sent to bots on other computers.',
-      { timeout: 60_000 }
-    )
+    await expect(note).toHaveText('Runs on this device, including when this Desktop is closed. Only text is sent to bots on other computers.', { timeout: 60_000 })
     console.log('PROBE_RESULT leg6 dialog', JSON.stringify({ chosen, note: await note.innerText() }))
     await shot(page, 'leg6-create-and-join-dialog')
     await dialog.getByRole('button', { name: 'Create group (2)' }).click()
     await expect(dialog).toBeHidden({ timeout: 30_000 })
     const composer = page.getByRole('textbox', { name: 'Group message' }).filter({ visible: true })
     await expect(composer).toBeVisible({ timeout: 30_000 })
-    const rooms = await page.evaluate(() =>
-      JSON.parse(localStorage.getItem('hermes.plugin.hermes-bots.group-chats') || '{}')
-    )
-    const engines = Object.fromEntries(
-      Object.entries(rooms).map(([room, record]: [string, any]) => [room, record?.engine])
-    )
+    const rooms = await page.evaluate(() => JSON.parse(localStorage.getItem('hermes.plugin.hermes-bots.group-chats') || '{}'))
+    const engines = Object.fromEntries(Object.entries(rooms).map(([room, record]: [string, any]) => [room, record?.engine]))
     console.log('PROBE_RESULT leg6 room engines', JSON.stringify(engines))
     expect(engines[name]?.kind).toBe('gateway')
     expect(Object.values(engines)).not.toContain('desktop')
@@ -721,78 +556,33 @@ test.describe('every new group chat runs on a gateway (real model turns)', () =>
 
     // An older build's cross-machine room: Desktop-driven, members on both computers, some history.
     const members = [
-      {
-        name: 'default',
-        handle: 'default-this-device',
-        display_name: 'Hermes',
-        connectionId: 'local',
-        connectionKind: 'local',
-        connectionLabel: 'This device',
-        targetProfile: 'default',
-        route: { connectionId: 'local', mode: 'local', profile: 'default', targetProfile: 'default' }
-      },
-      {
-        name: LENT_PROFILE,
-        handle: LENT_PROFILE,
-        display_name: 'Coder',
-        connectionId: REMOTE_ID,
-        connectionKind: 'remote',
-        connectionLabel: REMOTE_LABEL,
-        remoteSource: true,
-        sourceScoped: true,
-        targetProfile: LENT_PROFILE,
-        route: { connectionId: REMOTE_ID, mode: 'remote', profile: LENT_PROFILE, targetProfile: LENT_PROFILE }
-      }
+      { name: 'default', handle: 'default-this-device', display_name: 'Hermes', connectionId: 'local', connectionKind: 'local',
+        connectionLabel: 'This device', targetProfile: 'default', route: { connectionId: 'local', mode: 'local', profile: 'default', targetProfile: 'default' } },
+      { name: LENT_PROFILE, handle: LENT_PROFILE, display_name: 'Coder', connectionId: REMOTE_ID, connectionKind: 'remote', connectionLabel: REMOTE_LABEL,
+        remoteSource: true, sourceScoped: true, targetProfile: LENT_PROFILE,
+        route: { connectionId: REMOTE_ID, mode: 'remote', profile: LENT_PROFILE, targetProfile: LENT_PROFILE } }
     ]
 
-    await page.evaluate(
-      ({ room, seated }) => {
-        const key = 'hermes.plugin.hermes-bots.group-chats'
-        const rooms = JSON.parse(localStorage.getItem(key) || '{}')
-        const at = Date.now() - 3_600_000
+    await page.evaluate(({ room, seated }) => {
+      const key = 'hermes.plugin.hermes-bots.group-chats'
+      const rooms = JSON.parse(localStorage.getItem(key) || '{}')
+      const at = Date.now() - 3_600_000
 
-        rooms[room] = {
-          engine: 'desktop',
-          roomId: null,
-          members: seated,
-          watermarks: {},
-          sessions: {},
-          holds: {},
-          log: [
-            {
-              id: 'old-1',
-              thread: 'old-t1',
-              at,
-              from: { kind: 'user', name: 'You' },
-              text: 'Earlier question from an older build'
-            },
-            {
-              id: 'old-2',
-              thread: 'old-t1',
-              at: at + 1_000,
-              from: { kind: 'member', name: seated[0].name },
-              text: 'Earlier answer one'
-            },
-            {
-              id: 'old-3',
-              thread: 'old-t1',
-              at: at + 2_000,
-              from: { kind: 'member', name: seated[1].name },
-              text: 'Earlier answer two'
-            }
-          ]
-        }
-        localStorage.setItem(key, JSON.stringify(rooms))
-      },
-      { room: name, seated: members }
-    )
+      rooms[room] = {
+        engine: 'desktop', roomId: null, members: seated, watermarks: {}, sessions: {}, holds: {},
+        log: [
+          { id: 'old-1', thread: 'old-t1', at, from: { kind: 'user', name: 'You' }, text: 'Earlier question from an older build' },
+          { id: 'old-2', thread: 'old-t1', at: at + 1_000, from: { kind: 'member', name: seated[0].name }, text: 'Earlier answer one' },
+          { id: 'old-3', thread: 'old-t1', at: at + 2_000, from: { kind: 'member', name: seated[1].name }, text: 'Earlier answer two' }
+        ]
+      }
+      localStorage.setItem(key, JSON.stringify(rooms))
+    }, { room: name, seated: members })
     await page.reload()
     await waitForAppReady({ app, page } as MockBackendFixture, 120_000)
     await page.waitForTimeout(3_000)
 
-    if (!(await page.getByRole('button', { name: 'New bot or group chat' }).count())) {
-      await openBots(page)
-    }
+    if (!await page.getByRole('button', { name: 'New bot or group chat' }).count()) {await openBots(page)}
 
     await page.getByText(name, { exact: true }).first().click()
     const composer = page.getByRole('textbox', { name: `Message ${name}` }).filter({ visible: true })
@@ -802,28 +592,15 @@ test.describe('every new group chat runs on a gateway (real model turns)', () =>
     await composer.fill(`@all ${ASK}`)
     await composer.press('Enter')
 
-    const log = () =>
-      page.evaluate(
-        room =>
-          (JSON.parse(localStorage.getItem('hermes.plugin.hermes-bots.group-chats') || '{}')[room]?.log || []).map(
-            (entry: any) => ({ from: entry.from?.name, kind: entry.from?.kind, text: String(entry.text).slice(0, 60) })
-          ),
-        name
-      )
+    const log = () => page.evaluate(room => (JSON.parse(localStorage.getItem('hermes.plugin.hermes-bots.group-chats') || '{}')[room]?.log || [])
+      .map((entry: any) => ({ from: entry.from?.name, kind: entry.from?.kind, text: String(entry.text).slice(0, 60) })), name)
 
-    await expect
-      .poll(async () => (await log()).filter((entry: any) => entry.kind === 'member').length, {
-        timeout: 240_000,
-        intervals: [2_000]
-      })
+    await expect.poll(async () => (await log()).filter((entry: any) => entry.kind === 'member').length, { timeout: 240_000, intervals: [2_000] })
       .toBeGreaterThanOrEqual(3)
     await expect(page.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0, { timeout: 180_000 })
     const entries = await log()
     console.log('PROBE_RESULT leg4 classic room log', JSON.stringify(entries))
-    const engine = await page.evaluate(
-      room => JSON.parse(localStorage.getItem('hermes.plugin.hermes-bots.group-chats') || '{}')[room]?.engine,
-      name
-    )
+    const engine = await page.evaluate(room => JSON.parse(localStorage.getItem('hermes.plugin.hermes-bots.group-chats') || '{}')[room]?.engine, name)
     console.log('PROBE_RESULT leg4 engine after send', JSON.stringify(engine))
     expect(engine).toBe('desktop')
     expect(roomEvents(sandbox.hermesHome, name)).toEqual([])
@@ -839,18 +616,8 @@ async function startPeerGateway(root: string, mockUrl: string, lent = '') {
   const home = path.join(fakeHome, '.hermes')
   fs.mkdirSync(home, { recursive: true })
 
-  const config = [
-    MULTIPLEX.trimEnd(),
-    `  room_link_url: http://127.0.0.1:${apiPort}`,
-    '  platforms:',
-    '    api_server:',
-    '      enabled: true',
-    `      port: ${apiPort}`,
-    '      host: 127.0.0.1',
-    'approvals:',
-    '  mode: manual',
-    ''
-  ].join(NL)
+  const config = [MULTIPLEX.trimEnd(), `  room_link_url: http://127.0.0.1:${apiPort}`,
+    '  platforms:', '    api_server:', '      enabled: true', `      port: ${apiPort}`, '      host: 127.0.0.1', 'approvals:', '  mode: manual', ''].join(NL)
 
   provision(home, mockUrl, config)
 
@@ -865,25 +632,14 @@ async function startPeerGateway(root: string, mockUrl: string, lent = '') {
 
   const child = spawn(python, ['-m', 'hermes_cli.main', 'gateway', 'run'], {
     cwd: REPO_ROOT,
-    env: {
-      ...process.env,
-      HOME: fakeHome,
-      HERMES_HOME: home,
-      PYTHONPATH: REPO_ROOT,
-      API_SERVER_KEY: REMOTE_TOKEN,
-      API_SERVER_ENABLED: 'true',
-      API_SERVER_PORT: String(apiPort)
-    },
+    env: { ...process.env, HOME: fakeHome, HERMES_HOME: home, PYTHONPATH: REPO_ROOT,
+      API_SERVER_KEY: REMOTE_TOKEN, API_SERVER_ENABLED: 'true', API_SERVER_PORT: String(apiPort) },
     stdio: ['ignore', 'pipe', 'pipe']
   })
 
   let log = ''
-  child.stdout.on('data', (chunk: Buffer) => {
-    log += chunk.toString()
-  })
-  child.stderr.on('data', (chunk: Buffer) => {
-    log += chunk.toString()
-  })
+  child.stdout.on('data', (chunk: Buffer) => { log += chunk.toString() })
+  child.stderr.on('data', (chunk: Buffer) => { log += chunk.toString() })
   let viewer: Awaited<ReturnType<typeof startRemoteGateway>> | undefined
 
   const close = async () => {
@@ -898,31 +654,14 @@ async function startPeerGateway(root: string, mockUrl: string, lent = '') {
   }
 
   try {
-    await expect
-      .poll(
-        async () => {
-          if (child.exitCode !== null || child.signalCode !== null) {
-            throw new Error(`peer gateway exited: ${log}`)
-          }
+    await expect.poll(async () => {
+      if (child.exitCode !== null || child.signalCode !== null) {throw new Error(`peer gateway exited: ${log}`)}
 
-          try {
-            return (
-              await fetch(`http://127.0.0.1:${apiPort}/v1/models`, {
-                headers: { Authorization: `Bearer ${REMOTE_TOKEN}` }
-              })
-            ).ok
-          } catch {
-            return false
-          }
-        },
-        { timeout: 90_000 }
-      )
-      .toBe(true)
+      try { return (await fetch(`http://127.0.0.1:${apiPort}/v1/models`, { headers: { Authorization: `Bearer ${REMOTE_TOKEN}` } })).ok } catch { return false }
+    }, { timeout: 90_000 }).toBe(true)
     // Keep the lender's gateway config when adding the authenticated WebSocket viewer.
     viewer = await startRemoteGateway(root, mockUrl, config)
-    console.log(
-      `PROBE_RESULT lender gateway pid=${child.pid} api=http://127.0.0.1:${apiPort} lent=${lent || 'default'}`
-    )
+    console.log(`PROBE_RESULT lender gateway pid=${child.pid} api=http://127.0.0.1:${apiPort} lent=${lent || 'default'}`)
 
     return { ...viewer, close }
   } catch (error) {
@@ -934,25 +673,14 @@ async function startPeerGateway(root: string, mockUrl: string, lent = '') {
 
 /** Read the authoritative event log while no Electron process is running. */
 function peerRoomLog(home: string, name: string): Array<{ kind: string; payload: Record<string, unknown> }> {
-  const query = spawnSync(
-    'python3',
-    [
-      '-c',
-      [
-        'import json, sqlite3, sys',
-        'c = sqlite3.connect("file:" + sys.argv[1] + "/state.db?mode=ro", uri=True)',
-        'rows = c.execute("select e.kind, e.payload_json from hosted_room_events e join hosted_rooms r using(room_id) where r.name = ? order by e.seq", (sys.argv[2],))',
-        'print(json.dumps([{"kind": k, "payload": json.loads(p)} for k, p in rows]))'
-      ].join('\n'),
-      home,
-      name
-    ],
-    { encoding: 'utf8' }
-  )
+  const query = spawnSync('python3', ['-c', [
+    'import json, sqlite3, sys',
+    'c = sqlite3.connect("file:" + sys.argv[1] + "/state.db?mode=ro", uri=True)',
+    'rows = c.execute("select e.kind, e.payload_json from hosted_room_events e join hosted_rooms r using(room_id) where r.name = ? order by e.seq", (sys.argv[2],))',
+    'print(json.dumps([{"kind": k, "payload": json.loads(p)} for k, p in rows]))'
+  ].join('\n'), home, name], { encoding: 'utf8' })
 
-  if (query.status !== 0) {
-    throw new Error(query.stderr || `room log read exited ${query.status}`)
-  }
+  if (query.status !== 0) {throw new Error(query.stderr || `room log read exited ${query.status}`)}
 
   return JSON.parse(query.stdout)
 }
@@ -990,8 +718,7 @@ test('mock: gateway peers finish a held turn after Electron quits and reopen onc
     await checks.nth(0).click()
     await checks.nth(1).click()
     await expect(dialog.locator('[data-group-engine="gateway-peer"]')).toHaveText(
-      'Runs on this device, including when this Desktop is closed. Only text is sent to bots on other computers.'
-    )
+      'Runs on this device, including when this Desktop is closed. Only text is sent to bots on other computers.')
     await dialog.getByRole('textbox', { name: 'Group name' }).fill(name)
     await dialog.getByRole('button', { name: 'Create group (2)' }).click()
     await expect(dialog).toBeHidden()
@@ -1000,20 +727,14 @@ test('mock: gateway peers finish a held turn after Electron quits and reopen onc
     await expect(page.getByRole('button', { name: 'Send' }).filter({ visible: true })).toBeEnabled({ timeout: 30_000 })
     await composer.press('Enter')
     // Discussion admits one member at a time: quit with the first held and the second outstanding.
-    await expect
-      .poll(() => localModel.heldCompletionCount() + peerModel.heldCompletionCount(), { timeout: 120_000 })
-      .toBe(1)
+    await expect.poll(() => localModel.heldCompletionCount() + peerModel.heldCompletionCount(), { timeout: 120_000 }).toBe(1)
     expect(peerRoomLog(sandbox.hermesHome, name).filter(event => event.kind === 'message.member')).toEqual([])
     await app.close()
     app = undefined
     // Releasing also opens the gate for the provider whose turn has not started yet.
     localModel.releaseHeldStream()
     peerModel.releaseHeldStream()
-    const replies = () =>
-      peerRoomLog(sandbox.hermesHome, name)
-        .filter(event => event.kind === 'message.member')
-        .map(event => event.payload.text)
-        .sort()
+    const replies = () => peerRoomLog(sandbox.hermesHome, name).filter(event => event.kind === 'message.member').map(event => event.payload.text).sort()
     await expect.poll(replies, { timeout: 120_000, intervals: [1_000] }).toEqual([peerReply, localReply])
     launched = await launchDesktop(env)
     app = launched.app
@@ -1021,7 +742,7 @@ test('mock: gateway peers finish a held turn after Electron quits and reopen onc
     await waitForAppReady(launched as MockBackendFixture, 120_000)
     await openBots(page)
 
-    if (!(await page.getByRole('textbox', { name: 'Group message' }).filter({ visible: true }).count())) {
+    if (!await page.getByRole('textbox', { name: 'Group message' }).filter({ visible: true }).count()) {
       await page.getByText(name, { exact: true }).first().click()
     }
 

@@ -9,20 +9,19 @@
  * Prerequisite: `pnpm run build` must have been run so dist/ exists.
  */
 
-import { expect, type Page, test } from '@playwright/test'
-
-import {
-  createBackgroundReleaseHandle,
-  restartMockServer,
-  SIDEBAR_CROSS_TEXTS,
-  SIDEBAR_TEXTS,
-} from '../../../tests-js/scripts/mock-server'
+import { expect, test, type Page } from '@playwright/test'
 
 import {
   type MockBackendFixture,
   setupMockBackend,
   waitForAppReady,
 } from './fixtures'
+import {
+  createBackgroundReleaseHandle,
+  restartMockServer,
+  SIDEBAR_CROSS_TEXTS,
+  SIDEBAR_TEXTS,
+} from '../../../tests-js/scripts/mock-server'
 
 /** Background-running dot aria-label (from i18n en.ts). */
 const BG_DOT_LABEL = 'Background task running'
@@ -121,7 +120,6 @@ test.describe('sidebar states — background process and subagent', () => {
     const viewportText = await page
       .locator('[data-slot="aui_thread-viewport"]')
       .textContent()
-
     expect(viewportText).toContain(SIDEBAR_TEXTS.finalText)
   })
 })

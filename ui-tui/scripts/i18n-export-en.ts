@@ -17,28 +17,24 @@ function walk(node: unknown, prefix: string) {
     const fn = node as (...a: unknown[]) => string
     const args = Array.from({ length: Math.max(fn.length, 0) }, (_, i) => `{${i}}`)
     let rendered: string
-
     try {
       rendered = String(fn(...args))
     } catch {
       rendered = ''
     }
-
     // Detect argument-branching functions: numeric arg 1 vs 2 gives different shapes.
     if (fn.length > 0) {
       try {
         const a = String(fn(...args.map((_, i) => (i === 0 ? 1 : `{${i}}`))))
         const b = String(fn(...args.map((_, i) => (i === 0 ? 2 : `{${i}}`))))
-
-        if (a.replace('1', 'N') !== b.replace('2', 'N')) {flagged.push(prefix)}
+        if (a.replace('1', 'N') !== b.replace('2', 'N')) flagged.push(prefix)
       } catch {
         /* non-numeric first arg */
       }
     }
-
     out[prefix] = rendered
   } else if (node && typeof node === 'object') {
-    for (const [k, v] of Object.entries(node as Record<string, unknown>)) {walk(v, prefix ? `${prefix}.${k}` : k)}
+    for (const [k, v] of Object.entries(node as Record<string, unknown>)) walk(v, prefix ? `${prefix}.${k}` : k)
   }
 }
 
