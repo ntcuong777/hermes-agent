@@ -19,7 +19,6 @@ import {
   requestComposerGetDraft,
   requestComposerInsert,
   requestComposerInsertAcked,
-  requestComposerPrefill,
   requestComposerSetDraft,
   requestModelMenuToggle
 } from './focus'
@@ -479,30 +478,6 @@ describe('composer draft requests', () => {
     mountDraft('sess-a', 'x')
 
     expect(await requestComposerSetDraft(['sess-a'], '   ')).toBe(false)
-  })
-
-  it('prefills the addressed session; only a payload with no session identity may use the active composer', async () => {
-    const addressed = mountDraft('sess-a', 'x')
-    requestComposerPrefill(['sess-a'], 'stashed draft')
-    await new Promise(resolve => window.setTimeout(resolve, 80))
-    expect(addressed.wrote).toBe('stashed draft')
-
-    // No id-addressed surface answers (an unmounted target session): the text
-    // is DROPPED, never painted into whatever session is on screen — 'active'
-    // is whatever session the bus routes to, and an Enter there would send
-    // another session's restored message.
-    markActiveComposer('main')
-    mountSurface('main')
-    const active = mountDraft('sess-live', '', true)
-    requestComposerPrefill(['nobody'], 'undo text')
-    await new Promise(resolve => window.setTimeout(resolve, 80))
-    expect(active.wrote).toBeNull()
-
-    // A payload with no session identity at all (the degenerate-slash
-    // restore, captured from the submitting composer) IS the active composer.
-    requestComposerPrefill([], 'degenerate payload')
-    await new Promise(resolve => window.setTimeout(resolve, 80))
-    expect(active.wrote).toBe('degenerate payload')
   })
 })
 

@@ -22,10 +22,10 @@ import type { TourAction, TourStep } from '@/lib/tour'
 import { type AppearanceValues, applyAppearance, THEME_MODES } from '@/store/appearance-apply'
 import { type ClarifyRequest, normalizeQuestions, setClarifyRequest } from '@/store/clarify'
 import type { ScopedServerRequest } from '@/store/gateway'
+import { parseApprovalMcp } from '@/fork/approval-mcp' // fork: approvalCard MCP context carrier
 import { dispatchNativeNotification } from '@/store/native-notifications'
 import type { PreviewOwner } from '@/store/preview-ownership'
 import {
-  parseApprovalMcp,
   receiveApprovalRequest,
   setSecretRequest,
   setSudoRequest,

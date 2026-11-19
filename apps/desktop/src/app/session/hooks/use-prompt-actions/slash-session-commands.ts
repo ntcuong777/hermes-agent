@@ -1,6 +1,6 @@
 import type { MutableRefObject } from 'react'
 
-import { requestComposerPrefill } from '@/app/chat/composer/focus'
+import { requestComposerPrefill } from '@/fork/composer-prefill' // fork: prefill routing
 import type { ClientSessionState, SessionRedirectResponse } from '@/app/types'
 import { runtimeTranslations } from '@/i18n/runtime'
 import type { ChatMessage } from '@/lib/chat-messages'

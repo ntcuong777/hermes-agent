@@ -1,20 +1,14 @@
 import { expect, test, vi } from 'vitest'
 
-import { CanonicalDesktopProtocol, canonicalPromptParams, slashMutation } from './canonical-protocol'
+import { CanonicalDesktopProtocol, slashMutation } from './canonical-protocol'
 
 test('sibling routes survive every rebuilt control and compression follow-up', async () => {
   const protocol = new CanonicalDesktopProtocol()
-  protocol.result(
-    'session.resume',
-    { session_id: 's', profile: 'sibling' },
-    {
-      session_id: 's',
-      revision: 4,
-      execution_generation: 9,
-      prompts: [{ kind: 'approval', prompt_id: 'p', execution_generation: 9 }],
-      pending: [{ admission_id: 'lost', status: 'unknown', execution_generation: 3 }]
-    }
-  )
+  protocol.result('session.resume', { session_id: 's', profile: 'sibling' }, {
+    session_id: 's', revision: 4, execution_generation: 9,
+    prompts: [{ kind: 'approval', prompt_id: 'p', execution_generation: 9 }],
+    pending: [{ admission_id: 'lost', status: 'unknown', execution_generation: 3 }]
+  })
 
   const requests: Array<[string, Record<string, unknown>]> = [
     ['session.title', { title: 'title' }], ['session.archive', { archived: true }],
@@ -119,32 +113,15 @@ test('a voice_stopped prompt.submit reply is a settled no-admission receipt, nev
 
 test('canonical receipts preserve admission identity and replay restores fenced controls', () => {
   const protocol = new CanonicalDesktopProtocol()
-  const receipt = protocol.result(
-    'prompt.submit',
-    { session_id: 's', submission_id: 'input' },
-    { admission_id: 'admission', ref: { session_id: 's', profile_id: '/tmp/profile' }, status: 'queued' }
-  )
+  const receipt = protocol.result('prompt.submit', { session_id: 's', submission_id: 'input' }, { admission_id: 'admission', ref: { session_id: 's', profile_id: '/tmp/profile' }, status: 'queued' })
   expect(receipt).toMatchObject({ admission_id: 'admission', submission_id: 'input', session_id: 's' })
-  expect(() => protocol.result('prompt.submit', { session_id: 'other', submission_id: 'input' }, receipt)).toThrow(
-    'destination'
-  )
-  const resumed = protocol.result(
-    'session.resume',
-    { session_id: 's' },
-    {
-      session_id: 's',
-      stored_session_id: 's',
-      execution_generation: 3,
-      prompts: [{ kind: 'approval', prompt_id: 'p', execution_generation: 3, command: 'test' }]
-    }
-  )
+  expect(() => protocol.result('prompt.submit', { session_id: 'other', submission_id: 'input' }, receipt)).toThrow('destination')
+  const resumed = protocol.result('session.resume', { session_id: 's' }, { session_id: 's', stored_session_id: 's', execution_generation: 3, prompts: [{ kind: 'approval', prompt_id: 'p', execution_generation: 3, command: 'test' }] })
   expect(resumed.pending_approval).toMatchObject({ request_id: 'p', execution_generation: 3 })
   expect(protocol.prepare('approval.respond', { session_id: 's', request_id: 'p', choice: 'once' })).toEqual({ session_id: 's', execution_generation: 3, prompt_id: 'p', choice: 'once' })
   expect(protocol.prepare('session.interrupt', { session_id: 's' })).toEqual({ session_id: 's', execution_generation: 3 })
   protocol.event({ type: 'message.start', session_id: 's', payload: { execution_generation: 4 } })
-  expect(() => protocol.prepare('approval.respond', { session_id: 's', request_id: 'p', choice: 'once' })).toThrow(
-    'stale'
-  )
+  expect(() => protocol.prepare('approval.respond', { session_id: 's', request_id: 'p', choice: 'once' })).toThrow('stale')
 })
 
 test('pending resume and live updates share the existing queue projection', () => {
@@ -185,24 +162,9 @@ test('composer branch and model switch become canonical prepared mutations with 
 
   const model = protocol.prepare('slash.exec', { session_id: 's', command: 'model switched' })
   expect(protocol.wire('slash.exec', model)).toBe('session.mutate')
-  expect(model).toMatchObject({
-    session_id: 's',
-    expected_revision: 5,
-    operation: 'model',
-    payload: { model: 'switched' }
-  })
-  expect(
-    protocol.result('slash.exec', model, {
-      session_id: 's',
-      revision: 6,
-      operation: 'model',
-      model: 'switched',
-      provider: 'custom'
-    })
-  ).toMatchObject({ type: 'exec', output: expect.stringContaining('switched') })
-  expect(protocol.wire('slash.exec', protocol.prepare('slash.exec', { session_id: 's', command: 'help' }))).toBe(
-    'slash.exec'
-  )
+  expect(model).toMatchObject({ session_id: 's', expected_revision: 5, operation: 'model', payload: { model: 'switched' } })
+  expect(protocol.result('slash.exec', model, { session_id: 's', revision: 6, operation: 'model', model: 'switched', provider: 'custom' })).toMatchObject({ type: 'exec', output: expect.stringContaining('switched') })
+  expect(protocol.wire('slash.exec', protocol.prepare('slash.exec', { session_id: 's', command: 'help' }))).toBe('slash.exec')
 })
 
 test('/model with --provider becomes the same canonical model mutation the CLI and ACP send', () => {
@@ -223,39 +185,16 @@ test('a session.info fanout after a turn refreshes the CAS revision the next mut
   expect(protocol.prepare('session.branch', { session_id: 's' })).toMatchObject({ expected_revision: 5, expected_generation: 2 })
 })
 
-test("acknowledging a turn lost across a restart presents the unknown row's own generation", () => {
+test('acknowledging a turn lost across a restart presents the unknown row\'s own generation', () => {
   const protocol = new CanonicalDesktopProtocol()
-  protocol.result(
-    'session.resume',
-    { session_id: 's' },
-    {
-      session_id: 's',
-      stored_session_id: 's',
-      execution_generation: 9,
-      revision: 2,
-      pending: [
-        { admission_id: 'lost', status: 'unknown', execution_generation: 4, text: 'LOST' },
-        { admission_id: 'next', status: 'queued', execution_generation: null, text: 'NEXT' }
-      ]
-    }
-  )
-  expect(protocol.prepare('prompt.resolve_unknown', { session_id: 's', admission_id: 'lost' })).toEqual({
-    session_id: 's',
-    admission_id: 'lost',
-    execution_generation: 4
-  })
+  protocol.result('session.resume', { session_id: 's' }, { session_id: 's', stored_session_id: 's', execution_generation: 9, revision: 2,
+    pending: [{ admission_id: 'lost', status: 'unknown', execution_generation: 4, text: 'LOST' }, { admission_id: 'next', status: 'queued', execution_generation: null, text: 'NEXT' }] })
+  expect(protocol.prepare('prompt.resolve_unknown', { session_id: 's', admission_id: 'lost' }))
+    .toEqual({ session_id: 's', admission_id: 'lost', execution_generation: 4 })
   expect(() => protocol.prepare('prompt.resolve_unknown', { session_id: 's', admission_id: 'next' })).toThrow('unknown')
 
-  const receipt = protocol.result(
-    'prompt.resolve_unknown',
-    { session_id: 's', admission_id: 'lost', execution_generation: 4 },
-    {
-      admission_id: 'lost',
-      ref: { session_id: 's', profile_id: '/tmp/profile' },
-      status: 'terminal',
-      outcome: 'interrupted'
-    }
-  )
+  const receipt = protocol.result('prompt.resolve_unknown', { session_id: 's', admission_id: 'lost', execution_generation: 4 },
+    { admission_id: 'lost', ref: { session_id: 's', profile_id: '/tmp/profile' }, status: 'terminal', outcome: 'interrupted' })
 
   expect(receipt).toMatchObject({ admission_id: 'lost', session_id: 's', status: 'terminal' })
   protocol.event({ type: 'session.info', session_id: 's', payload: { pending: [{ admission_id: 'next', status: 'started', execution_generation: 10, text: 'NEXT' }], execution_generation: 10 } })
@@ -270,15 +209,12 @@ test('the dedicated compress action becomes a fenced canonical mutation and sett
   expect(prepared).toEqual({ session_id: 's', request_id: expect.any(String), expected_revision: 4, expected_generation: 9, operation: 'compress', payload: { focus: 'billing' } })
   expect(protocol.prepare('session.compress', { session_id: 's' }).payload).toEqual({})
   expect(protocol.wire('session.compress', prepared)).toBe('session.mutate')
-  expect(() =>
-    protocol.result('session.compress', prepared, { session_id: 'other', revision: 5, operation: 'compress' })
-  ).toThrow('destination')
+  expect(() => protocol.result('session.compress', prepared, { session_id: 'other', revision: 5, operation: 'compress' })).toThrow('destination')
 
   const calls: Array<[string, Record<string, unknown>]> = []
   const resumed = { session_id: 's', messages: [{ role: 'assistant', content: 'summary' }], info: { title: 'T' } }
 
-  const fakeRequest = async (method: string, params: Record<string, unknown>) => {
-    calls.push([method, params])
+  const fakeRequest = async (method: string, params: Record<string, unknown>) => { calls.push([method, params]);
 
  return resumed }
 
@@ -290,12 +226,8 @@ test('the dedicated compress action becomes a fenced canonical mutation and sett
   expect(settled.host_ack.output).toContain('3')
   expect(calls).toEqual([['session.resume', { session_id: 's' }]])
   // Acknowledged: the next compress presents the refreshed revision under a new request id.
-  expect(protocol.prepare('session.compress', { session_id: 's', focus_topic: 'billing' })).toMatchObject({
-    expected_revision: 5
-  })
-  expect(protocol.prepare('session.compress', { session_id: 's', focus_topic: 'billing' }).request_id).not.toBe(
-    prepared.request_id
-  )
+  expect(protocol.prepare('session.compress', { session_id: 's', focus_topic: 'billing' })).toMatchObject({ expected_revision: 5 })
+  expect(protocol.prepare('session.compress', { session_id: 's', focus_topic: 'billing' }).request_id).not.toBe(prepared.request_id)
 
   const untouched = { session_id: 's', ok: true }
   expect(await protocol.settle('session.title', { session_id: 's' }, untouched, fakeRequest)).toBe(untouched)
@@ -309,36 +241,14 @@ test('the composer model picker travels as the canonical model mutation, not an 
   for (const value of ['gpt-5 --provider openrouter', 'gpt-5 --provider openrouter --session']) {
     const pick = protocol.prepare('config.set', { session_id: 's', key: 'model', value })
     expect(protocol.wire('config.set', pick)).toBe('session.mutate')
-    expect(pick).toEqual({
-      session_id: 's',
-      request_id: expect.any(String),
-      expected_revision: 3,
-      expected_generation: 2,
-      operation: 'model',
-      payload: { model: 'gpt-5', provider: 'openrouter' }
-    })
-    expect(
-      protocol.result('config.set', pick, {
-        session_id: 's',
-        revision: 4,
-        operation: 'model',
-        model: 'gpt-5',
-        provider: 'openrouter'
-      })
-    ).toMatchObject({ ok: true, model: 'gpt-5' })
+    expect(pick).toEqual({ session_id: 's', request_id: expect.any(String), expected_revision: 3, expected_generation: 2, operation: 'model', payload: { model: 'gpt-5', provider: 'openrouter' } })
+    expect(protocol.result('config.set', pick, { session_id: 's', revision: 4, operation: 'model', model: 'gpt-5', provider: 'openrouter' })).toMatchObject({ ok: true, model: 'gpt-5' })
     protocol.result('session.resume', { session_id: 's' }, { session_id: 's', revision: 3, execution_generation: 2 })
   }
 
   // Other preferences, and model flags the mutation has no field for, keep their own route.
-  expect(
-    protocol.wire('config.set', protocol.prepare('config.set', { session_id: 's', key: 'busy', value: 'queue' }))
-  ).toBe('config.set')
-  expect(
-    protocol.wire(
-      'config.set',
-      protocol.prepare('config.set', { session_id: 's', key: 'model', value: 'gpt-5 --global' })
-    )
-  ).toBe('config.set')
+  expect(protocol.wire('config.set', protocol.prepare('config.set', { session_id: 's', key: 'busy', value: 'queue' }))).toBe('config.set')
+  expect(protocol.wire('config.set', protocol.prepare('config.set', { session_id: 's', key: 'model', value: 'gpt-5 --global' }))).toBe('config.set')
 })
 
 test('a message-level branch carries its durable boundary row; a whole-chat branch copies everything', () => {
@@ -348,9 +258,7 @@ test('a message-level branch carries its durable boundary row; a whole-chat bran
   expect(protocol.wire('session.branch', selected)).toBe('session.mutate')
   expect(selected).toMatchObject({ operation: 'branch', payload: { through_message_id: 41 } })
   // A lost-response retry presents the identical mutation (the boundary is part of its identity).
-  expect(
-    protocol.prepare('session.branch', { session_id: 's', idempotency_key: 'k', count: 2, through_message_id: 41 })
-  ).toEqual(selected)
+  expect(protocol.prepare('session.branch', { session_id: 's', idempotency_key: 'k', count: 2, through_message_id: 41 })).toEqual(selected)
   // A selected message with no durable row yet must never fall back to a whole-history copy.
   expect(() => protocol.prepare('session.branch', { session_id: 's', count: 2 })).toThrow(/not saved yet/)
   expect(protocol.prepare('session.branch', { session_id: 's' })).toMatchObject({ payload: {} })
@@ -362,11 +270,7 @@ test('mints v4 create, submit and mutation ids where crypto.randomUUID is absent
 
   try {
     const protocol = new CanonicalDesktopProtocol()
-    protocol.result(
-      'session.resume',
-      { profile: 'default', session_id: 's' },
-      { session_id: 's', revision: 2, execution_generation: 3 }
-    )
+    protocol.result('session.resume', { profile: 'default', session_id: 's' }, { session_id: 's', revision: 2, execution_generation: 3 })
 
     const cases: Array<[string, Record<string, unknown>, string]> = [
       ['session.create', { profile: 'default', source: 'desktop' }, 'request_id'],
@@ -380,13 +284,4 @@ test('mints v4 create, submit and mutation ids where crypto.randomUUID is absent
   } finally {
     vi.unstubAllGlobals()
   }
-})
-
-test('an approval card keeps its MCP tool-call context on live events and replayed snapshots', () => {
-  const mcp = { server: 'srv', tool: 'write', tool_description: 'writes', arguments: '{}' }
-  const prompt = { prompt_id: 'p', command: 'c', description: 'd', choices: ['once', 'deny'], mcp }
-
-  expect(canonicalPromptParams('approval', 's', prompt)).toMatchObject({ request_id: 'p', mcp })
-  // No MCP context stays absent, never an invented empty object.
-  expect(canonicalPromptParams('approval', 's', { prompt_id: 'p' }).mcp).toBeUndefined()
 })

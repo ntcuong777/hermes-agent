@@ -1,7 +1,7 @@
 import babel from '@rolldown/plugin-babel'
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
-import { regionHash } from '../../ui-tui/src/sdk/ext/slotRegion.mjs' // fork: tui slot (stage 8)
+import { desktopSlotHashes } from './src/fork/slot-hashes.mjs' // fork: tui slot (stage 8)
 
 /** React Compiler preset scoped to modules that can actually contain
  *  components/hooks (JSX syntax or a react-ish import). The preset's default
@@ -41,15 +41,6 @@ import { withCompilerCache } from './scripts/compiler-cache.mjs'
 
 // The runner loads this as ESM without the default bundler's CJS globals.
 const __dirname: string = path.dirname(fileURLToPath(import.meta.url))
-
-const __hermesSlotHashes = {
-  // fork: tui slot (stage 8): the region hash of the CURRENT approval card source, embedded via the
-  // define below; apps/desktop/src/fork/slot.ts compares it against the recorded hash at build time.
-  approvalCard: regionHash(
-    fs.readFileSync(path.resolve(__dirname, 'src/components/assistant-ui/tool/approval.tsx'), 'utf8'),
-    ['ApprovalCard']
-  )
-}
 
 // `hgui` symlinks a worktree's node_modules to the main checkout. Vite realpaths
 // those before enforcing server.fs.allow, so codicon/font assets resolve outside
@@ -147,7 +138,7 @@ const emojibaseAssets = () => ({
 
 export default defineConfig(({ command }) => ({
   // fork: tui slot (stage 8): build-time slot hashes for apps/desktop/src/fork/slot.ts.
-  define: { __HERMES_SLOT_HASHES__: JSON.stringify(__hermesSlotHashes) },
+  define: { __HERMES_SLOT_HASHES__: JSON.stringify(desktopSlotHashes()) },
   base: './',
   plugins: [react(), cachedCompilerPass(command), tailwindcss(), emojibaseAssets()],
   css: {

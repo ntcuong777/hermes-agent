@@ -4585,8 +4585,6 @@ export const en: Translations = {
       run: 'Run',
       command: 'Command',
       commandDetails: 'Command details',
-      mcpToolCall: 'MCP tool call',
-      mcpArguments: 'Arguments',
       moreOptions: 'More approval options',
       allowSession: 'Allow this session',
       alwaysAllowMenu: 'Always allow…',

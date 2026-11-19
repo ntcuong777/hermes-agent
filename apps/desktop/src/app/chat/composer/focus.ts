@@ -577,29 +577,6 @@ export const requestComposerSetDraft = (ids: string[], text: string, opts?: { ac
   return promise ? promise.then(reply => reply?.ok === true) : Promise.resolve(false)
 }
 
-/** Prefill a composer with a backend draft (slash `prefill` directives — /undo's
- *  backed-up message, /stash pop's stored draft): the session's own surface
- *  first. A session-addressed prefill that no mounted surface accepted falls
- *  back to NOTHING: `active` is whatever session the focus bus routes to, and
- *  painting that composer with this session's text would put foreign words one
- *  Enter away from being sent — the visible notice already says what was
- *  restored. Only a payload with no session identity at all (the degenerate-
- *  slash restore, captured from the submitting composer before any session
- *  id exists) may use the active composer — there the submitting surface IS
- *  the active one. Fire-and-forget. */
-export const requestComposerPrefill = (ids: string[], text: string): void => {
-  if (!text.trim()) {
-    return
-  }
-
-  const hasIds = ids.some(id => typeof id === 'string' && id.trim())
-  void requestComposerSetDraft(ids, text).then(ok => {
-    if (!ok && !hasIds) {
-      void requestComposerSetDraft([], text, { active: true })
-    }
-  })
-}
-
 /** Subscribe one mounted composer to draft read/write requests. `getIds` is
  *  consulted per request (the surface's session identity changes as the user
  *  navigates); `isActive` reports whether the focus bus currently routes to

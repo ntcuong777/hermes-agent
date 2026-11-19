@@ -10,7 +10,7 @@ import type {
   InputDetectDropResponse
 } from '@hermes/shared/gateway-types'
 import { useStore } from '@nanostores/react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 
 import type { InputCursorSnapshot, PasteEvent } from '../components/textInput.js'
 import { droppedTokens, imageToken, nextImageIndex } from '../domain/attachments.js'
@@ -23,13 +23,14 @@ import { isUsableClipboardText, readClipboardText } from '../lib/clipboard.js'
 import { resolveEditor } from '../lib/editor.js'
 import { stageClipboardImage, stageImagePath } from '../lib/imageAttachments.js'
 import { extensionHost } from '../sdk/ext/host.js' // fork: tui extension host
+import { clipboardImagePathFromExtensions, transformPasteText } from '../sdk/ext/composerHooks.js' // fork: tui extension host
 import {
-  clipboardImagePathFromExtensions,
-  composerEditor,
-  type ComposerEditorAssign,
-  hasComposerEditor,
-  transformPasteText
-} from '../sdk/ext/composerHooks.js' // fork: tui extension host
+  applyComposerEditorAssign,
+  composerEditorPreparedText,
+  composerEditorSavedAssign,
+  useComposerEditorIdle,
+  type ComposerEditorApplyDeps
+} from './composerEditorApply.js' // fork: composer editor glue (tui-ports)
 import { readOsc52Clipboard } from '../lib/osc52.js'
 import { isRemoteShellSession } from '../lib/terminalSetup.js'
 import { pasteTokenLabel, stripTrailingPasteNewlines } from '../lib/text.js'
@@ -46,7 +47,7 @@ import type {
 } from './interfaces.js'
 import { $isBlocked } from './overlayStore.js'
 import { captureDestination, isCurrentDestination, type SubmissionDestination } from './submissionDestination.js'
-import { $uiSessionId, getUiState } from './uiStore.js'
+import { getUiState } from './uiStore.js'
 
 const TOKEN_MAX_COUNT = 32
 const TOKEN_MAX_TOTAL_BYTES = 4 * 1024 * 1024
@@ -945,80 +946,24 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
 
   const attachImagePath = useCallback((path: string) => attachImagePaths([path]), [attachImagePaths])
 
-  const applyEditorAssign = useCallback(
-    (assign: ComposerEditorAssign, destination: SubmissionDestination) => {
-      if (assign.sys) {
-        sys(assign.sys)
-      }
-
-      if (assign.tokens) {
-        setComposerTokens(assign.tokens as ComposerToken[])
-      }
-
-      if (assign.inputBuf) {
-        setInputBuf(assign.inputBuf)
-      }
-
-      if (assign.input != null) {
-        setInput(assign.input)
-      }
-
-      if (!assign.pasteCollapse) {
-        return
-      }
-
-      const token = assign.pasteCollapse.token
-
-      void gw
-        .request<{ path?: string }>('paste.collapse', { text: assign.pasteCollapse.text })
-        .then(r => {
-          const path = r?.path
-
-          if (!path || !isCurrentDestination(destination)) {
-            return
-          }
-
-          setComposerTokens(prev => prev.map(tk => (tk === token ? { ...tk, path } : tk)))
-        })
-        .catch(() => {})
-    },
+  const editorDeps = useMemo(
+    () => ({ gw, setComposerTokens, setInput, setInputBuf, sys }) satisfies ComposerEditorApplyDeps,
     [gw, setComposerTokens, setInput, setInputBuf, sys]
   )
 
-  const sid = useStore($uiSessionId)
-
-  // Seam: an editor plugin may return an assign when the composer is empty. Core writes it and does not keep the draft.
-  useEffect(() => {
-    if (!hasComposerEditor()) {
-      return
-    }
-
-    const plan = composerEditor({
-      composerEmpty: input.length === 0 && inputBuf.length === 0,
-      holds: destination => isCurrentDestination(destination as SubmissionDestination),
-      phase: 'idle',
-      tokens: tokensRef.current,
-      trimTokens
-    })
-
-    if (plan && 'assign' in plan && plan.assign) {
-      applyEditorAssign(plan.assign, captureDestination())
-    }
-  }, [applyEditorAssign, input, inputBuf, sid])
+  // fork: composer editor seam (tui-ports). The application glue lives in composerEditorApply.
+  useComposerEditorIdle({ deps: editorDeps, input, inputBuf, tokensRef, trimTokens })
 
   const openEditor = useCallback(async () => {
     const destination = captureDestination()
-    const preEdit = captureDraft(inputRef.current)
+    const draft = captureDraft(inputRef.current)
     const dir = mkdtempSync(join(tmpdir(), 'hermes-'))
     const file = join(dir, 'prompt.md')
     const [cmd, ...args] = resolveEditor()
 
     const joined = [...inputBuf, input].join('\n')
-    const prepared = hasComposerEditor()
-      ? composerEditor({ phase: 'prepare', text: joined, tokens: tokensRef.current })
-      : null
 
-    writeFileSync(file, prepared && 'text' in prepared ? prepared.text : joined)
+    writeFileSync(file, composerEditorPreparedText(joined, tokensRef.current))
 
     let exitCode: null | number = null
 
@@ -1032,24 +977,17 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
       }
 
       const saved = readFileSync(file, 'utf8')
-      const ui = getUiState()
-      const plan = hasComposerEditor()
-        ? composerEditor({
-            collapseChars: ui.pasteCollapseChars,
-            collapseLines: ui.pasteCollapseLines,
-            destination,
-            destinationOk: isCurrentDestination(destination) && isFresh(preEdit),
-            joined,
-            label: pasteTokenLabel,
-            phase: 'saved',
-            saved,
-            tokens: tokensRef.current,
-            trimTokens
-          })
-        : null
+      const savedAssign = composerEditorSavedAssign({
+        destination,
+        destinationOk: isCurrentDestination(destination) && isFresh(draft),
+        joined,
+        saved,
+        tokens: tokensRef.current,
+        trimTokens
+      })
 
-      if (plan && 'assign' in plan && plan.assign) {
-        applyEditorAssign(plan.assign, destination)
+      if (savedAssign) {
+        applyComposerEditorAssign(savedAssign, destination, editorDeps)
 
         return
       }
@@ -1060,7 +998,7 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
         return
       }
 
-      if (!(isCurrentDestination(destination) && isFresh(preEdit))) {
+      if (!(isCurrentDestination(destination) && isFresh(draft))) {
         enqueue(text, text, destination)
 
         return
@@ -1072,7 +1010,7 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
     } finally {
       rmSync(dir, { force: true, recursive: true })
     }
-  }, [applyEditorAssign, captureDraft, enqueue, input, inputBuf, isFresh, setInput, setInputBuf, submitRef])
+  }, [editorDeps, captureDraft, enqueue, input, inputBuf, isFresh, setInput, setInputBuf, submitRef])
 
   const actions = useMemo(
     () => ({

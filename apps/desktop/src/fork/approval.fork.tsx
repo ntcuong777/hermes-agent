@@ -238,6 +238,8 @@ interface ApprovalCardProps {
 const ApprovalCard: FC<ApprovalCardProps> = ({ request, total, position, stack }) => {
   const { t } = useI18n()
   const copy = t.assistant.approval
+  // fork: the MCP strings are the fork card's own copy (upstream's Translations has no such keys).
+  const forkCopy = { mcpArguments: 'Arguments', mcpToolCall: 'MCP tool call' }
   const gateway = useStore($gateway)
   const [submitting, setSubmitting] = useState<ApprovalChoice | null>(null)
   const submittingRef = useRef(false)
@@ -337,7 +339,7 @@ const ApprovalCard: FC<ApprovalCardProps> = ({ request, total, position, stack }
     >
       <div className="flex items-center gap-2 px-2.5 pt-2 text-xs text-(--ui-text-secondary)">
         <Codicon name={mcp ? 'server' : 'terminal'} size="0.875rem" />
-        <span>{mcp ? copy.mcpToolCall : showsDescription ? copy.commandDetails : copy.command}</span>
+        <span>{mcp ? forkCopy.mcpToolCall : showsDescription ? copy.commandDetails : copy.command}</span>
         {mcp && (
           <span className="truncate font-medium text-(--ui-text-primary)">
             {mcp.server} · {mcp.tool}
@@ -359,7 +361,7 @@ const ApprovalCard: FC<ApprovalCardProps> = ({ request, total, position, stack }
           {mcp.arguments && (
             <>
               <div className="px-2.5 pt-1.5 text-[0.6875rem] uppercase tracking-wide text-(--ui-text-tertiary)">
-                {copy.mcpArguments}
+                {forkCopy.mcpArguments}
               </div>
               <pre className="m-0 max-h-40 overflow-auto whitespace-pre-wrap break-words px-2.5 py-1.5 font-mono text-xs leading-relaxed text-(--ui-text-primary)">
                 {mcp.arguments}

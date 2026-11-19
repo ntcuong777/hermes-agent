@@ -2,7 +2,7 @@ import { skillInvocationText } from '@hermes/shared'
 import { mergeUsage, parseCommandDispatch, parseSlashCommand, randomUuid } from '@hermes/shared'
 import { type MutableRefObject, useCallback, useRef } from 'react'
 
-import { requestComposerPrefill } from '@/app/chat/composer/focus'
+import { requestComposerPrefill } from '@/fork/composer-prefill' // fork: prefill routing
 import { mergeOlderTranscriptPage } from '@/app/chat/transcript-backfill'
 import { prepareDefaultNewSession } from '@/app/session/new-session-route'
 import { invalidateContextBreakdown } from '@/app/shell/hooks/use-context-breakdown'

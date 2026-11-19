@@ -1,5 +1,7 @@
 import { atom, computed, type ReadableAtom } from 'nanostores'
 
+import { parseApprovalMcp, type ApprovalMcpContext } from '@/fork/approval-mcp' // fork: approvalCard MCP context carrier
+
 import { $clarifyRequest, $clarifyRequests } from './clarify'
 import { isSessionGone, isSessionGoneForBackgroundPolling, markSessionGone } from './runtime-gone'
 import { respondToServerRequest } from './server-requests'
@@ -81,45 +83,13 @@ function keyedPromptStore<T extends KeyedPrompt>(): PromptStore<T> {
 // arrives as an `approval` server request whose id is `serverRequestId`; the
 // card answers that request when it is still open and falls back to the
 // `approval.respond` RPC when the prompt was restored from `approval.pending`.
-/** Structured MCP tool-call context on an approval (contract `ApprovalMcpContext`): the card
- *  renders server/tool/what-it-does/arguments instead of command chrome. */
-export interface ApprovalMcpContext {
-  server: string
-  tool: string
-  toolDescription: string | null
-  arguments: string | null
-}
-
-/** MCP context off a wire payload; undefined unless it names both server and tool. */
-export function parseApprovalMcp(v: unknown): ApprovalMcpContext | undefined {
-  if (!v || typeof v !== 'object') {
-    return undefined
-  }
-
-  const raw = v as Record<string, unknown>
-  const str = (x: unknown): string => (typeof x === 'string' ? x.trim() : '')
-  const server = str(raw.server)
-  const tool = str(raw.tool)
-
-  if (!server || !tool) {
-    return undefined
-  }
-
-  return {
-    server,
-    tool,
-    toolDescription: str(raw.tool_description) || null,
-    arguments: str(raw.arguments) || null
-  }
-}
-
 export interface ApprovalRequest extends KeyedPrompt {
   // false when the backend won't honor a permanent allow → hide "Always allow".
   allowPermanent?: boolean
   choices?: string[]
   command: string
   description: string
-  mcp?: ApprovalMcpContext
+  mcp?: ApprovalMcpContext // fork: approvalCard MCP context (parsed in fork/approval-mcp)
   requestId?: string
   serverRequestId?: string
   smartDenied?: boolean
@@ -134,7 +104,6 @@ interface PendingApprovalPayload {
   choices?: unknown
   command?: unknown
   description?: unknown
-  mcp?: unknown
   request_id?: unknown
   smart_denied?: boolean
 }
@@ -363,7 +332,7 @@ export async function replayPendingApproval(gateway: ApprovalGateway | null, ses
           : undefined,
         command: typeof pending.command === 'string' ? pending.command : '',
         description: typeof pending.description === 'string' ? pending.description : 'dangerous command',
-        mcp: parseApprovalMcp(pending.mcp),
+        mcp: parseApprovalMcp(pending.mcp), // fork: approvalCard MCP context carrier
         requestId: pending.request_id,
         sessionId,
         smartDenied: pending.smart_denied === true
