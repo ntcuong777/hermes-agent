@@ -38,9 +38,9 @@ import {
 import { $showToolActivity } from '@/store/tool-activity'
 import { setToolDisclosureOpen } from '@/store/tool-view'
 
-import { isApprovalActivity } from './approval-activity'
-import { toolEntryDisclosureId } from './fallback-model/targets'
-import { isToolCallPart, summarizeToolRun } from './run-summary'
+import { isApprovalActivity } from '@/components/assistant-ui/tool/approval-activity'
+import { toolEntryDisclosureId } from '@/components/assistant-ui/tool/fallback-model/targets'
+import { isToolCallPart, summarizeToolRun } from '@/components/assistant-ui/tool/run-summary'
 
 type ApprovalChoice = 'once' | 'session' | 'always' | 'deny'
 export const ApprovalPlacementContext = createContext<'inline' | 'floating'>('inline')

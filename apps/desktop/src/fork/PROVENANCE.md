@@ -7,9 +7,11 @@ console.warn; there is no runtime notice and no /extensions entry (the TUI side 
 
 Contents:
 - `slot.ts`: `forkSlot(id, Stock, Fork, expectedHash)` - the build-time selector.
-- `approval.fork.tsx`: the fork's `apps/desktop/src/components/assistant-ui/tool/approval.tsx` verbatim (the
+- `approval.fork.tsx`: the fork's `apps/desktop/src/components/assistant-ui/tool/approval.tsx` (the
   MCP header, tool description and full arguments on the approval card; rule 6.9). Its `@/` imports resolve
-  unchanged from this directory.
+  unchanged from this directory; the three sibling imports (`./approval-activity`, `./fallback-model/targets`,
+  `./run-summary`) are rewritten to the `@/components/assistant-ui/tool/...` alias because the copy lives in a
+  different directory (the only edit to the copy; the slot lock hashes upstream's region, not this file).
 - `slots.json`, `tui_slots.lock.json`, `upstream-source/approvalCard.tsx.txt`: provenance, recorded with
   `tui-slot-check --record approvalCard --plugin-dir apps/desktop/src/fork --fork-root <fork>`.
 
