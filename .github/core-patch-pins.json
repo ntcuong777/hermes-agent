@@ -20,6 +20,26 @@
       "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
       "upstream_release": "0.22.5"
     },
+    "config-seams/compress-ack": {
+      "ast_sha": "db24fd8886f6e0a115d7bedbf229fca37a3b2dbadccb6548db5adf7231d6fa89",
+      "kind": "replace",
+      "plugin": "config-seams",
+      "reason": "A manual compress sends one started line before the summariser runs",
+      "target": "gateway.slash_commands_session:GatewaySessionCommandsMixin._send_compress_started_ack",
+      "target_file": "gateway/slash_commands_session.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "config-seams/memory-budget": {
+      "ast_sha": "1afd3aaac807e544fea75960f4982ed9be5b334e11a64a53055272401fdc4545",
+      "kind": "replace",
+      "plugin": "config-seams",
+      "reason": "A memory write that cannot fit is refused before the approval gate",
+      "target": "tools.memory_tool:_over_budget_now",
+      "target_file": "tools/memory_tool.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
     "config-seams/memory-snapshot": {
       "ast_sha": "a798ff04a40cc412e7e573e189ce16d8019808a4c492decaa476499c8f89989e",
       "kind": "replace",
@@ -27,6 +47,16 @@
       "reason": "A memory snapshot cap keeps the system-prompt block to whole entries and names how many more the store holds, so the file can grow while the prompt stays bounded",
       "target": "tools.memory_tool_store:MemoryStore._render_block",
       "target_file": "tools/memory_tool_store.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "config-seams/model-route": {
+      "ast_sha": "de3165a10548c5641d090b80ab37cfde6a9602ff672483e679fd1aa0489b131f",
+      "kind": "replace",
+      "plugin": "config-seams",
+      "reason": "A messaging model switch writes gateway.model, and a CLI switch writes the host file when one exists",
+      "target": "hermes_cli.model_switch:persist_routed_selection",
+      "target_file": "hermes_cli/model_switch.py",
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.23.2"
     },
