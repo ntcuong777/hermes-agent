@@ -178,6 +178,12 @@ def _await_gateway_decision(session_key: str, notify_cb, approval_data: dict, *,
     from tools import approval as _approval
     from agent.terminal_approval_batch import approval_published, preparing_terminal_approval, register_prepared_approval
 
+    if "mcp" in approval_data:  # the one carrier of a card's MCP context: redacted here, whoever built it
+        from tools.approval_context_seam import card_context
+        approval_data = dict(approval_data)
+        carried = card_context(approval_data.pop("mcp"))
+        if carried is not None:
+            approval_data["mcp"] = carried
     primary_key = approval_data.get("pattern_key", "")
     if surface == "gateway":
         surface = _ctx.gateway_approval_surface()
