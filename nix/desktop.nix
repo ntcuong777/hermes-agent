@@ -94,6 +94,8 @@ let
       # packaging helper (and its content-types table).
       "scripts/msix-shared.mjs"
       "scripts/release-content-types.json"
+      # apps/desktop/vite.config.ts imports regionHash from here (the approvalCard build-time slot).
+      "ui-tui/src/sdk/ext/slotRegion.mjs"
     ];
     pname = "hermes-desktop-renderer";
 

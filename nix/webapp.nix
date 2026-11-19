@@ -15,6 +15,8 @@ hermesNpmLib.buildPnpmPackage {
     "scripts/build/node-deps-relay.mjs"
     "scripts/build/freshness.mjs"
     "scripts/build/frontend-common.mjs"
+    # apps/desktop/vite.config.ts imports regionHash from here (the approvalCard build-time slot).
+    "ui-tui/src/sdk/ext/slotRegion.mjs"
   ];
   pname = "hermes-webapp";
 
