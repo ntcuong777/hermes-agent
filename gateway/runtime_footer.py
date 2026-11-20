@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 from urllib.parse import quote
 
+from gateway import footer_hooks
+
 _DEFAULT_FIELDS: tuple[str, ...] = ("model", "context_pct", "cwd")
 _SEP = " · "
 
@@ -123,10 +125,11 @@ def build_footer_line(*, user_config: dict[str, Any] | None, platform_key: str |
     cfg = resolve_footer_config(user_config, platform_key)
     if not cfg.get("enabled"):
         return ""
-    return format_runtime_footer(model=model, context_tokens=context_tokens,
+    line = format_runtime_footer(model=model, context_tokens=context_tokens,
                                  context_length=context_length, cwd=cwd, turn_seconds=turn_seconds,
                                  requested_model=requested_model, served_model=served_model,
                                  fields=cfg.get("fields") or _DEFAULT_FIELDS)
+    return footer_hooks.with_footer_extras(line, model=model, platform=platform_key)
 
 
 class FooteredReply(str):

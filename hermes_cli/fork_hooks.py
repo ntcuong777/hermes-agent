@@ -18,4 +18,7 @@ FORK_HOOKS = {
     "resolve_write_policy",
     "resolve_tool_result_limits",
     "resolve_reply_max_tokens",
+    # footer / usage_extra: text a plugin adds under the runtime footer / to /usage (gateway/footer_hooks.py).
+    "footer",
+    "usage_extra",
 }

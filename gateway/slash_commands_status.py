@@ -13,6 +13,7 @@ from typing import Any
 
 from agent.account_usage import fetch_account_usage, render_account_usage_lines
 from agent.i18n import t
+from gateway import footer_hooks
 from gateway.config import Platform
 from gateway.platforms.event import MessageEvent
 from gateway.session_transcript import TranscriptReadError
@@ -686,7 +687,7 @@ class GatewayStatusCommandsMixin:
 
         def _with_account_blocks(lines: list[str]) -> str:
             # Each block is preceded by a blank divider only when something precedes it.
-            for block in (account_lines, credits_lines):
+            for block in (account_lines, credits_lines, footer_hooks.usage_extra_lines(platform=source.platform)):
                 if block:
                     if lines:
                         lines.append("")
