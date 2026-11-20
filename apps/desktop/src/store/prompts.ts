@@ -104,6 +104,7 @@ interface PendingApprovalPayload {
   choices?: unknown
   command?: unknown
   description?: unknown
+  mcp?: unknown // fork: approvalCard MCP context carrier (parseApprovalMcp)
   request_id?: unknown
   smart_denied?: boolean
 }
