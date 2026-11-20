@@ -55,11 +55,11 @@ otherwise).
 
 ## Fork rules (personal fork)
 
-Plugin first: a customization is a plugin (`/etc/nix-darwin/hermes/plugins`); core takes seams and hooks only. No seam to
+Plugin first: a customization is a plugin (`hermes/plugins` of the parent repo holding `fork/hermes-agent`); core takes seams and hooks only. No seam to
 attach to: design it (see the guide) and land it with the plugin.
 Authorization carriers fail closed. Never delete a seam call or rename a patched function (pins, locks). Every upstream
-merge runs the parent's `hermes/scripts/upstream-gate` to exit 0, plus `tsc` for `apps/desktop` and `ui-tui`, before push or
-flake bump. Steps: `/etc/nix-darwin/docs/agents/hermes-customization-guide.md`.
+merge runs the parent's `hermes/scripts/upstream-gate` to exit 0, plus desktop and TUI `tsc`, before push or
+flake bump. Steps: parent repo `docs/agents/hermes-customization-guide.md`.
 
 ## Development Environment
 
