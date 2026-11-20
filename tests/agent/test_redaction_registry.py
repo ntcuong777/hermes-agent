@@ -51,8 +51,8 @@ def test_registered_pattern_masks_token():
     assert register_redaction_patterns([NVAPI_PATTERN], source="test") == 1
     out = redact_sensitive_text(f"connect failed: {NVAPI_KEY}", force=True)
     assert NVAPI_KEY not in out
-    # Head/tail mask preserved for debuggability (same rule as built-ins).
-    assert "nvapi-" in out and "..." in out
+    # Only the vendor prefix survives (same rule as built-ins): no fragment of the key.
+    assert "nvapi-***" in out and NVAPI_KEY[6:12] not in out
 
 
 

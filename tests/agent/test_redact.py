@@ -181,7 +181,7 @@ class TestKnownPrefixes:
         for token in samples:
             result = redact_sensitive_text(f"provider error {token}")
             assert token not in result
-            assert "..." in result
+            assert result.endswith("***") and token[-6:] not in result
 
     def test_short_fireworks_like_words_unchanged(self):
         text = "fw-tooshort fw_tooshort fpk_tooshort"
@@ -677,7 +677,7 @@ class TestRedactingFormatter:
         )
         result = formatter.format(record)
         assert "abc123def456" not in result
-        assert "sk-pro" in result
+        assert "sk-***" in result and "sk-pro" not in result
 
 
 class TestPrintenvSimulation:
@@ -1111,7 +1111,7 @@ class TestXaiToken:
     def test_bare_token_masked(self):
         result = redact_sensitive_text(f"using key {self.KEY}", force=True)
         assert self.KEY not in result
-        assert "xai-AB" in result
+        assert "xai-***" in result and "xai-AB" not in result
 
 
     def test_too_short_not_masked(self):
@@ -1555,7 +1555,7 @@ class TestFireworksToken:
     def test_bare_token_masked(self):
         result = redact_sensitive_text(f"fireworks error: key {self.KEY}", force=True)
         assert self.KEY not in result
-        assert "fw_AA" in result
+        assert "fw_***" in result and "fw_AA" not in result
 
 
     def test_too_short_not_masked(self):

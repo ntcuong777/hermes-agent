@@ -2799,7 +2799,7 @@ class TestNotificationRedaction:
         assert len(results) == 1
         _evt, text = results[0]
         assert "ghp_abc123def456" not in text
-        assert "ghp_" not in text or "REDACTED" in text
+        assert "abc123def456" not in text and "ghp_***" in text  # only the vendor prefix survives
 
 
 # ── Prefix resolution (Factory Droid-inspired task-ID prefixes) ──────────────
