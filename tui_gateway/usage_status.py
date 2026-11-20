@@ -33,6 +33,21 @@ _FORK_DEPTH_CAP = (
 )
 
 
+def _reader(db: Any):
+    """``session_id -> row dict | None`` over either store shape: the legacy ``SessionDB`` (``get_session``) or the
+    persistence handle an agent holds as ``_session_db`` (``sessions.get(...).as_session_row()``). A handle with
+    neither raises here, loudly, rather than reading as a session that cost nothing."""
+    getter = getattr(db, "get_session", None)
+    if callable(getter):
+        return getter
+
+    def read(session_id: str):
+        record = db.sessions.get(session_id)
+        return record.as_session_row() if record is not None else None
+
+    return read
+
+
 def _config(row: dict) -> dict:
     config = row.get("model_config")
     if isinstance(config, str):
@@ -79,7 +94,8 @@ def lineage_cost(db: Any, session_id: str, *, _depth: int = 0) -> tuple[float, s
 
     ``get_session`` drains queued token deltas first, so the total already holds what this
     process has spent so far."""
-    row = db.get_session(session_id)
+    get_session = _reader(db)
+    row = get_session(session_id)
     if not row:
         return 0.0, ""
     total, status = _cost_of(row), str(row.get("cost_status") or "")
@@ -88,7 +104,7 @@ def lineage_cost(db: Any, session_id: str, *, _depth: int = 0) -> tuple[float, s
         parent_id = row.get("parent_session_id")
         if not parent_id or parent_id in seen:
             break
-        parent = db.get_session(parent_id)
+        parent = get_session(parent_id)
         if not parent or not _is_continuation(row, parent, parent_id):
             break
         seen.add(parent_id)
