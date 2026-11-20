@@ -840,6 +840,46 @@
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.23.2"
     },
+    "redaction-hardening/header-tail": {
+      "ast_sha": "cc01f386eac64a7ac6246fdaf77a128fcb2e7aa99b71a0fb3102a0040fb7dba2",
+      "kind": "wrap",
+      "plugin": "redaction-hardening",
+      "reason": "redaction hardening: moved from fork commit 5dfa03c5573 (see PROVENANCE.md)",
+      "target": "agent.redact_headers:_redact_header_line_value",
+      "target_file": "agent/redact_headers.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "redaction-hardening/mask-token": {
+      "ast_sha": "2267fc382a71800810b48e2af47acc7c3cdfea2e06fbc648815865173273007a",
+      "kind": "replace",
+      "plugin": "redaction-hardening",
+      "reason": "redaction hardening: moved from fork commit 5dfa03c5573 (see PROVENANCE.md)",
+      "target": "agent.redact:_mask_token",
+      "target_file": "agent/redact.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "redaction-hardening/redact-before-truncate": {
+      "ast_sha": "44dc6d985fa45cf6e263aa6b683557c0fa21c9ecabc3bdb1835d562ec6eabfe3",
+      "kind": "wrap",
+      "plugin": "redaction-hardening",
+      "reason": "redaction hardening: moved from fork commit 5dfa03c5573 (see PROVENANCE.md)",
+      "target": "tools.terminal_tool_result:_truncate_head_tail",
+      "target_file": "tools/terminal_tool_result.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "redaction-hardening/stash-command": {
+      "ast_sha": "936518e93753b15b5bfb8028eedbef3289a554682fd500e4f33bb821837b4c25",
+      "kind": "wrap",
+      "plugin": "redaction-hardening",
+      "reason": "redaction hardening: moved from fork commit 5dfa03c5573 (see PROVENANCE.md)",
+      "target": "tools.terminal_tool_result:finalize_foreground_result",
+      "target_file": "tools/terminal_tool_result.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
     "request-messages/request-messages": {
       "ast_sha": "92e6616435f6c13a3144c97ab9a0f78c56b0dd22a901cfd03dba68e78644c7b8",
       "kind": "replace",
