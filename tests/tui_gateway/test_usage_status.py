@@ -198,3 +198,31 @@ def test_a_real_session_db_round_trip(tmp_path, monkeypatch):
             record.as_session_row() if (record := store.sessions.get(sid)) is not None else None))
         assert usage_status.lineage_cost(rows, "s2") == (0.75, "estimated")
 
+
+
+class _Persistence:
+    """The handle an agent holds as ``_session_db``: no ``get_session``, rows behind ``sessions.get(...)``."""
+
+    def __init__(self, rows):
+        self.sessions = self
+        self._rows = rows
+
+    def get(self, session_id):
+        row = self._rows.get(session_id)
+        return None if row is None else type("Record", (), {"as_session_row": lambda _self: row})()
+
+
+def test_a_persistence_handle_reads_the_stored_lineage_cost():
+    """Regression: the handle has no get_session, so the carried cost read raised, was logged at debug and the bar
+    restarted at this process's counter (a long session showed $3.30 instead of $214)."""
+    handle = _Persistence({"tip": _row(2.0, parent="root"), "root": _row(214.0, end_reason="compression")})
+    assert usage_status.lineage_cost(handle, "tip") == (216.0, "estimated")
+
+
+def test_a_persistence_handle_with_an_unknown_session_costs_nothing():
+    assert usage_status.lineage_cost(_Persistence({}), "x") == (0.0, "")
+
+
+def test_a_store_with_no_known_read_shape_raises_instead_of_reading_zero():
+    with pytest.raises(AttributeError):
+        usage_status.lineage_cost(object(), "x")
