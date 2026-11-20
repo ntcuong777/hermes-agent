@@ -944,20 +944,11 @@ def redact_approval_display(text: str | None, *, force: bool = False, prose: boo
     return sanitize_command_for_display(redact_sensitive_text(str(text or ""), force=force), prose=prose)
 
 
-_SECRET_HEADER_KEYS = frozenset(__import__("agent.redact_headers", fromlist=["x"]).SECRET_HEADER_NAME_LIST)
-_VENDOR_PREFIX_RE = re.compile(r"^[A-Za-z]{2,6}[-_]")
-
-
 def _mask_token(token: str) -> str:
-    """Mask a credential found in agent-visible text.
-
-    It used to keep 6 leading and 4 trailing characters (``sk-lf-1...cdef``). Ten characters of a 40-character key
-    is a fragment of the secret in the model's context and transcript, and no caller needs it. What stays is the
-    vendor prefix alone (``sk-***``, ``xai-***``, ``fw_***``): a short letters-then-separator head that names the
-    provider and carries no entropy, so an error line still says which key it was. Anything else is ``***``.
-    Display surfaces that want an identifiable mask (``hermes config`` / ``status``) call :func:`mask_secret`."""
-    prefix = _VENDOR_PREFIX_RE.match(token or "")
-    return f"{prefix.group(0)}***" if prefix and len(token) > len(prefix.group(0)) + 8 else "***"
+    """Mask a log token — 18-char floor, preserves 6 prefix / 4 suffix; empty → ``***``."""
+    if not token:
+        return "***"
+    return mask_secret(token, head=6, tail=4, floor=18)
 
 
 # Output of an earlier pass: masking it again would erase the kind it keeps visible. Only a
@@ -1411,8 +1402,6 @@ def _redact_assignments(text: str, *, mask_nonreusable: bool = False) -> str:
     if ":" in text and "://" not in text:
         def _redact_yaml(m):
             key, sep, value = m.groups()
-            if key.strip().lower() in _SECRET_HEADER_KEYS:
-                return m.group(0)  # the header pass masks the whole value (it may hold spaces); a one-word mask here would pass for done
             quote = value[0] if len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0] else ""
             inner = value[1:-1] if quote else value
             # An empty or docs-placeholder scalar (``""``, ``"<your key>"``, ``"${API_KEY}"``) is not
