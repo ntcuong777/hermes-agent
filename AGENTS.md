@@ -29,10 +29,7 @@ A change to the stock system prompt or `tools[]` fails `tests/ci/test_prompt_sur
 
 ## Contribution rubric
 
-The project's intent layer, for contributors and for the triage sweeper (which may only close on
-`implemented_on_main`, `cannot_reproduce` or `incoherent`; taste-based closes are a maintainer's
-call, and when in doubt a PR stays open). Long form with examples:
-`website/docs/developer-guide/contributing.md` § Contribution rubric.
+Long form: `website/docs/developer-guide/contributing.md`.
 
 **Wanted:** real bug fixes (repro on `main`, the exact line, the whole class incl. sibling paths);
 reach at the edges (adapters, providers, models, UI features) wired into the existing setup UX;
@@ -51,14 +48,18 @@ standalone plugin repo).
 isolation is often the design (profiles are islands on purpose), an absence can be load-bearing,
 and a fix that cannot point to the line where the bug manifests has an unverified premise.
 
-**Security:** `SECURITY.md` is the scope authority. A §3.1 finding goes private (GitHub Security
-Advisories or security@nousresearch.com), never into a public issue, PR, commit or comment; §3.2
-hardening is ordinary public work. Name the §2 boundary crossed, with a repro on `main`.
-
 **Footprint ladder** (take the highest rung that solves it): extend existing code → CLI command +
 skill → service-gated tool (`check_fn` answers reachability/opt-in, never per-session surface) →
 plugin → MCP server in the catalog → new core tool (fundamental, broadly useful, unreachable
 otherwise).
+
+## Fork rules (personal fork)
+
+Plugin first: a customization is a plugin (`/etc/nix-darwin/hermes/plugins`); core takes seams and hooks only. No seam to
+attach to: design it (see the guide) and land it with the plugin.
+Authorization carriers fail closed. Never delete a seam call or rename a patched function (pins, locks). Every upstream
+merge runs the parent's `hermes/scripts/upstream-gate` to exit 0, plus `tsc` for `apps/desktop` and `ui-tui`, before push or
+flake bump. Steps: `/etc/nix-darwin/docs/agents/hermes-customization-guide.md`.
 
 ## Development Environment
 
