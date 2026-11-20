@@ -830,6 +830,16 @@
       "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
       "upstream_release": "0.22.5"
     },
+    "memory-shape/learn-prompt": {
+      "ast_sha": "3f351abad06747e4968bb02af000a0c5065440678c17b60c12894ce22879c129",
+      "kind": "wrap",
+      "plugin": "memory-shape",
+      "reason": "append the skill shape (rule + why + example bullets) and the placement note to the prompt core's /learn builds",
+      "target": "agent.learn_prompt:build_learn_prompt",
+      "target_file": "agent/learn_prompt.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
     "memory-shape/memory-guidance": {
       "ast_sha": "3728dee95a80f89ea5ba6fba6561a820f7f3f057328021282f16a9fa7de4e0f4",
       "kind": "wrap",
