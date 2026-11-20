@@ -830,6 +830,36 @@
       "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
       "upstream_release": "0.22.5"
     },
+    "memory-shape/memory-guidance": {
+      "ast_sha": "3728dee95a80f89ea5ba6fba6561a820f7f3f057328021282f16a9fa7de4e0f4",
+      "kind": "wrap",
+      "plugin": "memory-shape",
+      "reason": "entry-shape sentence replaces the declarative-facts advice in the memory system prompt (memory-shape write side)",
+      "target": "agent.prompt_builder:build_memory_guidance",
+      "target_file": "agent/prompt_builder.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "memory-shape/memory-review-prompt": {
+      "ast_sha": "e2403ebde11d8c097adcd14853e1b7b65dd29b2ca89e91e055c1e1f2cf975ef3",
+      "kind": "wrap",
+      "plugin": "memory-shape",
+      "reason": "append the RULE/NOT/EG entry shape to a memory-bearing background review prompt",
+      "target": "agent.background_review:_run_review_in_thread",
+      "target_file": "agent/background_review.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
+    "memory-shape/memory-schema": {
+      "ast_sha": "317a30674014418b6443e57cdfb34974ecb68d7335fd5d318d4a501c1fb58d28",
+      "kind": "wrap",
+      "plugin": "memory-shape",
+      "reason": "append the RULE/NOT/EG entry shape to the memory tool description (the registry entry captures its schema builder, so get_definitions is the reachable step)",
+      "target": "tools.registry:ToolRegistry.get_definitions",
+      "target_file": "tools/registry.py",
+      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
+      "upstream_release": "0.23.2"
+    },
     "prompt-cap/prompt-cap": {
       "ast_sha": "fc383da6e7fb30d9301ac8dd3378a638e96d7b0c1ffc48b85ada86015751bc0b",
       "kind": "replace",
