@@ -277,11 +277,14 @@ class GatewayInboundHooksMixin:
         return False, None, command
 
     async def _hm_run_plugin_handler(
-        self, plugin_handler, event: MessageEvent, source: SessionSource, session_entry=None, args=None
+        self, plugin_handler, event: MessageEvent, source: SessionSource, session_entry=None, args=None,
+        structured: bool = False,
     ) -> str | dict | None:
         """Run a plugin handler; local composer directives stay structured, messaging stays text.
         Raises what
         the handler raises (``gateway/session_commands.py`` resolves the exact registered name).
+        *structured*: the answer goes to a local client (the TUI's ``slash.exec``), whatever platform the session
+        came from, so a dict directive is returned as is.
         *args* is the argument as typed (a local session's command); otherwise the message's
         command arguments, with the messaging dash repair of ``get_command_args``."""
         # The agent-turn path binds HERMES_SESSION_* via _set_session_env; this dispatch
@@ -318,7 +321,7 @@ class GatewayInboundHooksMixin:
                 if inspect.isawaitable(result):
                     result = await result
         # Local clients consume composer directives; messaging adapters only render text.
-        if source.platform.value == "local" and isinstance(result, dict):
+        if (structured or source.platform.value == "local") and isinstance(result, dict):
             return result
         return str(result) if result else None
 
