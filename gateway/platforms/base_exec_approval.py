@@ -50,12 +50,6 @@ def approval_card_parts(command: str, description: str, mcp: Optional[dict] = No
     return str(command or ""), str(description or "")
 
 
-def card_header(adapter: Any, mcp: Optional[dict] = None) -> str:
-    """Seam. The card's headline in ``adapter``'s markup. Absent, ``adapter._EA_HEADER``."""
-    del mcp
-    return adapter._EA_HEADER
-
-
 def text_card_heading(mcp: Optional[dict] = None) -> str:
     """Seam. The bold headline of the typed-reply text prompt. Absent, the generic header."""
     del mcp
