@@ -29,6 +29,17 @@ def output_dir() -> Path:
     return get_hermes_home() / "logs" / "process-output"
 
 
+def make_session_log(session_id: str) -> str:
+    """A host spawn's log path under ``output_dir`` (the directory ``adoptable_log``
+    accepts), for a job that must outlive its spawner: a persist_on_release job with a
+    keep policy (gateway/shutdown_process_policy.py) rides the same log-backed contract
+    worker spawns get — its shell records the exit beside the log, and whichever
+    interpreter re-adopts the checkpoint entry tails the file."""
+    directory = output_dir()
+    make_user_dir(directory, mode=0o700, parents=True, exist_ok=True)
+    return str(directory / f"{session_id}.log")
+
+
 def worker_output_log(session_id: str) -> Optional[Path]:
     """The log a worker-spawned process writes to; None outside a registered worker."""
     from agent.runtime_session_store import is_worker_process

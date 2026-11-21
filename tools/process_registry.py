@@ -1192,7 +1192,13 @@ class ProcessRegistry(ProcessTerminationMixin, ProcessCheckpointMixin, ProcessOu
                                     persist_on_release=persist_on_release)
         pty_scope_attempted = False
         # A worker's pipe or PTY dies with the worker (the child's next write is SIGPIPE): write to a log.
+        # A persist_on_release job a keep policy wants to survive the gateway dies the same way
+        # (a pipe's read end closes, a PTY's master fd closes) unless it is log-backed from the
+        # start; without a policy the log is None and the spawn is untouched (upstream PIPE).
         log = worker_output_log(session.id)
+        if log is None and session.persist_on_release:
+            from gateway.shutdown_process_policy import persisted_spawn_log
+            log = persisted_spawn_log(session.id)
         if use_pty and log is None:
             try:
                 return self._spawn_local_pty(session, safe_command, env_vars)

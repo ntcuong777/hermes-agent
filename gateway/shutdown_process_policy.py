@@ -30,7 +30,7 @@ A policy fn takes no arguments and answers truthy/falsy; a raise counts as
 
 import logging
 import threading
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -67,20 +67,38 @@ def _keep_asked_for() -> bool:
             if fn():
                 return True
         except Exception:
-            logger.debug("shutdown process policy %r raised; treating as 'no'", fn, exc_info=True)
+            # Fail closed to the upstream kill — but a broken plugin must be visible,
+            # or the operator only notices when a restart silently killed their jobs.
+            logger.warning("shutdown process policy %r raised; treating as 'no' (kill)", fn, exc_info=True)
     return False
+
+
+def persisted_spawn_log(session_id: str) -> Optional[str]:
+    """The output log a ``persist_on_release`` host spawn should write to, or ``None`` for
+    the upstream PIPE. A pipe dies with the gateway (the child's next write is SIGPIPE),
+    and a PTY dies with the gateway's master fd — so a job meant to survive the gateway,
+    like one kept at shutdown, must be log-backed from the start (the crash contract
+    already re-adopts log-backed sessions; worker spawns do the same via
+    ``worker_output_log``). ``None`` unless a registered policy asks to keep: upstream
+    behavior is untouched when no plugin is loaded."""
+    if not _keep_asked_for():
+        return None
+    from tools.process_registry_output_log import make_session_log
+    return make_session_log(session_id)
 
 
 def adoptable_keep_ids(registry: Any) -> frozenset[str]:
     """The ids of running persisted host processes to leave alive at shutdown, for
     ``kill_all(exclude_ids=...)``. Empty unless a registered policy asks to keep:
-    the sweep then behaves exactly as upstream. Only host-scope sessions are
-    kept — an in-sandbox PID means nothing once its environment is gone, and
-    checkpoint recovery skips non-host entries anyway."""
+    the sweep then behaves exactly as upstream. The filter mirrors the checkpoint
+    writer (``not s.exited and not s.sandbox_key``): only what the checkpoint
+    persists can be re-adopted, and an in-sandbox PID means nothing once its
+    environment is gone; ``pid_scope == "host"`` additionally matches what
+    ``recover_from_checkpoint`` accepts."""
     if not _keep_asked_for():
         return frozenset()
     with registry._lock:
         return frozenset(
             s.id for s in registry._running.values()
-            if not s.exited and s.persist_on_release and s.pid_scope == "host"
+            if not s.exited and s.persist_on_release and not s.sandbox_key and s.pid_scope == "host"
         )

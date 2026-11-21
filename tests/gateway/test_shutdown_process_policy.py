@@ -9,6 +9,10 @@ the next gateway re-adopts them (``recover_from_checkpoint``) into the same
 session. Without a policy the sweep must behave exactly as before.
 """
 
+import os
+from pathlib import Path
+from unittest.mock import MagicMock
+
 import pytest
 
 from gateway import shutdown_process_policy
@@ -134,6 +138,53 @@ def test_a_keep_policy_the_sweep_excludes_the_persisted_sessions(registry_and_ki
     for kwargs in calls:
         assert kwargs.get("source") == "gateway_shutdown"
         assert kwargs.get("exclude_ids", frozenset()) == frozenset({"proc_persisted"})
+
+
+# ----- the spawn side: persisted jobs go log-backed, everything else is untouched -----
+
+def test_no_policy_a_persisted_spawn_stays_on_the_upstream_pipe(monkeypatch, tmp_path):
+    """Neutrality: without a policy spawn_local uses PIPE for a persist_on_release job,
+    exactly as upstream."""
+    import tools.process_registry as pr
+
+    registry = pr.ProcessRegistry()
+    monkeypatch.setattr(pr, "worker_output_log", lambda session_id: None)
+    monkeypatch.setattr(pr.ProcessRegistry, "_spawn_job",
+                        lambda self, session, argv, persist, **kw: _fake_popen(session, kw))
+    monkeypatch.setattr(pr.ProcessRegistry, "_track_started", lambda self, session, target, name: None)
+    session = registry.spawn_local("sleep 60", cwd=str(tmp_path), task_id="t1", persist_on_release=True)
+    assert session.process is not None and session.output_log == ""
+    assert session.process.stdout is not None  # a real pipe, as upstream
+
+
+def test_a_keep_policy_spawns_a_persisted_job_log_backed(monkeypatch, tmp_path):
+    """With a keep policy the persisted job writes to logs/process-output/<id>.log instead of
+    a pipe: its next write survives the gateway's death and recovery tails the same file
+    (the worker-spawn contract). A non-persisted job still gets the upstream pipe."""
+    import tools.process_registry as pr
+    from tools.process_registry_output_log import output_dir
+
+    registry = pr.ProcessRegistry()
+    monkeypatch.setattr(pr, "worker_output_log", lambda session_id: None)
+    monkeypatch.setattr(pr.ProcessRegistry, "_spawn_job",
+                        lambda self, session, argv, persist, **kw: _fake_popen(session, kw))
+    monkeypatch.setattr(pr.ProcessRegistry, "_track_started", lambda self, session, target, name: None)
+    shutdown_process_policy.register_policy("demo:keep", lambda: True)
+    persisted = registry.spawn_local("npm run dev", cwd=str(tmp_path), task_id="t1", persist_on_release=True)
+    volatile = registry.spawn_local("sleep 60", cwd=str(tmp_path), task_id="t1", persist_on_release=False)
+    assert persisted.output_log == str(output_dir() / f"{persisted.id}.log")
+    assert Path(persisted.output_log).parent == output_dir()
+    assert volatile.output_log == "" and volatile.process.stdout is not None
+
+
+def _fake_popen(session, popen_kwargs):
+    """Stand-in for the real Popen: record where stdout went; no process is started."""
+    proc = MagicMock()
+    proc.pid = os.getpid()
+    proc.stdout = popen_kwargs.get("stdout")
+    session.process = proc
+    session.pid = proc.pid
+    return proc
 
 
 # ----- the plugin ctx path (mirrors test_busy_report's probe registration) -----
