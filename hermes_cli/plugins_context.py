@@ -782,6 +782,15 @@ class PluginContext(PluginCapabilityCtxMixin, PluginIdleTaskCtxMixin, CorePatchC
         key = f"{self.plugin_id}:{name}"
         return self._track("busy_probe", key, busy_report.register_probe(key, fn))
 
+    def register_shutdown_process_policy(self, name: str, fn: Callable[[], Any]) -> PluginRegistration:
+        """Answer the shutdown contract for persisted background processes (``gateway/shutdown_process_policy.py``):
+        ``fn() -> bool`` is asked once per shutdown kill sweep; a truthy answer leaves ``persist_on_release``
+        host processes running for checkpoint adoption (``recover_from_checkpoint`` re-attaches them to the
+        same session) instead of the upstream kill. A raise counts as "no" (fail closed to the kill)."""
+        from gateway import shutdown_process_policy
+        key = f"{self.plugin_id}:{name}"
+        return self._track("shutdown_process_policy", key, shutdown_process_policy.register_policy(key, fn))
+
     def register_hook(self, hook_name: str, callback: Callable, *, hold_stream: bool = False) -> PluginRegistration:
         """Register a lifecycle hook callback (``PluginDispatchMixin.track_hook``)."""
         return self._manager.track_hook(self, hook_name, callback, hold_stream=hold_stream)

@@ -1661,11 +1661,25 @@ class GatewayShutdownMixin(GatewaySessionEndMixin, GatewayHomeShutdownNoticeMixi
 
         def _kill_processes() -> None:
             from tools.process_registry import process_registry
+
+            def _keep_ids() -> frozenset:
+                from gateway.shutdown_process_policy import adoptable_keep_ids
+                return adoptable_keep_ids(process_registry)
+
             # Host shutdown: kill even persist_on_release jobs or they become
             # PPID=1 orphans (#41225/#46778); an explicit source reaches them.
+            # Exception: a plugin-registered policy (gateway/shutdown_process_policy.py)
+            # may leave persisted host processes running — they are checkpointed and the
+            # next gateway re-adopts them (recover_from_checkpoint) into the same session.
+            # A raise or no policy keeps the upstream kill (fail closed).
+            keep = _step("shutdown_process_policy keep-ids", _keep_ids) or frozenset()
             _count_step(
                 "Shutdown (%s): killed %d tool subprocess(es)",
-                lambda: process_registry.kill_all(source="gateway_shutdown"))
+                lambda: process_registry.kill_all(source="gateway_shutdown", exclude_ids=keep))
+            if keep:
+                logger.info(
+                    "Shutdown (%s): left %d persisted process(es) running for checkpoint adoption",
+                    phase, len(keep))
 
         def _mark_cron_interrupted() -> list:
             # kill_all() is global: a cron job mid-dispatch lost its tool subprocess and its agent thread may
