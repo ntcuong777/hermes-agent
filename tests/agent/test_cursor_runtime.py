@@ -5,6 +5,7 @@ these tests cover spawn, events, tool bridging, cancellation and failure without
 """
 
 import json
+import time
 import sys
 import textwrap
 import threading
@@ -279,6 +280,29 @@ def test_a_live_pipe_is_never_reaped_as_silent(tmp_path, monkeypatch):
     )
     result = _run(FakeAgent(), command)
     assert result["completed"] is True and result["error"] is None
+
+
+def test_a_tool_slower_than_the_stall_window_is_not_worker_silence(tmp_path, monkeypatch):
+    # The worker waits on the host while a tool (or an approval inside it) runs; that wait is the
+    # host's own time, so the watchdog must restart its clock once the tool returns.
+    monkeypatch.setattr(cr, "_stall_timeout", lambda: 1.0)
+
+    def slow_execute(agent, assistant_message, messages):
+        time.sleep(1.6)
+        FakeAgent._default_execute(agent, assistant_message, messages)
+
+    command = _worker(
+        tmp_path,
+        """
+        send({"type": "tool-request", "turnId": tid, "callId": "c1", "name": "read_file", "args": {"path": "a.txt"}})
+        result = recv()
+        send({"type": "event", "turnId": tid, "kind": "text", "text": "got " + result["text"]})
+        send({"type": "done", "turnId": tid, "status": "finished"})
+    """,
+    )
+    result = _run(FakeAgent(execute=slow_execute), command)
+    assert result["error"] is None and result["completed"] is True
+    assert result["final_response"] == "got FILE BODY"
 
 
 def test_worker_death_without_terminal_message_is_a_failed_turn(tmp_path):
