@@ -154,7 +154,6 @@ def test_context_and_fast_variants_are_listed_as_separate_ids(tmp_path, monkeypa
     ]
     monkeypatch.setenv("HERMES_CURSOR_WORKER", _fake_worker(tmp_path, _catalog_body(*catalog)))
     assert get_provider_profile("cursor").fetch_models(api_key="crsr_test_key") == [
-        "grok-4.7",
         "grok-4.7-256k",
         "grok-4.7-256k-fast",
         "grok-4.7-500k",
@@ -207,11 +206,12 @@ def test_fetch_writes_a_metadata_sidecar_for_the_picker(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_CURSOR_WORKER", _fake_worker(tmp_path, _catalog_body(*catalog)))
     assert get_provider_profile("cursor").fetch_models(api_key="crsr_test_key") == [
-        "grok-4.7", "grok-4.7-256k", "grok-4.7-256k-fast", "grok-4.7-500k", "grok-4.7-500k-fast",
+        "grok-4.7-256k", "grok-4.7-256k-fast", "grok-4.7-500k", "grok-4.7-500k-fast",
         "composer-2.5", "composer-2.5-fast",
     ]
     meta = json.loads((tmp_path / "cache" / "cursor_models_meta.json").read_text())["models"]
-    assert meta["grok-4.7"] == {"context": "500k", "fast": False, "max": True}
+    assert "grok-4.7" not in meta  # the bare id is not a picker row once context variants exist
+    assert meta["grok-4.7-500k"] == {"context": "500k", "fast": False, "max": True}
     assert meta["grok-4.7-256k"] == {"context": "256k", "fast": False, "max": False}
     assert meta["grok-4.7-256k-fast"] == {"context": "256k", "fast": True, "max": False}
     assert meta["grok-4.7-500k-fast"] == {"context": "500k", "fast": True, "max": False}

@@ -43,7 +43,8 @@ def _catalog_entry_ids_and_meta(entry: Any) -> tuple[list[str], dict[str, dict[s
     variant — with the display metadata each id shows in the picker. Context values come from the
     entry's variants (ground truth — the declared ``context`` parameter can lag them), falling back to
     that parameter's declared values; fast pairs with each context value when a variant turns it on.
-    A bare ``-fast`` id only exists for context-less models. The base id's metadata is the default
+    A bare ``-fast`` id only exists for context-less models, and the bare base id is listed only for
+    those too (see below). The base id's metadata is the default
     variant's (that is what the backend runs when only the base id is sent)."""
     if not isinstance(entry, dict):
         return [], {}
@@ -79,7 +80,10 @@ def _catalog_entry_ids_and_meta(entry: Any) -> tuple[list[str], dict[str, dict[s
         return out
 
     meta: dict[str, dict[str, Any]] = {}
-    ids = [base]
+    # With context variants the bare id is only the default variant's twin (same run as `<base>-<ctx>`),
+    # so listing both shows one window twice; the suffixed ids carry the explicit window instead.
+    # A bare id saved in config still runs: the worker resolves it to the default variant.
+    ids = [] if context_values else [base]
     if context_values:
         for value in context_values:
             ids.append(f"{base}-{value}")
