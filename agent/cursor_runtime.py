@@ -341,7 +341,11 @@ class _Turn:
             None,
         ):
             return None
-        return self._dispatch(message)
+        outcome = self._dispatch(message)
+        # Dispatch can run a tool (and wait on an approval) while the worker sits idle on our reply;
+        # that is host time, not worker silence, so the stall clock restarts when we hand control back.
+        self.last_rx = time.monotonic()
+        return outcome
 
     def _dispatch(self, message: dict[str, Any]) -> Optional[_Outcome]:
         kind = message.get("type")
