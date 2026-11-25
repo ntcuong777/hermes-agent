@@ -329,6 +329,45 @@ def test_a_tool_slower_than_the_stall_window_is_not_worker_silence(tmp_path, mon
     assert result["final_response"] == "got FILE BODY"
 
 
+def test_time_spent_in_the_hosts_own_tools_does_not_count_against_the_turn_deadline(tmp_path, monkeypatch):
+    # The deadline bounds the worker's run. A tool or an approval wait is the host's time, so a turn
+    # with slow tools must not trip it ("turn deadline exceeded") while the worker is healthy.
+    monkeypatch.setattr(cr, "_turn_timeout", lambda: 1.0)
+    monkeypatch.setattr(cr, "_stall_timeout", lambda: 0)
+
+    def slow_execute(agent, assistant_message, messages):
+        time.sleep(1.6)
+        FakeAgent._default_execute(agent, assistant_message, messages)
+
+    command = _worker(
+        tmp_path,
+        """
+        send({"type": "tool-request", "turnId": tid, "callId": "c1", "name": "read_file", "args": {"path": "a.txt"}})
+        result = recv()
+        send({"type": "event", "turnId": tid, "kind": "text", "text": "got " + result["text"]})
+        send({"type": "done", "turnId": tid, "status": "finished"})
+    """,
+    )
+    result = _run(FakeAgent(execute=slow_execute), command)
+    assert result["error"] is None and result["completed"] is True
+
+
+def test_a_worker_that_keeps_streaming_past_the_deadline_is_still_stopped(tmp_path, monkeypatch):
+    monkeypatch.setattr(cr, "_turn_timeout", lambda: 1.0)
+    monkeypatch.setattr(cr, "_stall_timeout", lambda: 0)
+    command = _worker(
+        tmp_path,
+        """
+        import time
+        while True:
+            time.sleep(0.2)
+            send({"type": "event", "turnId": tid, "kind": "progress", "text": "still going"})
+    """,
+    )
+    result = _run(FakeAgent(), command)
+    assert result["completed"] is False and "deadline" in result["error"]
+
+
 def test_worker_death_without_terminal_message_is_a_failed_turn(tmp_path):
     command = _worker(tmp_path, "sys.exit(3)")
     result = _run(FakeAgent(), command)
