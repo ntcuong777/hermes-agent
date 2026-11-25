@@ -302,19 +302,21 @@ class _Turn:
         self.seen_calls: set[Any] = set()
         self.spinner_on = False
         self.last_rx = 0.0
+        self.deadline = 0.0
 
     def run(self, start: dict[str, Any]) -> _Outcome:
         self.turn_id = start["turnId"]
         if not self.worker.send(start):
             return _Outcome("error", "worker did not accept the turn")
         self.last_rx = time.monotonic()
-        deadline = time.monotonic() + _turn_timeout()
+        # The deadline bounds the worker's run: host-side tool and approval time is added back in _step.
+        self.deadline = time.monotonic() + _turn_timeout()
         stall = _stall_timeout()
         while True:
             if getattr(self.agent, "_interrupt_requested", False):
                 return self._cancel()
             now = time.monotonic()
-            if now > deadline:
+            if now > self.deadline:
                 self._cancel()
                 return _Outcome("error", "turn deadline exceeded")
             if stall and now - self.last_rx > stall:
@@ -342,10 +344,13 @@ class _Turn:
             None,
         ):
             return None
+        started = time.monotonic()
         outcome = self._dispatch(message)
         # Dispatch can run a tool (and wait on an approval) while the worker sits idle on our reply;
-        # that is host time, not worker silence, so the stall clock restarts when we hand control back.
+        # that is host time, not worker silence or run time, so the stall clock restarts and the turn
+        # deadline moves out by the same amount when we hand control back.
         self.last_rx = time.monotonic()
+        self.deadline += self.last_rx - started
         return outcome
 
     def _dispatch(self, message: dict[str, Any]) -> Optional[_Outcome]:
