@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import os
 import queue
 import shutil
@@ -364,7 +365,9 @@ class _Turn:
                 )
             return _Outcome(status, usage=message.get("usage"))
         if kind == "failed":
-            return _Outcome("error", _failure_text(message.get("code")))
+            return _Outcome(
+                "error", _failure_text(message.get("code"), message.get("detail"))
+            )
         return None
 
     def _on_event(self, message: dict[str, Any]) -> None:
@@ -520,12 +523,21 @@ _FAILURE_TEXT = {
 }
 
 
-def _failure_text(code: Any) -> str:
-    return (
+# The worker may add the SDK's own short error code (e.g. "unavailable") to a failed line. It is shown only
+# when it is a plain identifier, so SDK free text can never reach the transcript through this field.
+_SAFE_DETAIL = re.compile(r"^[A-Za-z0-9_.-]{1,40}$")
+
+
+def _failure_text(code: Any, detail: Any = None) -> str:
+    text = (
         _FAILURE_TEXT.get(code)
         if isinstance(code, str) and code in _FAILURE_TEXT
         else "The Cursor worker failed."
     )
+    if isinstance(detail, str) and _SAFE_DETAIL.fullmatch(detail):
+        logger.warning("cursor turn failed: code=%s sdk_code=%s", code, detail)
+        return f"{text} (SDK code: {detail})"
+    return text
 
 
 def _tool_result(messages: list[dict[str, Any]], call_id: str) -> tuple[str, bool]:
