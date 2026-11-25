@@ -254,6 +254,30 @@ def test_classified_worker_failures_speak_their_own_line(tmp_path):
         assert result["error"] == expected
 
 
+def test_a_failed_turn_names_the_sdk_error_code_when_the_worker_sends_a_plain_one(tmp_path):
+    # An opaque "backend failed" is undiagnosable; the worker's short SDK error code is safe to show.
+    command = _worker(
+        tmp_path,
+        """
+        send({"type": "failed", "turnId": tid, "code": "upstream-error", "detail": "unavailable"})
+    """,
+    )
+    result = _run(FakeAgent(), command)
+    assert result["completed"] is False
+    assert result["error"] == cr._FAILURE_TEXT["upstream-error"] + " (SDK code: unavailable)"
+
+
+def test_a_detail_that_is_not_a_plain_identifier_is_dropped_by_the_host(tmp_path):
+    command = _worker(
+        tmp_path,
+        """
+        send({"type": "failed", "turnId": tid, "code": "upstream-error", "detail": "sk-secret key leaked here"})
+    """,
+    )
+    result = _run(FakeAgent(), command)
+    assert result["error"] == cr._FAILURE_TEXT["upstream-error"]
+
+
 def test_a_silent_worker_is_reaped_before_the_turn_deadline(tmp_path, monkeypatch):
     # An upstream wedge streams nothing at all; the stall watchdog must reap the turn long
     # before the hard deadline instead of spinning until it.
