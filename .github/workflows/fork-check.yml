@@ -35,6 +35,7 @@ env:
     tests/tui_gateway
     tests/fork_hooks
     tests/session_lane_seam
+    tests/tui_slots
   FORK_VITEST_FILTER: src/__tests__/textInput
 
 jobs:
@@ -84,6 +85,13 @@ jobs:
           # scripts/fork/tui-slot-check --write-pins). It fails on drift AND on a slot without a reason or an upstream
           # commit. With no slot recorded it verifies nothing and passes. CI only: it can never stop a running Hermes.
           "$HERMES_PYTHON" -I scripts/fork/tui-slot-check --verify-pins .github/tui-slot-pins.json --fork-root .
+
+      - name: Desktop slot lock (the approval card copy against upstream's approval.tsx)
+        run: |
+          # apps/desktop/src/fork/tui_slots.lock.json is the fork's own slot lock: the Desktop approval card
+          # is picked at build time from a whole-file copy of approval.tsx, and the pin file above mirrors the
+          # nix-darwin plugins only. A drift here builds upstream's card instead of the copy.
+          "$HERMES_PYTHON" -I scripts/fork/tui-slot-check --verify-locks apps/desktop/src --fork-root .
 
       - name: Install JS workspace
         run: npm ci --ignore-scripts
