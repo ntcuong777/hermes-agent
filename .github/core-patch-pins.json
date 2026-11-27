@@ -221,14 +221,14 @@
       "upstream_release": "0.23.2"
     },
     "core-fixes/checkpoint-stale-lock": {
-      "ast_sha": "36df092499e414dc1b775e0b55b8e6f922ffae427e69bac085c6711cef00a887",
+      "ast_sha": "1d804b1c96ec931e5531a5e6b2197e199060edba70821270a6792c09de6aec4f",
       "kind": "wrap",
       "plugin": "core-fixes",
-      "reason": "A checkpoint git killed past its timeout left a store index lock behind and every later checkpoint of that workspace failed; clear a stale lock inside the store (older than 600 s) and retry once (fork 565d63a2ee3).",
+      "reason": "0.23.4 resolves git with resolve_usable_git(env) in _run_git; the wrapper does not touch the lookup, so only the fingerprint moved",
       "target": "agent.checkpoints.manager:_run_git",
       "target_file": "agent/checkpoints/manager.py",
-      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
-      "upstream_release": "0.22.5"
+      "upstream_commit": "45e9584556a97f50a3cb6394a6e7f6afa97bb66a",
+      "upstream_release": "0.23.4"
     },
     "core-fixes/cron-external-interpreter": {
       "ast_sha": "78ee4345821471d9864f0969bce7af7ed644c140cf384cb913a82d48e6f6dc88",
@@ -241,14 +241,14 @@
       "upstream_release": "0.22.5"
     },
     "core-fixes/deferred-tool-hint-scope": {
-      "ast_sha": "25e261a40ce4fe6946d160045d82b65bffd539e2e6598dce443d42e1aba2859c",
+      "ast_sha": "6ee6f38c460fce9a112d39d89d93c520a747a7faac6cd609c6230fe372a00b0c",
       "kind": "wrap",
       "plugin": "core-fixes",
-      "reason": "Remember the agent of the running tool round in a ContextVar so the unknown-name error can tell which deferred tools are reachable through tool_call (fork 5e94a2c2fd1, P16).",
+      "reason": "0.23.4 prunes native tool blocks of dropped calls in run_tool_round; the wrapper wraps the whole round, so only the fingerprint moved",
       "target": "agent.turn_tool_round:run_tool_round",
       "target_file": "agent/turn_tool_round.py",
-      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
-      "upstream_release": "0.22.5"
+      "upstream_commit": "45e9584556a97f50a3cb6394a6e7f6afa97bb66a",
+      "upstream_release": "0.23.4"
     },
     "core-fixes/deferred-tool-hint-text": {
       "ast_sha": "207bbdd9b49c1d67a4771f6fd75599dc061a96944b8e2f8353d898d7b73d9760",
@@ -811,14 +811,14 @@
       "upstream_release": "0.22.5"
     },
     "lane-mirror/wake-retarget-inject": {
-      "ast_sha": "56132761776db500b46e1cfda2ed17b9dba1d36330952cbeb770041300cab4aa",
+      "ast_sha": "c68cdba3861ba74da5f4a74b45c5fb0c196e3728edbc449a7c3e8a2de316f1bb",
       "kind": "wrap",
       "plugin": "lane-mirror",
-      "reason": "A frozen watch notice follows the conversation to its route (spec 08b B13)",
+      "reason": "0.23.4 stamps the turn origin on the synthetic event inside _inject_watch_notification from the dict it is handed; the wrapper passes the retargeted copy, so the origin reads the moved route",
       "target": "gateway.run_notifications:GatewayNotificationsMixin._inject_watch_notification",
       "target_file": "gateway/run_notifications.py",
-      "upstream_commit": "67e4d22d83b242ecfb2807ed39e9696ba1b1b0d5",
-      "upstream_release": "0.22.5"
+      "upstream_commit": "45e9584556a97f50a3cb6394a6e7f6afa97bb66a",
+      "upstream_release": "0.23.4"
     },
     "lane-mirror/wake-snapshot": {
       "ast_sha": "5f7c77138e89f370c07a02ac3fe799a722fe7cd085a4514dac9f78eeba94be4f",
@@ -831,14 +831,14 @@
       "upstream_release": "0.22.5"
     },
     "memory-shape/learn-prompt": {
-      "ast_sha": "3f351abad06747e4968bb02af000a0c5065440678c17b60c12894ce22879c129",
+      "ast_sha": "bf65a8b555660ebd22b4b6b9dbfaca6c673ec8c1a4916f6ec94bbbc183647189",
       "kind": "wrap",
       "plugin": "memory-shape",
-      "reason": "append the skill shape (rule + why + example bullets) and the placement note to the prompt core's /learn builds",
+      "reason": "0.23.4 formats the authoring standards with the skill description limit; the wrapper appends the skill shape to the finished prompt, so only the fingerprint moved",
       "target": "agent.learn_prompt:build_learn_prompt",
       "target_file": "agent/learn_prompt.py",
-      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
-      "upstream_release": "0.23.2"
+      "upstream_commit": "45e9584556a97f50a3cb6394a6e7f6afa97bb66a",
+      "upstream_release": "0.23.4"
     },
     "memory-shape/memory-guidance": {
       "ast_sha": "3728dee95a80f89ea5ba6fba6561a820f7f3f057328021282f16a9fa7de4e0f4",
@@ -861,14 +861,14 @@
       "upstream_release": "0.23.2"
     },
     "memory-shape/memory-schema": {
-      "ast_sha": "317a30674014418b6443e57cdfb34974ecb68d7335fd5d318d4a501c1fb58d28",
+      "ast_sha": "4763ffa0404d6743f07930a64d50d097ce26e7c25aba63422fff92fe2ac14090",
       "kind": "wrap",
       "plugin": "memory-shape",
-      "reason": "append the RULE/NOT/EG entry shape to the memory tool description (the registry entry captures its schema builder, so get_definitions is the reachable step)",
+      "reason": "0.23.4 builds each definition in ToolRegistry._definition(entry); the wrapper post-processes the same list of function schemas, so only the fingerprint moved",
       "target": "tools.registry:ToolRegistry.get_definitions",
       "target_file": "tools/registry.py",
-      "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
-      "upstream_release": "0.23.2"
+      "upstream_commit": "45e9584556a97f50a3cb6394a6e7f6afa97bb66a",
+      "upstream_release": "0.23.4"
     },
     "prompt-cap/prompt-cap": {
       "ast_sha": "fc383da6e7fb30d9301ac8dd3378a638e96d7b0c1ffc48b85ada86015751bc0b",
