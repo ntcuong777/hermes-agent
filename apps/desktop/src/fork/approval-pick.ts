@@ -7,6 +7,6 @@ export const PendingApprovalStack = forkSlot(
   'approvalCard',
   StockPendingApprovalStack,
   ForkPendingApprovalStack,
-  '3b85239a1ace096a3d7a67dae9beb246a32029002e1ec800f0bf97e7b9845bd3',
+  '4289e6bf2e124f2a41d7120ccb27b9b3ac500d1867d31aadf481536d29121daa',
   'skip' // rule 6.9: the approval card never runs a copy written against a changed upstream card
 )

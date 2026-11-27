@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+"""Build the fork's Desktop approval card copy from upstream's file plus the fork's edits.
+
+    desktop-approval-card-copy [--fork-root DIR] [--check]
+
+``apps/desktop/src/fork/approval.fork.tsx`` is a whole-file copy of upstream's
+``apps/desktop/src/components/assistant-ui/tool/approval.tsx`` (the build-time ``approvalCard``
+slot, decision D12). The pick replaces upstream's ``PendingApprovalStack``, so every helper the
+copy renders is the copy's own: the fork's edits are the four below and nothing else. After an
+upstream merge moved the card (``apps/desktop/src/fork/tui_slots.lock.json`` drifted):
+
+1. run this script: it copies the current upstream file and applies the edits. It stops when an
+   anchor no longer matches exactly once, so a region upstream moved is re-ported by hand, never
+   skipped;
+2. ``scripts/fork/tui-slot-check --record approvalCard --plugin-dir apps/desktop/src/fork
+   --fork-root <fork> --reason "..."`` and put the printed hash into
+   ``apps/desktop/src/fork/approval-pick.ts``;
+3. ``tests/tui_slots/test_desktop_fork_carriers.py`` fails until the copy is what this script
+   writes.
+
+``--check`` writes nothing and exits 1 when the copy differs. Standard library only.
+"""
+from __future__ import annotations
+
+import argparse
+import difflib
+import sys
+from pathlib import Path
+
+UPSTREAM = "apps/desktop/src/components/assistant-ui/tool/approval.tsx"
+COPY = "apps/desktop/src/fork/approval.fork.tsx"
+
+# (upstream text, fork text): each upstream text must match exactly once.
+EDITS = (
+    # The copy lives in another directory: the sibling imports go through the '@/' alias.
+    ("import { isApprovalActivity } from './approval-activity'\n"
+     "import { toolEntryDisclosureId } from './fallback-model/targets'\n"
+     "import { isToolCallPart, summarizeToolRun } from './run-summary'\n",
+     "import { isApprovalActivity } from '@/components/assistant-ui/tool/approval-activity'\n"
+     "import { toolEntryDisclosureId } from '@/components/assistant-ui/tool/fallback-model/targets'\n"
+     "import { isToolCallPart, summarizeToolRun } from '@/components/assistant-ui/tool/run-summary'\n"),
+    # The MCP strings and the request's MCP context.
+    ("  const { cardRef, rememberFocusOrigin, respond, submitting } = useApprovalResponder(request, stack)\n"
+     "  // \"Always allow\" persists the pattern",
+     "  const { cardRef, rememberFocusOrigin, respond, submitting } = useApprovalResponder(request, stack)\n"
+     "  // fork: the MCP strings are the fork card's own copy (upstream's Translations has no such keys).\n"
+     "  const forkCopy = { mcpArguments: 'Arguments', mcpToolCall: 'MCP tool call' }\n"
+     "  const mcp = request.mcp\n"
+     "  // \"Always allow\" persists the pattern"),
+    # Header: an MCP tool call names its server and tool.
+    ("        <Codicon name=\"terminal\" size=\"0.875rem\" />\n"
+     "        <span>{showsDescription ? copy.commandDetails : copy.command}</span>\n",
+     "        <Codicon name={mcp ? 'server' : 'terminal'} size=\"0.875rem\" />\n"
+     "        <span>{mcp ? forkCopy.mcpToolCall : showsDescription ? copy.commandDetails : copy.command}</span>\n"
+     "        {mcp && (\n"
+     "          <span className=\"truncate font-medium text-(--ui-text-primary)\">\n"
+     "            {mcp.server} · {mcp.tool}\n"
+     "          </span>\n"
+     "        )}\n"),
+    # Body: the tool description and the full arguments of an MCP call.
+    ("      {details.length > 0 && (\n"
+     "        <pre className=\"m-0 max-h-40 overflow-auto whitespace-pre-wrap break-words px-2.5 py-2 font-mono text-xs leading-relaxed text-(--ui-text-primary)\">\n"
+     "          {details}\n"
+     "        </pre>\n"
+     "      )}\n",
+     "      {mcp ? (\n"
+     "        <>\n"
+     "          {mcp.toolDescription && (\n"
+     "            <p className=\"px-2.5 pt-1.5 text-xs leading-relaxed text-(--ui-text-secondary)\">\n"
+     "              {mcp.toolDescription}\n"
+     "            </p>\n"
+     "          )}\n"
+     "          {mcp.arguments && (\n"
+     "            <>\n"
+     "              <div className=\"px-2.5 pt-1.5 text-[0.6875rem] uppercase tracking-wide text-(--ui-text-tertiary)\">\n"
+     "                {forkCopy.mcpArguments}\n"
+     "              </div>\n"
+     "              <pre className=\"m-0 max-h-40 overflow-auto whitespace-pre-wrap break-words px-2.5 py-1.5 font-mono text-xs leading-relaxed text-(--ui-text-primary)\">\n"
+     "                {mcp.arguments}\n"
+     "              </pre>\n"
+     "            </>\n"
+     "          )}\n"
+     "          {!mcp.arguments && details.length > 0 && (\n"
+     "            <pre className=\"m-0 max-h-40 overflow-auto whitespace-pre-wrap break-words px-2.5 py-2 font-mono text-xs leading-relaxed text-(--ui-text-primary)\">\n"
+     "              {details}\n"
+     "            </pre>\n"
+     "          )}\n"
+     "        </>\n"
+     "      ) : (\n"
+     "        details.length > 0 && (\n"
+     "          <pre className=\"m-0 max-h-40 overflow-auto whitespace-pre-wrap break-words px-2.5 py-2 font-mono text-xs leading-relaxed text-(--ui-text-primary)\">\n"
+     "            {details}\n"
+     "          </pre>\n"
+     "        )\n"
+     "      )}\n"),
+)
+
+
+class AnchorMoved(Exception):
+    """An edit's upstream text no longer matches exactly once: upstream moved or changed it."""
+
+
+def build(upstream: str) -> str:
+    """Upstream's file with the fork's four edits."""
+    text = upstream
+    for index, (old, new) in enumerate(EDITS, 1):
+        count = text.count(old)
+        if count != 1:
+            # The line of the anchor names the region for whoever re-ports the edit.
+            raise AnchorMoved(f"edit {index}: its anchor matches {count} times, expected 1; first line: "
+                              f"{old.splitlines()[0].strip()!r}")
+        text = text.replace(old, new)
+    return text
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="desktop-approval-card-copy", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--fork-root", default=str(Path(__file__).resolve().parents[2]))
+    ap.add_argument("--check", action="store_true", help="write nothing; exit 1 when the copy differs")
+    args = ap.parse_args(argv)
+    root = Path(args.fork_root).resolve()
+    try:
+        built = build((root / UPSTREAM).read_text(encoding="utf-8"))
+    except (OSError, AnchorMoved) as exc:
+        print(f"desktop-approval-card-copy: {exc}", file=sys.stderr)
+        return 2
+    copy_path = root / COPY
+    current = copy_path.read_text(encoding="utf-8") if copy_path.is_file() else None
+    if current == built:
+        print(f"{COPY} is upstream's {UPSTREAM} plus the {len(EDITS)} fork edits")
+        return 0
+    if args.check:
+        changed = sum(1 for tag, *_ in difflib.SequenceMatcher(None, (current or "").splitlines(),
+                                                               built.splitlines()).get_opcodes() if tag != "equal")
+        print(f"{COPY} is not what the {len(EDITS)} fork edits make of the current {UPSTREAM} "
+              f"({changed} differing run(s)); run scripts/fork/desktop-approval-card-copy, then record the slot")
+        return 1
+    copy_path.write_text(built, encoding="utf-8")
+    print(f"wrote {COPY} from {UPSTREAM} plus the {len(EDITS)} fork edits; next: tui-slot-check --record approvalCard")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

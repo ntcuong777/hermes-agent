@@ -7,7 +7,7 @@
       "kind": "component",
       "props": 1,
       "summary": "Desktop approval card: upstream's paging plus the fork's MCP header, tool description and full arguments",
-      "symbols": ["ApprovalCard"]
+      "symbols": []
     }
   }
 }

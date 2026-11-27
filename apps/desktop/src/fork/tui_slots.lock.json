@@ -2,33 +2,31 @@
   "slots": {
     "approvalCard": {
       "authored_at": "2026-11-17T18:08:22Z",
-      "copy_of": "apps/desktop/src/components/assistant-ui/tool/approval.tsx:ApprovalCard",
+      "copy_of": "apps/desktop/src/components/assistant-ui/tool/approval.tsx:PendingApprovalStack",
       "extension": "approval.fork",
-      "fork_dirty": true,
-      "fork_file_blob_sha": "4e9712d90ec8765ccc864d2ae391c4d3492dbd22",
-      "fork_head": "7c17f95a3144b7a7fb69884178b6be053b5ae341",
+      "fork_dirty": false,
+      "fork_file_blob_sha": "43ae3df6e1d3fef076f49f5f54044a8a6817539a",
+      "fork_head": "0675a55a19ec3d630cc0bcc955984b551ea862ac",
       "kind": "tui-slot",
-      "patch_fn": "fork/approval.fork.tsx:ApprovalCard",
+      "patch_fn": "fork/approval.fork.tsx:PendingApprovalStack",
       "plugin": "fork",
       "props": 1,
       "reason": "MCP header, tool description and full arguments on the Desktop approval card (rule 6.9; build-time slot per D12)",
-      "recorded_at": "2026-11-17T18:08:22Z",
+      "recorded_at": "2026-11-27T04:14:47Z",
       "snapshot": "upstream-source/approvalCard.tsx.txt",
-      "snapshot_sha256": "3b85239a1ace096a3d7a67dae9beb246a32029002e1ec800f0bf97e7b9845bd3",
-      "symbols": [
-        "ApprovalCard"
-      ],
+      "snapshot_sha256": "4289e6bf2e124f2a41d7120ccb27b9b3ac500d1867d31aadf481536d29121daa",
+      "symbols": [],
       "target": "approvalCard@apps/desktop/src/components/assistant-ui/tool/approval.tsx",
       "target_file": "apps/desktop/src/components/assistant-ui/tool/approval.tsx",
-      "target_file_blob_sha": "679258bbd66a8299994f04702cdccbcfaa84f885",
+      "target_file_blob_sha": "43ae3df6e1d3fef076f49f5f54044a8a6817539a",
       "upstream_ref": {
-        "commit": "e96221fa73d2dac7ba9f3bc5a8b866b3d0fc188e",
+        "commit": "45e9584556a97f50a3cb6394a6e7f6afa97bb66a",
         "date": "",
-        "release": "0.23.0"
+        "release": "0.23.4"
       },
       "upstream_snapshot": {
-        "algo": "sha256-lf-region",
-        "sha": "3b85239a1ace096a3d7a67dae9beb246a32029002e1ec800f0bf97e7b9845bd3"
+        "algo": "sha256-lf",
+        "sha": "4289e6bf2e124f2a41d7120ccb27b9b3ac500d1867d31aadf481536d29121daa"
       }
     }
   },
