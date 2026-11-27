@@ -4759,6 +4759,20 @@ def _wrap_transport(req: _ResolveRequest, client_obj: Any, final_model_str: str,
     return _maybe_wrap_anthropic(client_obj, final_model_str, api_key_str, base_url_str, api_mode)
 
 
+def _profile_auxiliary_completer(provider: Optional[str]) -> Optional[Callable[[dict[str, Any]], Any]]:
+    """The registered profile's ``auxiliary_complete`` (kwargs in, chat-completion-shaped response out), or None."""
+    name = str(provider or "").strip().lower()
+    if not name:
+        return None
+    try:
+        from providers import get_provider_profile
+        completer = getattr(get_provider_profile(name), "auxiliary_complete", None)
+    except Exception:
+        logger.debug("auxiliary_complete lookup failed for %r", name, exc_info=True)
+        return None
+    return completer if callable(completer) else None
+
+
 def _profile_declared_messages_wire(provider: str) -> Optional[str]:
     """``"anthropic_messages"`` when the registered profile declares that api_mode, else None."""
     from providers import get_provider_profile
@@ -8009,6 +8023,12 @@ def _call_llm_impl(
         extra_headers=extra_headers, api_mode=api_mode, route_info=route_info,
     )
     client, kwargs, request_provider = req.client, req.kwargs, req.request_provider
+    # A provider with no chat-completions route (Cursor) answers the call itself through its profile's
+    # ``auxiliary_complete(kwargs)``; the request is already resolved, so task config, model pins and timeouts hold.
+    # Plain text only: a tool-calling or streaming request has no such answer and takes the normal path.
+    completer = None if stream or tools else _profile_auxiliary_completer(req.resolved_provider or request_provider)
+    if completer is not None:
+        return _validate_llm_response(completer(dict(kwargs)), task, provider=request_provider)
     # Streaming path (MoA aggregator): return the raw SDK stream, skipping validation and
     # the fallback chain (they assume a complete response); the caller owns reassembly/fallback.
     if stream:
