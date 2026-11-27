@@ -82,17 +82,11 @@ def learned_window(agent: Any, window: tuple[float, float], marked: bool
     ``(None, rule)`` when keep-alives cannot pay on it (``no-cache``, ``write-on-hit``, or a learned
     lifetime too short to warm), the window shortened to a learned lifetime (never lengthened past the
     tier), or unchanged."""
-    from agent.prompt_cache_routes import rule_for
+    from agent.prompt_cache_routes import warming_rule
 
     deadline, tier_s = window
     route = (getattr(agent, "provider", ""), getattr(agent, "base_url", ""), getattr(agent, "model", ""))
-    rule = rule_for(*route, marked, tier_s=tier_s)
-    if rule is None and not marked:
-        # Markers were dropped because the explicit cache never read back: the automatic one is no better
-        # until it proves a read of its own.
-        from agent.prompt_cache_routes import implicit_ever_read
-
-        rule = None if implicit_ever_read(*route) or rule_for(*route, True) != "no-cache" else "no-cache"
+    rule = warming_rule(*route, marked, tier_s=tier_s)
     if rule is None:
         return window, None
     if not rule.startswith("lifetime:"):
@@ -179,6 +173,9 @@ class PromptCacheWarmer:
         self._inactive_reason = "waiting for first request"
         self._logged_reason: Optional[str] = None
         self._last_decision: Optional[CacheWarmingDecision] = None
+        #: When the keep-alive still waiting for its reply went out (None once it failed or its reply
+        #: folded into the clock): it renewed the entry, so the next message's tier check counts it.
+        self.last_sent_at: Optional[float] = None
         #: Set when a budget ended (keep-alives spent, or a miss) and carried to each later prompt of the
         #: same user turn; cleared by a new user message or a claim, never by a run ending. At most one
         #: compaction (``_compacted``) and one offload (``_offloaded``) per stretch.
@@ -286,7 +283,6 @@ class PromptCacheWarmer:
         if decision.action != "warm":
             return self._stop(decision.stop_reason)
         from agent.prompt_cache_clock import context_witness, response_upstream
-        from agent.prompt_cache_lifecycle.tier import idle_warming_allowed
 
         api_calls = getattr(agent, "session_api_calls", 0)
         model = getattr(agent, "model", "")
@@ -309,7 +305,7 @@ class PromptCacheWarmer:
             cached_tokens=cached_tokens, uncached_tokens=uncached_tokens, ttl_s=window[1],
             deadline_at=window[0], is_current=_is_current, api_mode=api_mode,
             witness=context_witness(agent), billing=self._billing_snapshot(),
-            idle_ok=human_paced(agent) and idle_warming_allowed(agent), budget=budget,
+            idle_ok=human_paced(agent), budget=budget,
             upstream=response_upstream(response), stable_prefix_tokens=_stable_prefix_tokens(api_kwargs, api_mode),
         )
         with self._lock:
@@ -369,7 +365,20 @@ class PromptCacheWarmer:
                 self._offloaded = True
             return action
 
+    def touch_snapshot(self) -> tuple[Any, Optional[float]]:
+        """``(cache_window, in-flight keep-alive send time)`` read together under the lock the reply's
+        fold and the in-flight mark's clearing take, so a reader never sees the old clock with the mark
+        already cleared."""
+        from agent.prompt_cache_clock import cache_window
+
+        with self._lock:
+            return cache_window(self.agent), self.last_sent_at
+
     # -- internals ------------------------------------------------------------------------------
+    def _set_in_flight(self, sent_at: Optional[float]) -> None:
+        with self._lock:
+            self.last_sent_at = sent_at
+
     def _clear_run(self) -> Optional[_Run]:
         with self._lock:
             run, self._run = self._run, None
@@ -523,15 +532,18 @@ class PromptCacheWarmer:
         if reserved is None:
             return
         sent_at = time.time()
+        self._set_in_flight(sent_at)
         try:
             message = self._send(run)
         except Exception as exc:  # health: allow BLE001 -- warming must never disturb the live turn; logged
+            self._set_in_flight(None)  # it renewed nothing
             logger.info("%sprompt cache warm failed: %s", self._prefix(), exc, exc_info=True)
             self._stop_if_current(run, f"warm request failed: {type(exc).__name__}")
             return
         finally:
             run.refreshing = False
         miss = self._record(run, message, decision, sent_at, reserved)
+        self._set_in_flight(None)  # the reply is folded: the clock is the touch again (a miss renewed nothing)
         if miss is not None and not miss.startswith("cache refresh missed"):
             self._stop_if_current(run, miss)
             return
@@ -916,6 +928,17 @@ def get_prompt_cache_warmer(agent: Any) -> PromptCacheWarmer:
             warmer._missed_route = _MISSED_ROUTES.get(getattr(agent, "session_id", None) or "")
         agent._prompt_cache_warmer = warmer
     return warmer
+
+
+def cache_touch_snapshot(agent: Any) -> tuple[Any, Optional[float]]:
+    """:meth:`PromptCacheWarmer.touch_snapshot` for any agent; one that never armed a warmer has no
+    keep-alive in flight."""
+    from agent.prompt_cache_clock import cache_window
+
+    warmer = getattr(agent, "_prompt_cache_warmer", None)
+    if not isinstance(warmer, PromptCacheWarmer):
+        return cache_window(agent), None
+    return warmer.touch_snapshot()
 
 
 def session_totals_lock(agent: Any) -> Any:

@@ -835,8 +835,8 @@ DEFAULT_CONFIG = {
         "tui_agents_nudge": True,
         "bell_on_complete": False,
         "bell_on_prompt": False,   # bell when a blocking prompt opens (clarify/approval/sudo)
-        # Stream reasoning live before the response; otherwise thinking models show only a spinner
-        # for tens of seconds.
+        "program_status": True,    # OSC 7501 idle/working/blocked/done/error for terminals that track it
+        # Stream reasoning live before the response; otherwise thinking models show a bare spinner.
         "show_reasoning": True,
         # Post-response "Reasoning" recap collapses to 10 lines; true prints it all (live streaming
         # is always full).
@@ -1293,7 +1293,7 @@ DEFAULT_CONFIG = {
         # setting declares one explicitly.
         "fallback_providers": None,
         "base_url": "",  # direct OpenAI-compatible endpoint for subagents
-        "api_key": "",  # key for delegation.base_url (falls back to OPENAI_API_KEY)
+        "api_key": "",  # key for delegation.base_url (empty = the parent's key, or the named provider's own)
         # Wire protocol for delegation.base_url: "chat_completions" | "codex_responses" |
         # "anthropic_messages". Empty = auto-detect from URL (e.g. /anthropic suffix); set
         # explicitly for non-standard endpoints.
@@ -1335,7 +1335,7 @@ DEFAULT_CONFIG = {
         "gateway_mode": "auto",  # gateway: inline (join in the turn) | background | auto = inline where interim msgs are off
         # Orchestrator role controls. Depth floored at 1, no ceiling; each level multiplies cost.
         "max_spawn_depth": 1,  # 1 = flat, 2 = orchestrator→leaf, 3+ = deeper
-        "orchestrator_enabled": True,  # kill switch for role="orchestrator"
+        "orchestrator_enabled": True,  # false = every child is a leaf, whatever max_spawn_depth says
         # Total subagents a finite one-shot run (hermes chat -q / --oneshot) may spawn; 0 = unlimited.
         # Each child re-pays a cold system prompt and re-explores the repo, and one-shot spawns are mostly
         # "review my own work" rather than parallel work (agent/oneshot_footprint.py).
@@ -1404,13 +1404,12 @@ DEFAULT_CONFIG = {
     # and resolved; read-only — creation goes to ~/.hermes/skills/ unless create_dir redirects it.
     "skills": {
         "external_dirs": [],   # e.g. ["~/.agents/skills", "/shared/team-skills"]
-        # Where skill_manage-created skills go (empty = profile-local dir). When set, new skills
-        # land here AND agent-facing instructions name this path; expanded (~, ${VAR}), relative to
-        # HERMES_HOME, scanned alongside the local dir.
+        "index_desc_limit": 60,  # skill-index description chars (60..1024); wider routes better, costs tokens
+        # Where skill_manage-created skills go (empty = profile-local dir). When set, new skills land here
+        # AND agent-facing instructions name this path; expanded (~, ${VAR}), relative to HERMES_HOME.
         "create_dir": "",
-        # In a git checkout, <root>/.hermes/skills/ and <root>/.agents/skills/ load as the
-        # highest-precedence tier — ONLY if the root is in trusted_project_dirs. false = no scan, no
-        # untrusted-skills notice.
+        # In a git checkout, <root>/.hermes/skills/ and <root>/.agents/skills/ load as the highest-precedence
+        # tier — ONLY if the root is in trusted_project_dirs. false = no scan, no untrusted-skills notice.
         "project_discovery": True,
         # Trusted project roots; managed by `hermes skills trust` / `untrust`.
         "trusted_project_dirs": [],
@@ -2529,7 +2528,7 @@ DEFAULT_CONFIG = {
         # spills the rest to a cache file, so an unbounded walk pays for nodes the model never sees:
         # measured on macOS (cua-driver 0.28.2, M-series) a 1,444-node Chrome window went 540 ms -> 83 ms
         # and a 456-node Finder window 6.9 s -> 0.6 s at 200, with the returned elements a prefix of the
-        # unbounded walk. 0 = driver default (2,000 elements / depth 25) — the pre-fix behaviour.
+        # unbounded walk. 0 omits max_elements: driver default (250 nodes on Cua >= 0.35), not unlimited.
         # ~400 keeps the full first 100 visible elements on a pathological tree, at ~1.4 s on Finder;
         # the walk's cost grows with the bound, so keep it in the low hundreds. This caps the nodes
         # COLLECTED, not the walk's wall clock: a target whose AX surface exceeds the driver's own 20 s

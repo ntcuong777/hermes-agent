@@ -268,7 +268,8 @@ class MessageReadsMixin(MessageBase):
         for session_id, transcript in self._ns(scope)["transcripts"].items():
             row = transcript.find(int(message_id))
             if row is not None:
-                return MessageStorageState(session_id=SessionId(session_id), visibility=row.visibility)
+                return MessageStorageState(session_id=SessionId(session_id), visibility=row.visibility,
+                                           superseded=transcript.superseded(row))
         return None
 
     def latest_row_id(self, session_id: SessionId, *, role: str = "user", offset: int = 0,
@@ -354,17 +355,13 @@ class MessageReadsMixin(MessageBase):
         scope = self._backend.scope
         return any(transcript.rows for transcript in self._ns(scope)["transcripts"].values())
 
-    def spillover_reference_rows(self) -> tuple[tuple[Optional[str], Optional[str]], ...]:
+    def spillover_reference_rows(self) -> Iterator[tuple[Optional[str], Optional[str]]]:
         scope = self._backend.scope
         rows = sorted((row for transcript in self._ns(scope)["transcripts"].values() for row in transcript.rows), key=lambda row: row.id)
         hits = [(_content_text(row.message.content), row.message.api_content) for row in rows
                 if any(marker in (_content_text(row.message.content) or "") or marker in (row.message.api_content or "")
                        for marker in ARCHIVE_POINTER_MARKERS)]
-        return tuple(hits[:_SPILLOVER_ROW_CAP])
-
-
-# The literal row cap on the spillover reference scan.
-_SPILLOVER_ROW_CAP = 20001
+        return iter(hits)
 
 
 def _has_text(content: Any) -> bool:
