@@ -540,8 +540,10 @@ def _failure_text(code: Any, detail: Any = None) -> str:
         else "The Cursor worker failed."
     )
     if isinstance(detail, str) and _SAFE_DETAIL.fullmatch(detail):
-        logger.warning("cursor turn failed: code=%s sdk_code=%s", code, detail)
-        return f"{text} (SDK code: {detail})"
+        logger.warning("cursor turn failed: code=%s detail=%s", code, detail)
+        # For a native-tool stop the worker names the tool the model reached for, not an SDK error code.
+        label = "tried" if code == "native-tool" else "SDK code"
+        return f"{text} ({label}: {detail})"
     return text
 
 

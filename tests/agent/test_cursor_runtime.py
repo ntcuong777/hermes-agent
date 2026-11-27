@@ -221,6 +221,26 @@ def test_worker_failure_ends_the_turn_without_fallback_or_secret_text(tmp_path):
     assert "test-key-not-real" not in json.dumps(result, default=str)
 
 
+def test_a_native_tool_stop_names_the_tool_the_model_tried(tmp_path):
+    command = _worker(
+        tmp_path,
+        """
+        send({"type": "failed", "turnId": tid, "code": "native-tool", "detail": "mcp.undeclared"})
+    """,
+    )
+    result = _run(FakeAgent(), command)
+    assert "native tool" in result["error"]
+    assert "(tried: mcp.undeclared)" in result["error"]
+
+
+def test_a_native_tool_detail_that_is_not_an_identifier_is_dropped():
+    from agent.cursor_runtime import _failure_text
+
+    assert "tried" not in _failure_text("native-tool", "rm -rf /")
+    assert _failure_text("native-tool", "shell").endswith("(tried: shell)")
+    assert _failure_text("upstream-error", "unavailable").endswith("(SDK code: unavailable)")
+
+
 def test_an_sdk_errored_turn_speaks_the_fixed_vocabulary(tmp_path):
     # done/status:"error" is a legal protocol message with no detail field; the host must
     # translate it into the same vocabulary as a failed line, never echo the bare status.
