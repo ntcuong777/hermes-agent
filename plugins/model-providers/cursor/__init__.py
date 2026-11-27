@@ -129,7 +129,52 @@ def _write_meta_sidecar(meta: dict[str, dict[str, Any]]) -> None:
         pass
 
 
+def _message_text(content: Any) -> str:
+    """Plain text of one chat message body: a string, or a list of text parts (images and the rest are dropped)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            str(part.get("text", "")) for part in content if isinstance(part, dict) and part.get("type") == "text"
+        )
+    return ""
+
+
+def flatten_messages(messages: list) -> str:
+    """One prompt from chat messages: the system text first, then the rest, each labelled by role."""
+    system = [t for m in messages if m.get("role") == "system" and (t := _message_text(m.get("content")).strip())]
+    rest = [
+        f"{str(m.get('role', 'user')).upper()}: {t}"
+        for m in messages
+        if m.get("role") != "system" and (t := _message_text(m.get("content")).strip())
+    ]
+    return "\n\n".join([*system, *rest])
+
+
 class _CursorProfile(ProviderProfile):
+    def auxiliary_complete(self, request: dict[str, Any]) -> Any:
+        """Answer an auxiliary call (titles, summaries, ...) on the SDK worker: Cursor has no chat-completions route,
+        so the client the auxiliary router builds for this provider would 404. A tool-less one-shot turn on the
+        request's model; ``CursorRuntimeError`` (fixed-vocabulary text) propagates to the caller's own failure path."""
+        from types import SimpleNamespace
+
+        from agent.cursor_summary_turn import run_summary_turn
+
+        model = str(request.get("model") or "").strip()
+        timeout = request.get("timeout")
+        text = run_summary_turn(
+            flatten_messages(list(request.get("messages") or [])),
+            model=model,
+            timeout=float(timeout) if isinstance(timeout, (int, float)) and timeout > 0 else None,
+        )
+        message = SimpleNamespace(role="assistant", content=text, tool_calls=None, reasoning=None)
+        return SimpleNamespace(
+            id="cursor-aux",
+            model=model,
+            choices=[SimpleNamespace(index=0, message=message, finish_reason="stop")],
+            usage=None,
+        )
+
     def fetch_models(self, *, api_key: str | None = None, base_url: str | None = None, timeout: float = 8.0):
         """Every model the account can use, from Cursor's catalog (HTTP Basic, the key as the user name), or None
         when it cannot be read: the worker then checks the chosen id against the SDK catalog itself."""
