@@ -62,6 +62,28 @@ def test_consistent_usage_updates_the_compressor_and_never_notes_usage_less():
     assert compressor.updates[0]["prompt_tokens"] == 180  # 100 uncached + 30 + 50
 
 
+def test_multi_step_usage_books_totals_but_is_not_a_context_reading():
+    """A turn that ran tools is several model requests: the SDK's usage is their SUM (each re-reads the cache),
+    far over the window. It must not reach the compressor or the context bar as the prompt size."""
+    compressor = FakeCompressor()
+    compressor.last_prompt_tokens = 4321  # a stale reading from an earlier single-step turn
+    agent = FakeAgent(compressor)
+    result = record_usage(agent, GOOD_USAGE, single_step=False)
+    assert compressor.noted_usage_less is True
+    assert compressor.updates == [{}], "the stale reading is dropped, no prompt_tokens is handed over"
+    assert "last_prompt_tokens" not in result
+    assert result["total_tokens"] == 200 and result["cache_read_tokens"] == 30, "cost and cache totals still book"
+    assert agent.session_total_tokens == 200
+    assert agent.session_cache_read_tokens == 30
+
+
+def test_single_step_usage_still_books_a_context_reading():
+    compressor = FakeCompressor()
+    result = record_usage(FakeAgent(compressor), GOOD_USAGE, single_step=True)
+    assert compressor.noted_usage_less is False
+    assert result["last_prompt_tokens"] == 180
+
+
 def test_missing_usage_notes_usage_less_and_unlatches_awaiting():
     compressor = FakeCompressor(awaiting=True)
     agent = FakeAgent(compressor)

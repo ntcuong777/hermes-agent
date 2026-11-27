@@ -58,8 +58,15 @@ def canonical_counts(usage: Any) -> Optional[dict[str, int]]:
     }
 
 
-def record_usage(agent, usage: Any) -> dict[str, Any]:
-    """Book one runtime call. Returns the usage fields for the turn result ({} when unknown)."""
+def record_usage(agent, usage: Any, *, single_step: bool = True) -> dict[str, Any]:
+    """Book one runtime call. Returns the usage fields for the turn result ({} when unknown).
+
+    ``single_step=False`` marks a turn in which the model called tools, so Cursor's agent made several model
+    requests. The SDK's usage for it is the SUM over those requests, and each one re-reads the cached context:
+    a grok turn averages 1M to 6M "prompt tokens" against a 256K window (state.db, 2026-11). Booked as cost and
+    cache figures that is right; read as the size of the context it pins the context bar at 100% and tells the
+    compressor the prompt is permanently over the trigger. So such a turn books its totals and gives the
+    compressor no reading: the rough estimate of the history Hermes will resend decides instead."""
     agent.session_api_calls = getattr(agent, "session_api_calls", 0) + 1
     counts = canonical_counts(usage)
 
@@ -84,13 +91,18 @@ def record_usage(agent, usage: Any) -> dict[str, Any]:
             agent, "Cursor api-call persistence failed (session=%s): %s", counts=billing
         )
         return {}
-    if "prompt_tokens" not in counts:
-        # The report did not reconcile against its own total: only the certain figures book,
-        # and none of them adjudicates pressure — tell the compressor the same way.
+    reading = single_step and "prompt_tokens" in counts
+    if not reading:
+        # Either the report did not reconcile against its own total (only the certain figures book, and none
+        # of them adjudicates pressure), or it is a multi-step sum: say the same to the compressor. A multi-step
+        # sum also drops any stale reading, so the context bar falls back to the estimate, not an old number.
         _note_usage_less(agent)
+        if not single_step:
+            _drop_stale_reading(agent)
     for key, value in counts.items():
         setattr(agent, f"session_{key}", getattr(agent, f"session_{key}", 0) + value)
-    _update_compressor(agent, counts)
+    if reading:
+        _update_compressor(agent, counts)
     buckets = {
         k: counts[k]
         for k in (
@@ -110,11 +122,7 @@ def record_usage(agent, usage: Any) -> dict[str, Any]:
     )
     return {
         **counts,
-        **(
-            {"last_prompt_tokens": counts["prompt_tokens"]}
-            if "prompt_tokens" in counts
-            else {}
-        ),
+        **({"last_prompt_tokens": counts["prompt_tokens"]} if reading else {}),
     }
 
 
@@ -133,6 +141,17 @@ def _note_usage_less(agent) -> None:
             compressor.note_usage_less_response()
         except Exception:
             logger.debug("cursor usage-less note failed", exc_info=True)
+
+
+def _drop_stale_reading(agent) -> None:
+    """Forget the last real prompt count: this turn proved nothing about the size of the next request."""
+    compressor = getattr(agent, "context_compressor", None)
+    if compressor is None:
+        return
+    try:
+        compressor.update_from_response({})
+    except Exception:
+        logger.debug("cursor stale-reading reset failed", exc_info=True)
 
 
 def _update_compressor(agent, counts: dict[str, int]) -> None:
