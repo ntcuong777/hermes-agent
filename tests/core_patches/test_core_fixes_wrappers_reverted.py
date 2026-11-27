@@ -26,7 +26,8 @@ TOOL_EXECUTOR_HOOK_LINE = (
 )
 TOOL_EXECUTOR_UPSTREAM_LINE = "        return budget_for_context_window(int(ctx) if ctx else None)"
 # 2026-11-18 upstream sync to 0.22.5 (reason: upstream sync to 0.22.5); was 20f057249ce3c28af48f4da6298f62d500fa9f38.
-TOOL_EXECUTOR_UPSTREAM_BLOB = "55cbaae263b4297a8b3676b546f35919155fcb5f"  # git rev-parse refs/heads/main:agent/tool_executor.py
+# 2026-11-27 upstream sync to 0.23.4 (reason: upstream sync to 0.23.4); was 55cbaae263b4297a8b3676b546f35919155fcb5f.
+TOOL_EXECUTOR_UPSTREAM_BLOB = "bcc8a4b1906739f0a2903a960c886e2171cb5dfe"  # git rev-parse refs/heads/main:agent/tool_executor.py
 
 
 def _module(name: str):
@@ -81,15 +82,18 @@ def test_tool_executor_is_upstream_except_the_spec_04_hook():
 # 2026-11-18 upstream sync to 0.22.5 (reason: upstream sync to 0.22.5): the four changed files
 # and the checkpoint module (now agent/checkpoints/manager.py) carry the 0.22.5 blobs; the other
 # three are unchanged upstream. The fork's merged files were checked byte-identical to upstream.
+# 2026-11-27 upstream sync to 0.23.4 (reason: upstream sync to 0.23.4): manager.py, terminal_notify.py,
+# turn_tool_round.py and agent_runtime_helpers.py changed upstream and carry the 0.23.4 blobs (the fork's
+# merged files are byte-identical to upstream again); the other four are unchanged.
 REVERTED_FILES_UPSTREAM_BLOBS = (
-    ("agent/checkpoints/manager.py", "f39334cc679ae901f75b940b2303f2a544f4a2ff"),
-    ("hermes_cli/terminal_notify.py", "db57eae7c8ad847616e814f0470cde984d09914a"),
-    ("agent/turn_tool_round.py", "7f3b7b108152f3c92ce419642eb792b9eea03a5f"),
+    ("agent/checkpoints/manager.py", "b921c059db78c19e3016e1b1ab83d25f92367a2b"),
+    ("hermes_cli/terminal_notify.py", "1c801d8b5072fe91d1da68aca8d660171b4545b6"),
+    ("agent/turn_tool_round.py", "80d9c117b67061ea00f782e600ce44056cb07593"),
     ("agent/turn_tool_validation.py", "17644e898e52aba27bb63b6c2394b2992d74e3cd"),
     ("cron/scheduler_script.py", "82ca6447ae718fc96ec47b4e867906f070577a21"),
     ("agent/display.py", "0a129b056c2da0bc42a189dad1ce4e5e2505a3ce"),
     ("agent/tool_dispatch_helpers.py", "9d774b4e0ddc2c757a7217190ad8771fc4f7b199"),
-    ("agent/agent_runtime_helpers.py", "77fbc235e11ac3e190e55b8d460522000250545a"),
+    ("agent/agent_runtime_helpers.py", "7b79d3eb770f087de6071d735b752607326d6109"),
 )
 
 
