@@ -313,6 +313,8 @@ class PluginManager(PluginLoaderMixin, PluginDispatchMixin, PluginLedgerMixin):
         self._plugin_platform_names: set[str] = set()
         self._cli_commands: dict[str, dict] = {}
         self._plugin_commands: dict[str, dict] = {}
+        # "<built-in command>@<plugin id>" -> {word: (choices, ...)}: completion words a plugin adds to a built-in (fork)
+        self._command_words: dict[str, dict[str, tuple[str, ...]]] = {}
         self._system_prompt_sections: dict[str, PluginSystemPromptSection] = {}
         self._plugin_skills: dict[str, dict[str, Any]] = {}
         self._plugin_rpc_methods: dict[str, Callable] = {}  # "plugin.<plugin_id>.<name>" -> handler
@@ -1428,6 +1430,17 @@ def plugin_command_is_client_local(name: str) -> bool:
     """Whether a plugin command was registered ``client_local=True``."""
     entry = _ensure_plugins_discovered()._plugin_commands.get(name)
     return bool(entry and entry.get("client_local"))
+
+
+def get_command_words() -> dict[str, dict[str, tuple[str, ...]]]:
+    """Completion words plugins added to built-in commands (``register_command_words``), merged per command (fork):
+    each plugin's words, in load order, with the choices of a word two plugins both name joined."""
+    merged: dict[str, dict[str, tuple[str, ...]]] = {}
+    for key, table in list(_ensure_plugins_discovered()._command_words.items()):
+        into = merged.setdefault(key.partition("@")[0], {})
+        for word, choices in table.items():
+            into[word] = tuple(dict.fromkeys((*into.get(word, ()), *choices)))
+    return merged
 
 
 def get_plugin_commands() -> dict[str, dict]:

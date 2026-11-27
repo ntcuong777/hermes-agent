@@ -443,9 +443,14 @@ class SlashCommandCompleter(Completer):
             elif first_arg and base_cmd in SUBCOMMANDS and self._command_allowed(base_cmd):
                 yield from _prefix_completions(
                     ((s, None) for s in SUBCOMMANDS[base_cmd]), sub_text)
+                # fork: words a plugin added to this built-in (register_command_words), after its own
+                yield from __import__("hermes_cli.plugin_completions").plugin_completions.builtin_word_completions(base_cmd, sub_text, _split_args, _prefix_completions, SUBCOMMANDS[base_cmd])
             elif base_cmd not in SUBCOMMANDS:
                 # fork: the registry's subcommands complete through plugin_completions (fork-owned)
                 yield from __import__("hermes_cli.plugin_completions").plugin_completions.plugin_subcommand_completions(base_cmd, sub_text, _split_args, _prefix_completions)
+            elif self._command_allowed(base_cmd):
+                # fork: a built-in's later words are only the ones plugins added (`/memory approve` -> `all`)
+                yield from __import__("hermes_cli.plugin_completions").plugin_completions.builtin_word_completions(base_cmd, sub_text, _split_args, _prefix_completions, SUBCOMMANDS[base_cmd])
             return
         word = text[1:]
 

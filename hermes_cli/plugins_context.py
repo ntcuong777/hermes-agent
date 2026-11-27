@@ -36,6 +36,16 @@ def _facade():
     return facade
 
 
+def _subcommand_table(subcommands: Any) -> dict[str, tuple[str, ...]]:
+    """``register_command(subcommands=)`` as ``{word: (choices, ...)}``: a dict keeps its choices, a plain list of
+    words has none. Words are lowercased, everything is text."""
+    if isinstance(subcommands, dict):
+        return {str(word).lower(): tuple(str(c) for c in (choices or ())) for word, choices in subcommands.items()}
+    if subcommands:
+        return {str(word).lower(): () for word in subcommands}
+    return {}
+
+
 class PluginContext(PluginCapabilityCtxMixin, PluginIdleTaskCtxMixin, CorePatchCtxMixin):
     """Facade given to plugins so they can register tools and hooks."""
 
@@ -526,12 +536,7 @@ class PluginContext(PluginCapabilityCtxMixin, PluginIdleTaskCtxMixin, CorePatchC
         hint = (args_hint or "").strip()
         # `subcommands`: words (or {word: choices}) the slash completer offers after `/name ` in the
         # classic CLI and the Ink TUI. Telegram and Discord cannot complete arguments, so they ignore it.
-        subs: dict[str, tuple[str, ...]] = {}
-        if isinstance(subcommands, dict):
-            for word, choices in subcommands.items():
-                subs[str(word).lower()] = tuple(str(c) for c in (choices or ()))
-        elif subcommands:
-            subs = {str(word).lower(): () for word in subcommands}
+        subs = _subcommand_table(subcommands)
         from hermes_cli.plugin_composer import clean_keybinds
         entry = {
             "handler": handler, "description": description or "Plugin command",
@@ -551,6 +556,20 @@ class PluginContext(PluginCapabilityCtxMixin, PluginIdleTaskCtxMixin, CorePatchC
         }
         return self._register_entry("command", clean, self._manager._plugin_commands, entry,
                                     "Plugin %s registered command: /%s", clean)
+
+    def register_command_words(self, command: str, subcommands: dict | list | tuple) -> Optional[PluginRegistration]:
+        """Add completion words to a BUILT-IN command (``memory``, ``skills``): ``register_command`` refuses a name a
+        built-in owns, and a built-in completes only from its fixed table, so words a plugin handles in a
+        pre-command hook (``/memory relearn``) were never offered. Same shape as ``register_command(subcommands=)``:
+        a list of words, or ``{word: (choices, ...)}`` for a second word. The built-in's own words come first and keep
+        their meaning; only words not already there are added. Never touches what the command does."""
+        clean = str(command or "").lower().strip().lstrip("/")
+        table = _subcommand_table(subcommands)
+        if not clean or not table:
+            return None
+        # One slot per (command, plugin): two plugins that extend /memory add to each other (get_command_words merges).
+        return self._register_entry("command_words", f"{clean}@{self.plugin_id}", self._manager._command_words, table,
+                                    "Plugin %s added completion words to /%s", clean)
 
     def dispatch_tool(self, tool_name: str, args: dict, **kwargs) -> str:
         """Dispatch a tool call through the registry with the parent agent (when available)
