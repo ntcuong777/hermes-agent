@@ -649,7 +649,7 @@ def _finish(
             "stop",
         )
         append_message(messages, row)
-    usage_result = record_usage(agent, outcome.usage)
+    usage_result = record_usage(agent, outcome.usage, single_step=turn.tool_calls == 0)
     flushed = agent._flush_messages_to_session_db(messages) is not False
     agent._iters_since_skill = getattr(agent, "_iters_since_skill", 0) + turn.tool_calls
     if completed:
