@@ -567,7 +567,8 @@ class PluginContext(PluginCapabilityCtxMixin, PluginIdleTaskCtxMixin, CorePatchC
         table = _subcommand_table(subcommands)
         if not clean or not table:
             return None
-        return self._register_entry("command_words", clean, self._manager._command_words, table,
+        # One slot per (command, plugin): two plugins that extend /memory add to each other (get_command_words merges).
+        return self._register_entry("command_words", f"{clean}@{self.plugin_id}", self._manager._command_words, table,
                                     "Plugin %s added completion words to /%s", clean)
 
     def dispatch_tool(self, tool_name: str, args: dict, **kwargs) -> str:

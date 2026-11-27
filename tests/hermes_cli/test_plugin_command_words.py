@@ -71,23 +71,39 @@ def test_a_broken_registry_never_breaks_typing(monkeypatch):
     assert got == list(SUBCOMMANDS["/memory"])
 
 
-def _ctx(tmp_path):
+def _ctx(name="demo"):
     manager = PluginManager()
-    manifest = PluginManifest(name="demo", source="user")
+    manifest = PluginManifest(name=name, source="user")
     return PluginContext(manifest, manager), manager
 
 
-def test_register_command_words_stores_a_normalised_table(tmp_path):
-    ctx, manager = _ctx(tmp_path)
-    handle = ctx.register_command_words("/Memory", {"Relearn": (), "approve": ["all"]})
-    assert manager._command_words["memory"] == {"relearn": (), "approve": ("all",)}
-    assert handle is not None
+def _merged(monkeypatch, *managers):
+    """get_command_words over one manager (what discovery would have filled)."""
+    monkeypatch.setattr(plugins_mod, "_ensure_plugins_discovered", lambda: managers[0])
+    return plugins_mod.get_command_words()
 
 
-def test_register_command_words_accepts_a_plain_list_and_ignores_nothing_to_add(tmp_path):
-    ctx, manager = _ctx(tmp_path)
+def test_register_command_words_stores_a_normalised_table(monkeypatch):
+    ctx, manager = _ctx()
+    assert ctx.register_command_words("/Memory", {"Relearn": (), "approve": ["all"]}) is not None
+    assert _merged(monkeypatch, manager) == {"memory": {"relearn": (), "approve": ("all",)}}
+
+
+def test_register_command_words_accepts_a_plain_list_and_ignores_nothing_to_add(monkeypatch):
+    ctx, manager = _ctx()
     assert ctx.register_command_words("memory", ["show", "review"]) is not None
-    assert manager._command_words["memory"] == {"show": (), "review": ()}
     assert ctx.register_command_words("skills", []) is None
     assert ctx.register_command_words("", ["x"]) is None
-    assert "skills" not in manager._command_words
+    assert _merged(monkeypatch, manager) == {"memory": {"show": (), "review": ()}}
+
+
+def test_two_plugins_extending_one_builtin_add_to_each_other(monkeypatch):
+    """write-approval-commands owns show/approve-all, memory-shape owns relearn: neither may replace the other."""
+    manager = PluginManager()
+    PluginContext(PluginManifest(name="a", source="user"), manager).register_command_words(
+        "memory", {"show": (), "approve": ("all",)})
+    PluginContext(PluginManifest(name="b", source="user"), manager).register_command_words(
+        "memory", {"relearn": (), "approve": ("once",)})
+    got = _merged(monkeypatch, manager)["memory"]
+    assert set(got) == {"show", "approve", "relearn"}
+    assert got["approve"] == ("all", "once")
