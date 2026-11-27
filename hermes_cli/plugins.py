@@ -313,6 +313,8 @@ class PluginManager(PluginLoaderMixin, PluginDispatchMixin, PluginLedgerMixin):
         self._plugin_platform_names: set[str] = set()
         self._cli_commands: dict[str, dict] = {}
         self._plugin_commands: dict[str, dict] = {}
+        # command (a BUILT-IN's name, no slash) -> {word: (choices, ...)}: completion words a plugin adds to it (fork)
+        self._command_words: dict[str, dict[str, tuple[str, ...]]] = {}
         self._system_prompt_sections: dict[str, PluginSystemPromptSection] = {}
         self._plugin_skills: dict[str, dict[str, Any]] = {}
         self._plugin_rpc_methods: dict[str, Callable] = {}  # "plugin.<plugin_id>.<name>" -> handler
@@ -1428,6 +1430,11 @@ def plugin_command_is_client_local(name: str) -> bool:
     """Whether a plugin command was registered ``client_local=True``."""
     entry = _ensure_plugins_discovered()._plugin_commands.get(name)
     return bool(entry and entry.get("client_local"))
+
+
+def get_command_words() -> dict[str, dict[str, tuple[str, ...]]]:
+    """Completion words plugins added to built-in commands (``register_command_words``), by command name (fork)."""
+    return _ensure_plugins_discovered()._command_words
 
 
 def get_plugin_commands() -> dict[str, dict]:
