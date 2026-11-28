@@ -360,6 +360,16 @@
       "upstream_commit": "31ce88f86e6cf4a66ef6aa315e4657a31bcf9915",
       "upstream_release": "0.23.2"
     },
+    "core-fixes/help-lists-plugins": {
+      "ast_sha": "382de1c8527252af535006380950dd861c057b700cf6aa5a88426875d941c357",
+      "kind": "wrap",
+      "plugin": "core-fixes",
+      "reason": "help-lists-plugins: append the plugin commands to the gateway_help_lines catalog (Telegram and Slack lists include plugins; /help and /commands did not)",
+      "target": "hermes_cli.commands:gateway_help_lines",
+      "target_file": "hermes_cli/commands.py",
+      "upstream_commit": "ab7e19a761e0ef52ef0d1c5f0417c5784c653446",
+      "upstream_release": "0.23.4"
+    },
     "core-fixes/patch-mode-targets": {
       "ast_sha": "edf9c54fcfe3f3de12545787d73b2c34c708609107bb246685425749761ae7d6",
       "kind": "wrap",
